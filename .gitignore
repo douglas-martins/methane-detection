@@ -1,3 +1,10 @@
+# DVC-tracked directories — managed by DVC, not Git
+/data/
+/models/
+
+# JetBrains IDE project files
+/.idea/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
