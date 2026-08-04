@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.4.0 (2026-08-04)
+
+### Bug Fixes
+
+- **gitignore**: Stop blanket /data/ and /models/ rule from hiding DVC pointer files
+  ([`5286d6b`](https://github.com/douglas-martins/methane-detection/commit/5286d6b0ef4949062b682a5f3ff1fb9e58d7db06))
+
+### Features
+
+- **data**: Initialize DVC with Google Drive remote and track STARCOP datasets
+  ([`9752715`](https://github.com/douglas-martins/methane-detection/commit/9752715ca180b1c7dc811e64efd7bb45b9c272ea))
+
+
 ## v0.3.0 (2026-08-04)
 
 ### Bug Fixes
