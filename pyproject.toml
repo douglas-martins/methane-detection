@@ -31,6 +31,31 @@ dev = [
 [tool.uv]
 package = false
 
+[tool.pytest.ini_options]
+testpaths = ["src", "tests"]
+python_files = ["test_*.py"]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+skip_empty = true
+exclude_also = [
+    "if __name__ == .__main__.:",
+]
+omit = [
+    "*/__tests__/*",
+    "*/conftest.py",
+    # Only starcop_aviris_data_prep.py is under test in this directory —
+    # its untested siblings would otherwise drag the coverage % down.
+    "*/scripts/preprocessing/aviris_as_sensor.py",
+    "*/scripts/preprocessing/join_labels_permian.py",
+    "*/scripts/preprocessing/mag1c.py",
+    "*/scripts/preprocessing/process_data_jpl_4corners.py",
+    "*/scripts/preprocessing/simulate_S2_from_aviris.py",
+    "*/scripts/preprocessing/stats_mag1c.py",
+]
+
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 commit_parser = "conventional"
