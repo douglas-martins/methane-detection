@@ -1,0 +1,6 @@
+outs:
+- md5: e11b16a61ddf235613701fbece9b59d6.dir
+  size: 63296760557
+  nfiles: 75353
+  hash: md5
+  path: starcop_raw
