@@ -1,0 +1,78 @@
+name: Tests
+
+on:
+  pull_request:
+    paths: &test-paths
+      - "src/data/**"
+      - "vendor/starcop/**"
+      - "tests/vendor_starcop/**"
+      - "requirements/env-a-dev.txt"
+      - "conftest.py"
+      - "pyproject.toml"
+      - "Makefile"
+      - ".github/workflows/tests.yml"
+  push:
+    branches:
+      - main
+    paths: *test-paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  environment-a-tests:
+    # starcop_aviris_data_prep.py imports torch 1.13.1 + rasterio + georeader
+    # + spectral + mag1c at module level, so even a fully-mocked unit test
+    # needs the complete Environment A stack installed just to import it.
+    # Kept path-filtered above since this install is slow.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Create Environment A venv (Python 3.10)
+        run: uv venv --python 3.10 vendor/starcop/.venv
+
+      - name: Install STARCOP + test dependencies
+        # rasterio/GDAL usually resolve via prebuilt manylinux wheels on
+        # ubuntu-latest. If this step fails on a GDAL build error, add:
+        #   sudo apt-get update && sudo apt-get install -y libgdal-dev gdal-bin
+        run: |
+          uv pip install --python vendor/starcop/.venv/bin/python \
+            -r vendor/starcop/requirements.txt \
+            -r requirements/env-a-dev.txt
+          uv pip install --python vendor/starcop/.venv/bin/python -e vendor/starcop
+
+      - name: Run tests with coverage
+        run: make coverage
+
+      - name: Generate badges
+        run: make badges
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            junit.xml
+            coverage.xml
+
+      - name: Commit updated badges
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/badges/tests.svg docs/badges/coverage.svg
+          git diff --cached --quiet || git commit -m "chore(badges): update test/coverage badges [skip ci]"
+          git push

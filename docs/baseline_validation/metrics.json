@@ -1,0 +1,18 @@
+{
+  "HyperSTARCOP": {
+    "overall_accuracy": 0.996476067437066,
+    "balanced_accuracy": 0.95935494713306,
+    "f1_methane": 0.9065149436660894,
+    "iou_methane": 0.8290144784468575,
+    "n_test_samples": 9,
+    "n_pixels": 2359296
+  },
+  "MultiSTARCOP": {
+    "overall_accuracy": 0.9844334920247396,
+    "balanced_accuracy": 0.6503551780404379,
+    "f1_methane": 0.41971875493758887,
+    "iou_methane": 0.26559750439929614,
+    "n_test_samples": 9,
+    "n_pixels": 2359296
+  }
+}

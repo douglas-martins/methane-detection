@@ -1,5 +1,8 @@
 # Methane Detection — MLOps Pipeline
 
+![tests](docs/badges/tests.svg)
+![coverage](docs/badges/coverage.svg)
+
 Master's Final Project — Semantic Segmentation of Methane Plumes using CNN on Hyperspectral Imagery.
 
 ## Overview
@@ -56,6 +59,22 @@ For active development on the pipeline:
 ```bash
 uv venv --python 3.12
 uv sync
+```
+
+## Testing
+
+Unit tests live in `__tests__/` folders next to the module they cover (e.g. `src/data/__tests__/`), plus a mirrored `tests/vendor_starcop/` tree for STARCOP submodule scripts, which are never modified in place. Shared fixtures live in the project-root `conftest.py`.
+
+```bash
+make test-env-a   # run the Environment A suite (vendor/starcop/.venv)
+make coverage      # run with coverage, writes junit.xml + coverage.xml
+make badges        # regenerate docs/badges/*.svg from the latest run
+```
+
+New Environment A test dependencies (pytest, gdown, genbadge, …) are layered on top of `vendor/starcop/requirements.txt` via `requirements/env-a-dev.txt`, without editing the submodule's own file:
+
+```bash
+uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/env-a-dev.txt
 ```
 
 ## Dataset

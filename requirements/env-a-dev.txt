@@ -1,0 +1,13 @@
+# Test-only dependencies for Environment A (vendor/starcop/.venv, Python 3.10).
+# Layered on top of vendor/starcop/requirements.txt via:
+#   uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/env-a-dev.txt
+# vendor/starcop/requirements.txt is submodule-owned and must never be edited directly.
+pytest
+pytest-cov
+gdown
+genbadge[tests,coverage]
+
+# Not a test tool — process_aviris.py imports it at module level but it's
+# missing from vendor/starcop/requirements.txt (an upstream gap, surfaced by
+# writing tests for starcop_aviris_data_prep.py, which imports process_aviris).
+spectral
