@@ -1,0 +1,61 @@
+--- a/scripts/train.py
++++ b/scripts/train.py
+@@ -117,15 +117,17 @@
+     log.info("START TRAINING")
+     
+     # See: https://pytorch-lightning.readthedocs.io/en/stable/common/trainer.html
++    # NOTE (project patch, see patches/train-lightning2-and-gcs-skip.patch):
++    # `auto_select_gpus` and `auto_lr_find` were removed in Lightning 2.x;
++    # `resume_from_checkpoint` moved from the Trainer constructor to
++    # `trainer.fit(ckpt_path=...)`.
+     trainer = Trainer(
+         fast_dev_run=False,
+         logger=wandb_logger,
+         callbacks=callbacks,
+-        auto_select_gpus=True,
+         default_root_dir=experiment_path,
+         accumulate_grad_batches=1,
+         gradient_clip_val=0.0,
+-        auto_lr_find=False,
+         benchmark=False,
+         accelerator=settings.training.accelerator,
+         devices=settings.training.devices,
+@@ -134,20 +136,29 @@
+         val_check_interval=settings.training.val_check_interval,
+         # Pass a float in the range [0.0, 1.0] to check after a fraction of the training epoch. Pass an int to check after a fixed number of training batches. An int value can only be higher than the number of training batches when
+         log_every_n_steps=settings.training.train_log_every_n_steps,
+-        resume_from_checkpoint=checkpoint_path if settings.resume_from_checkpoint else None
+     )
+-    
+-    trainer.fit(model, data_module)
+ 
++    trainer.fit(
++        model,
++        data_module,
++        ckpt_path=checkpoint_path if settings.resume_from_checkpoint else None,
++    )
++
+     # Save model
+     trainer.save_checkpoint(os.path.join(experiment_path, "final_checkpoint_model.ckpt"))
+ 
+-    # Copy stuff to remote path
+-    try:
+-        fs = fsspec.filesystem("gs")
+-        fs.put(experiment_path, remote_path, recursive=True)
+-    except:
+-        print("Failed when trying to copy the model to the remote path", remote_path)
++    # NOTE (project patch): the original GCS upload is skipped unless
++    # STARCOP_NO_GCS_UPLOAD is unset — this project has no `gs://starcop/`
++    # bucket access, and local/DVC-tracked runs don't need it.
++    if not os.environ.get("STARCOP_NO_GCS_UPLOAD"):
++        # Copy stuff to remote path
++        try:
++            fs = fsspec.filesystem("gs")
++            fs.put(experiment_path, remote_path, recursive=True)
++        except:
++            print("Failed when trying to copy the model to the remote path", remote_path)
++    else:
++        log.info("STARCOP_NO_GCS_UPLOAD is set — skipping GCS upload")
+ 
+     log.info("Running validation of val data")
+     dataloader_val = data_module.test_plot_dataloader(batch_size=1,num_workers=data_module.num_workers)
