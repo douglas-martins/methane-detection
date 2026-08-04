@@ -1,6 +1,6 @@
-# DVC-tracked directories — managed by DVC, not Git
-/data/
-/models/
+# DVC-tracked directories — DVC manages its own nested .gitignore per
+# directory as content is `dvc add`ed; a blanket rule here would also hide
+# the *.dvc pointer files that need to stay tracked by Git.
 
 # JetBrains IDE project files
 /.idea/

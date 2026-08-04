@@ -1,0 +1,6 @@
+outs:
+- md5: 8b7aee03c708d71d1d140304ecb4a056.dir
+  size: 357442707
+  nfiles: 417
+  hash: md5
+  path: starcop_mini
