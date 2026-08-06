@@ -10,7 +10,7 @@
 - **Assets**: mini test set + pretrained checkpoints (`STARCOP_mini.zip`,
   `multistarcop_varon.zip`, `hyperstarcop_magic_rgb.zip`) — the same files
   `vendor/starcop/notebooks/model_demos_AVIRIS.ipynb` downloads on Colab, fetched
-  locally via `src/data/download_mini_dataset.py`
+  locally via `src/data/download/download_mini_dataset.py`
 - **Runner**: `notebooks/starcop_baseline_validation.py` — a local, non-Colab
   equivalent of the notebook's HyperSTARCOP/MultiSTARCOP inference cells (same
   model loading and plotting calls, `device="cpu"` instead of CUDA, no Colab
