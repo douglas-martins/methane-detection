@@ -6,7 +6,7 @@ so the notebook can run locally against Environment A
 (`vendor/starcop/.venv`, Python 3.10) without any Colab-specific setup.
 
 Usage:
-    uv run --python vendor/starcop/.venv/bin/python src/data/download_mini_dataset.py
+    uv run --python vendor/starcop/.venv/bin/python src/data/download/download_mini_dataset.py
 """
 
 import shutil
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import gdown
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = PROJECT_ROOT / "data" / "starcop_mini"
 MODELS_DIR = PROJECT_ROOT / "models" / "starcop_baseline"
 
