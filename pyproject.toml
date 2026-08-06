@@ -1,6 +1,6 @@
 [project]
 name = "methane-detection"
-version = "0.4.0"
+version = "0.5.0"
 description = "MLOps pipeline for semantic segmentation of methane plumes on hyperspectral imagery"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

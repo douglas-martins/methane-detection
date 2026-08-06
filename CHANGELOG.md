@@ -2,6 +2,30 @@
 
 <!-- version list -->
 
+## v0.5.0 (2026-08-06)
+
+### Bug Fixes
+
+- **ci**: Point Environment A make targets at their post-reorg paths
+  ([`c2294e0`](https://github.com/douglas-martins/methane-detection/commit/c2294e02e0bffd11f34afeda9358088a63e69108))
+
+### Features
+
+- **ci**: Add Environment B test job, coverage, and badges
+  ([`b17bfdf`](https://github.com/douglas-martins/methane-detection/commit/b17bfdf4e8271450a617512c5793553738399ad3))
+
+- **data**: Add DVC preprocessing pipeline for starcop_mini
+  ([`03b6609`](https://github.com/douglas-martins/methane-detection/commit/03b6609a3f8fce580ad7bd72f6e1fae550b169d7))
+
+- **models**: Track STARCOP baseline pretrained checkpoints with DVC
+  ([`6162691`](https://github.com/douglas-martins/methane-detection/commit/6162691efaacb31ce3bc06c17989fd4f73c75dce))
+
+### Refactoring
+
+- **data**: Reorganize download_mini_dataset.py
+  ([`4c10f59`](https://github.com/douglas-martins/methane-detection/commit/4c10f599d48eedfa465eb778d6c1d4561bbf8e85))
+
+
 ## v0.4.0 (2026-08-04)
 
 ### Bug Fixes
