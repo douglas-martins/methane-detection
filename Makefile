@@ -1,9 +1,14 @@
 ENV_A_PYTHON := vendor/starcop/.venv/bin/python
 ENV_A_GENBADGE := vendor/starcop/.venv/bin/genbadge
-ENV_A_TEST_PATHS := src/data/__tests__ tests/vendor_starcop
-ENV_A_COV_PATHS := --cov=src/data --cov=vendor/starcop/scripts/preprocessing
+ENV_A_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop
+ENV_A_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preprocessing
 
-.PHONY: test-env-a coverage badges test
+ENV_B_PYTHON := .venv/bin/python
+ENV_B_GENBADGE := .venv/bin/genbadge
+ENV_B_TEST_PATHS := src/data/preprocessing/__tests__
+ENV_B_COV_PATHS := --cov=src/data/preprocessing
+
+.PHONY: test-env-a coverage test-env-b coverage-env-b badges badges-env-b test
 
 test-env-a:
 	$(ENV_A_PYTHON) -m pytest $(ENV_A_TEST_PATHS) -v
@@ -13,9 +18,22 @@ coverage:
 		$(ENV_A_COV_PATHS) \
 		--cov-report=term-missing --cov-report=xml --junitxml=junit.xml
 
+test-env-b:
+	$(ENV_B_PYTHON) -m pytest $(ENV_B_TEST_PATHS) -v
+
+coverage-env-b:
+	$(ENV_B_PYTHON) -m pytest $(ENV_B_TEST_PATHS) \
+		$(ENV_B_COV_PATHS) \
+		--cov-report=term-missing --cov-report=xml:coverage-env-b.xml --junitxml=junit-env-b.xml
+
 badges: coverage
 	mkdir -p docs/badges
-	$(ENV_A_GENBADGE) tests -i junit.xml -o docs/badges/tests.svg
-	$(ENV_A_GENBADGE) coverage -i coverage.xml -o docs/badges/coverage.svg
+	$(ENV_A_GENBADGE) tests -i junit.xml -o docs/badges/tests-env-a.svg
+	$(ENV_A_GENBADGE) coverage -i coverage.xml -o docs/badges/coverage-env-a.svg
 
-test: test-env-a
+badges-env-b: coverage-env-b
+	mkdir -p docs/badges
+	$(ENV_B_GENBADGE) tests -i junit-env-b.xml -o docs/badges/tests-env-b.svg
+	$(ENV_B_GENBADGE) coverage -i coverage-env-b.xml -o docs/badges/coverage-env-b.svg
+
+test: test-env-a test-env-b

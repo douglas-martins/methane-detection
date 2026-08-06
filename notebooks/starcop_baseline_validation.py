@@ -6,7 +6,7 @@ versions, clones the repo into /content, uses CUDA). This script reproduces
 its HyperSTARCOP / MultiSTARCOP inference cells for a local run against
 Environment A (`vendor/starcop/.venv`, Python 3.10, the original STARCOP
 torch 1.13.1 / pytorch-lightning 1.6.4 stack), using the mini dataset and
-pretrained checkpoints fetched by `src/data/download_mini_dataset.py`.
+pretrained checkpoints fetched by `src/data/download/download_mini_dataset.py`.
 
 Usage:
     uv run --python vendor/starcop/.venv/bin/python notebooks/starcop_baseline_validation.py

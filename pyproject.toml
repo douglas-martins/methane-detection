@@ -26,6 +26,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "python-semantic-release>=9",
+    "genbadge[tests,coverage]",
 ]
 
 [tool.uv]

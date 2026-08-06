@@ -1,0 +1,44 @@
+stages:
+  normalize:
+    cmd: python src/data/preprocessing/normalize.py
+    deps:
+      - src/data/preprocessing/normalize.py
+      - src/data/preprocessing/_vendor_starcop.py
+      - vendor/starcop/starcop/data/normalizer_module.py
+      - data/starcop_mini
+      - configs/data.yaml
+    outs:
+      - data/processed/starcop_mini/selected
+
+  split:
+    cmd: python src/data/preprocessing/split.py
+    deps:
+      - src/data/preprocessing/split.py
+      - data/processed/starcop_mini/selected
+      - data/starcop_mini/train_mini10.csv
+      - data/starcop_mini/test_mini10.csv
+      - configs/data.yaml
+    outs:
+      - data/processed/starcop_mini/splits
+
+  patch_extract:
+    cmd: python src/data/preprocessing/patch_extract.py
+    deps:
+      - src/data/preprocessing/patch_extract.py
+      - src/data/preprocessing/_vendor_starcop.py
+      - vendor/starcop/starcop/data/datamodule.py
+      - data/processed/starcop_mini/splits
+      - configs/data.yaml
+    outs:
+      - data/processed/starcop_mini/patches
+
+  stats:
+    cmd: python src/data/preprocessing/stats.py
+    deps:
+      - src/data/preprocessing/stats.py
+      - src/data/preprocessing/_vendor_starcop.py
+      - vendor/starcop/starcop/data/dataset.py
+      - data/processed/starcop_mini/patches
+      - configs/data.yaml
+    outs:
+      - data/processed/starcop_mini/stats

@@ -63,7 +63,7 @@ jobs:
       - name: Upload test reports
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
+          name: test-reports-env-a
           path: |
             junit.xml
             coverage.xml
@@ -73,6 +73,56 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
-          git add docs/badges/tests.svg docs/badges/coverage.svg
+          git add docs/badges/tests-env-a.svg docs/badges/coverage-env-a.svg
           git diff --cached --quiet || git commit -m "chore(badges): update test/coverage badges [skip ci]"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push
+
+  environment-b-tests:
+    # Covers src/data/preprocessing/__tests__ (the DVC pipeline stage scripts).
+    # This is the project's main MLOps stack (torch>=2.5, rasterio,
+    # georeader-spaceml, hydra-core, dvc) at the root pyproject.toml, not
+    # STARCOP's original torch 1.13.1 environment -- see
+    # src/data/preprocessing/_vendor_starcop.py for why it can still import
+    # vendor/starcop's data modules directly without Environment A installed.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install Environment B dependencies
+        # rasterio/georeader-spaceml usually resolve via prebuilt manylinux
+        # wheels on ubuntu-latest. If this step fails on a GDAL build error,
+        # add: sudo apt-get update && sudo apt-get install -y libgdal-dev gdal-bin
+        run: uv sync
+
+      - name: Run tests with coverage
+        run: make coverage-env-b
+
+      - name: Generate badges
+        run: make badges-env-b
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-env-b
+          path: |
+            junit-env-b.xml
+            coverage-env-b.xml
+
+      - name: Commit updated badges
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/badges/tests-env-b.svg docs/badges/coverage-env-b.svg
+          git diff --cached --quiet || git commit -m "chore(badges): update env-b test/coverage badges [skip ci]"
+          git pull --rebase origin "$GITHUB_REF_NAME"
           git push

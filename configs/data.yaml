@@ -1,0 +1,38 @@
+# Hydra config for the TASK-1.2 preprocessing pipeline (src/data/preprocessing/).
+# Schema mirrors the `dataset:` block already shipped in
+# vendor/starcop/scripts/configs/config.yaml (input_products, output_products,
+# training_size, training_size_overlap, root_folder, train_csv) so vocabulary
+# stays consistent with STARCOP and later training code (Phase 2/3).
+
+dataset: starcop_mini # selects data/${dataset} as the raw root
+
+paths:
+  raw_root: data/${dataset}
+  processed_root: data/processed/${dataset}
+
+dataset_cfg:
+  # STARCOP's shipped default (vendor/starcop/scripts/configs/config.yaml): mag1c + AVIRIS RGB
+  input_products: ["mag1c", "TOA_AVIRIS_640nm", "TOA_AVIRIS_550nm", "TOA_AVIRIS_460nm"]
+  output_products: ["labelbinary"]
+  train_csv: train_mini10.csv
+  test_csv: test_mini10.csv
+
+split:
+  val_fraction: 0.15
+  seed: 42
+  stratify_by: name # scene/flightline id -- never split a scene across sets
+
+patch:
+  size: [128, 128]
+  overlap: [64, 64]
+  has_plume_threshold: 0.00244 # 10/64**2, STARCOP's own default (see datamodule.tiled_dataframe)
+
+stats:
+  bands: null # null = all input_products
+
+# Each stage is DVC-orchestrated and its outputs are DVC-tracked already,
+# so Hydra doesn't need its own per-run output/logging directory.
+hydra:
+  run:
+    dir: .
+  output_subdir: null

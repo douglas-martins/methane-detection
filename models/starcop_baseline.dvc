@@ -1,0 +1,6 @@
+outs:
+- md5: 2ba1eef6e2752df719f1bbde75b85cdc.dir
+  size: 160007235
+  nfiles: 4
+  hash: md5
+  path: starcop_baseline

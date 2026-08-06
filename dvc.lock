@@ -1,0 +1,122 @@
+schema: '2.0'
+stages:
+  normalize:
+    cmd: python src/data/preprocessing/normalize.py
+    deps:
+    - path: configs/data.yaml
+      hash: md5
+      md5: 8094f0cb7a51f6ba25f4b0c68d54ceda
+      size: 1300
+    - path: data/starcop_mini
+      hash: md5
+      md5: 8b7aee03c708d71d1d140304ecb4a056.dir
+      size: 357442707
+      nfiles: 417
+    - path: src/data/preprocessing/_vendor_starcop.py
+      hash: md5
+      md5: 937ad54aacb676d93229d6d82e151f89
+      size: 1586
+    - path: src/data/preprocessing/normalize.py
+      hash: md5
+      md5: 1418f4a62e019507ef0f3ca2bd38b368
+      size: 3016
+    - path: vendor/starcop/starcop/data/normalizer_module.py
+      hash: md5
+      md5: 516ca2655b7b103658e92ce55cfb29af
+      size: 8327
+    outs:
+    - path: data/processed/starcop_mini/selected
+      hash: md5
+      md5: f0bb7635220fc12601c90eca9852a55d.dir
+      size: 52927519
+      nfiles: 91
+  split:
+    cmd: python src/data/preprocessing/split.py
+    deps:
+    - path: configs/data.yaml
+      hash: md5
+      md5: 8094f0cb7a51f6ba25f4b0c68d54ceda
+      size: 1300
+    - path: data/processed/starcop_mini/selected
+      hash: md5
+      md5: f0bb7635220fc12601c90eca9852a55d.dir
+      size: 52927519
+      nfiles: 91
+    - path: data/starcop_mini/test_mini10.csv
+      hash: md5
+      md5: 9a545e3fd4184ce9cde091ccb89bbc6c
+      size: 3405
+    - path: data/starcop_mini/train_mini10.csv
+      hash: md5
+      md5: 4e87c8ad8280a7f07f525590d6dd9727
+      size: 3430
+    - path: src/data/preprocessing/split.py
+      hash: md5
+      md5: 77bebd1ec18eb72df3fc758254c629e2
+      size: 2510
+    outs:
+    - path: data/processed/starcop_mini/splits
+      hash: md5
+      md5: 854bb81e7e2dc2c95e05b0eff902472e.dir
+      size: 7244
+      nfiles: 3
+  patch_extract:
+    cmd: python src/data/preprocessing/patch_extract.py
+    deps:
+    - path: configs/data.yaml
+      hash: md5
+      md5: 8094f0cb7a51f6ba25f4b0c68d54ceda
+      size: 1300
+    - path: data/processed/starcop_mini/splits
+      hash: md5
+      md5: 854bb81e7e2dc2c95e05b0eff902472e.dir
+      size: 7244
+      nfiles: 3
+    - path: src/data/preprocessing/_vendor_starcop.py
+      hash: md5
+      md5: 937ad54aacb676d93229d6d82e151f89
+      size: 1586
+    - path: src/data/preprocessing/patch_extract.py
+      hash: md5
+      md5: b5a28299447054f966c1226bf30c97f7
+      size: 2378
+    - path: vendor/starcop/starcop/data/datamodule.py
+      hash: md5
+      md5: f605027efc5922e8e3b39e322c0baa44
+      size: 16498
+    outs:
+    - path: data/processed/starcop_mini/patches
+      hash: md5
+      md5: 4e6e0c2fa46123f57bf358f67a3d0647.dir
+      size: 394110
+      nfiles: 3
+  stats:
+    cmd: python src/data/preprocessing/stats.py
+    deps:
+    - path: configs/data.yaml
+      hash: md5
+      md5: 8094f0cb7a51f6ba25f4b0c68d54ceda
+      size: 1300
+    - path: data/processed/starcop_mini/patches
+      hash: md5
+      md5: 4e6e0c2fa46123f57bf358f67a3d0647.dir
+      size: 394110
+      nfiles: 3
+    - path: src/data/preprocessing/_vendor_starcop.py
+      hash: md5
+      md5: 937ad54aacb676d93229d6d82e151f89
+      size: 1586
+    - path: src/data/preprocessing/stats.py
+      hash: md5
+      md5: 906a5e57ce626c8ba83edcf8bbaa0475
+      size: 2643
+    - path: vendor/starcop/starcop/data/dataset.py
+      hash: md5
+      md5: f979a63fc755c25c01f17d89e6d4ce8e
+      size: 4581
+    outs:
+    - path: data/processed/starcop_mini/stats
+      hash: md5
+      md5: d526b9423c34eb38e7654239041a7ebd.dir
+      size: 532
+      nfiles: 1
