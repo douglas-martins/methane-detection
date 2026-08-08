@@ -21,6 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -37,9 +38,17 @@ jobs:
           npm --version
           npx commitlint --version
 
-      - name: Validate current commit (last commit) with commitlint
+      - name: Validate pushed commits with commitlint
         if: github.event_name == 'push'
-        run: npx commitlint --last --verbose
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
+        run: |
+          if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            npx commitlint --to "$AFTER_SHA" --verbose
+          else
+            npx commitlint --from "$BEFORE_SHA" --to "$AFTER_SHA" --verbose
+          fi
 
       - name: Validate PR commits with commitlint
         if: github.event_name == 'pull_request'
