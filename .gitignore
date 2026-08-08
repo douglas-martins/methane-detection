@@ -5,6 +5,10 @@
 # JetBrains IDE project files
 /.idea/
 
+# Node (commitlint CI tooling only — no package.json is committed, see
+# .github/workflows/commitlint.yml)
+node_modules/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
