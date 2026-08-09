@@ -27,6 +27,19 @@ import rasterio
 from _vendor_starcop import BAND_NORMALIZATION
 
 
+def _validate_scene_id(scene_id: str) -> None:
+    """Reject scene ids that could escape raw_root/selected_root once joined into a path.
+
+    scene_id comes straight from the manifest CSV's `id` column -- an
+    absolute, multi-component, or `..`-bearing value would let path
+    construction (raw_root / scene_id, selected_root / scene_id) resolve
+    outside the intended directory instead of a real, contained scene folder.
+    """
+    path = Path(scene_id)
+    if not scene_id or path.is_absolute() or len(path.parts) != 1 or path.parts[0] == "..":
+        raise ValueError(f"Invalid scene id {scene_id!r}: must be a single relative path component")
+
+
 def find_scene_folder(raw_root: Path, scene_id: str) -> Path:
     """Locate a scene's folder, flat (mini) or one subfolder level deep (raw).
 
@@ -34,6 +47,7 @@ def find_scene_folder(raw_root: Path, scene_id: str) -> Path:
     that exists in both places is caught as ambiguous rather than silently
     resolving to whichever candidate happened to be checked first.
     """
+    _validate_scene_id(scene_id)
     direct = raw_root / scene_id
     matches = [direct] if direct.is_dir() else []
     matches += list(raw_root.glob(f"*/{scene_id}"))
@@ -91,6 +105,7 @@ def run(cfg) -> None:
     range_check = {}
     missing = []
     for scene_id in scene_ids:
+        _validate_scene_id(scene_id)  # guards selected_root/scene_id below, independent of find_scene_folder's own check
         try:
             scene_folder = find_scene_folder(raw_root, scene_id)
         except FileNotFoundError:

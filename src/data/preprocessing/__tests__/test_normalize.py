@@ -166,6 +166,74 @@ def test_find_scene_folder_raises_value_error_when_direct_and_nested_both_match(
         normalize.find_scene_folder(raw_root, "scene1")
 
 
+@pytest.mark.parametrize(
+    "scene_id",
+    [
+        "",
+        "/etc/passwd",
+        "/",
+        "foo/bar",
+        "../../etc/passwd",
+        "..",
+        "a/../b",
+    ],
+)
+def test_find_scene_folder_rejects_unsafe_scene_ids(tmp_path, scene_id):
+    """scene_id comes straight from the manifest CSV and is joined into raw_root paths --
+    absolute, multi-component, or traversal values must never reach path construction."""
+    raw_root = tmp_path / "raw"
+    raw_root.mkdir()
+
+    with pytest.raises(ValueError, match="[Ss]cene id"):
+        normalize.find_scene_folder(raw_root, scene_id)
+
+
+def test_run_rejects_unsafe_scene_id_before_writing_to_selected_root(tmp_path):
+    """A malicious/malformed manifest id must be rejected before selected_root/scene_id
+    is ever constructed, not just before the raw_root lookup."""
+    raw_root = tmp_path / "raw"
+    raw_root.mkdir()
+    _write_manifest_csvs(raw_root, train_ids=["../../etc/passwd"])
+    processed_root = tmp_path / "processed"
+
+    with pytest.raises(ValueError, match="[Ss]cene id"):
+        normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
+
+
+@pytest.mark.parametrize(
+    "scene_id",
+    [
+        "",
+        "/etc/passwd",
+        "/",
+        "foo/bar",
+        "../../etc/passwd",
+        "..",
+        "a/../b",
+    ],
+)
+def test_find_scene_folder_rejects_unsafe_scene_ids(tmp_path, scene_id):
+    """scene_id comes straight from the manifest CSV and is joined into raw_root paths --
+    absolute, multi-component, or traversal values must never reach path construction."""
+    raw_root = tmp_path / "raw"
+    raw_root.mkdir()
+
+    with pytest.raises(ValueError, match="[Ss]cene id"):
+        normalize.find_scene_folder(raw_root, scene_id)
+
+
+def test_run_rejects_unsafe_scene_id_before_writing_to_selected_root(tmp_path):
+    """A malicious/malformed manifest id must be rejected before selected_root/scene_id
+    is ever constructed, not just before the raw_root lookup."""
+    raw_root = tmp_path / "raw"
+    raw_root.mkdir()
+    _write_manifest_csvs(raw_root, train_ids=["../../etc/passwd"])
+    processed_root = tmp_path / "processed"
+
+    with pytest.raises(ValueError, match="[Ss]cene id"):
+        normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
+
+
 def test_run_writes_range_check_json_only_for_flagged_scenes(tmp_path, tiny_geotiff_factory):
     """End-to-end: run() writes range_check.json listing only the scenes/bands that were flagged."""
     raw_root = tmp_path / "raw"
