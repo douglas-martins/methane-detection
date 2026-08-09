@@ -1,44 +1,58 @@
+vars:
+  - datasets: [starcop_mini, starcop_raw]
+
 stages:
   normalize:
-    cmd: python src/data/preprocessing/normalize.py
-    deps:
-      - src/data/preprocessing/normalize.py
-      - src/data/preprocessing/_vendor_starcop.py
-      - vendor/starcop/starcop/data/normalizer_module.py
-      - data/starcop_mini
-      - configs/data.yaml
-    outs:
-      - data/processed/starcop_mini/selected
+    foreach: ${datasets}
+    do:
+      cmd: python src/data/preprocessing/normalize.py dataset=${item}
+      deps:
+        - src/data/preprocessing/normalize.py
+        - src/data/preprocessing/_vendor_starcop.py
+        - vendor/starcop/starcop/data/normalizer_module.py
+        - data/${item}
+        - configs/data.yaml
+        - configs/dataset/${item}.yaml
+      outs:
+        - data/processed/${item}/selected
 
   split:
-    cmd: python src/data/preprocessing/split.py
-    deps:
-      - src/data/preprocessing/split.py
-      - data/processed/starcop_mini/selected
-      - data/starcop_mini/train_mini10.csv
-      - data/starcop_mini/test_mini10.csv
-      - configs/data.yaml
-    outs:
-      - data/processed/starcop_mini/splits
+    foreach: ${datasets}
+    do:
+      cmd: python src/data/preprocessing/split.py dataset=${item}
+      deps:
+        - src/data/preprocessing/split.py
+        - data/processed/${item}/selected
+        - data/${item}
+        - configs/data.yaml
+        - configs/dataset/${item}.yaml
+      outs:
+        - data/processed/${item}/splits
 
   patch_extract:
-    cmd: python src/data/preprocessing/patch_extract.py
-    deps:
-      - src/data/preprocessing/patch_extract.py
-      - src/data/preprocessing/_vendor_starcop.py
-      - vendor/starcop/starcop/data/datamodule.py
-      - data/processed/starcop_mini/splits
-      - configs/data.yaml
-    outs:
-      - data/processed/starcop_mini/patches
+    foreach: ${datasets}
+    do:
+      cmd: python src/data/preprocessing/patch_extract.py dataset=${item}
+      deps:
+        - src/data/preprocessing/patch_extract.py
+        - src/data/preprocessing/_vendor_starcop.py
+        - vendor/starcop/starcop/data/datamodule.py
+        - data/processed/${item}/splits
+        - configs/data.yaml
+        - configs/dataset/${item}.yaml
+      outs:
+        - data/processed/${item}/patches
 
   stats:
-    cmd: python src/data/preprocessing/stats.py
-    deps:
-      - src/data/preprocessing/stats.py
-      - src/data/preprocessing/_vendor_starcop.py
-      - vendor/starcop/starcop/data/dataset.py
-      - data/processed/starcop_mini/patches
-      - configs/data.yaml
-    outs:
-      - data/processed/starcop_mini/stats
+    foreach: ${datasets}
+    do:
+      cmd: python src/data/preprocessing/stats.py dataset=${item}
+      deps:
+        - src/data/preprocessing/stats.py
+        - src/data/preprocessing/_vendor_starcop.py
+        - vendor/starcop/starcop/data/dataset.py
+        - data/processed/${item}/patches
+        - configs/data.yaml
+        - configs/dataset/${item}.yaml
+      outs:
+        - data/processed/${item}/stats
