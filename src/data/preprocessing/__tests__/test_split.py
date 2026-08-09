@@ -86,7 +86,7 @@ def test_repoint_folder_only_changes_folder_column(tmp_path):
 
 
 def test_run_writes_train_val_test_csvs_with_no_scene_leakage(tmp_path):
-    """End-to-end: run() writes train/val/test.csv with test untouched and no scene shared."""
+    """End-to-end: run() writes train/val/test.csv, preserves test membership, and avoids scene leakage."""
     raw_root = tmp_path / "raw"
     raw_root.mkdir(parents=True)
     train_scenes = [f"scene{i}" for i in range(8)]
