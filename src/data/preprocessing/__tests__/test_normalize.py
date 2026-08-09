@@ -135,6 +135,18 @@ def test_find_scene_folder_locates_nested_scene(tmp_path):
     assert normalize.find_scene_folder(raw_root, "scene1") == scene_folder
 
 
+def test_find_scene_folder_ignores_non_directory_nested_match(tmp_path):
+    """A stray file named exactly scene_id under a subfolder isn't a valid scene folder --
+    glob('*/scene_id') matches files too, only the flat `direct` candidate filtered on is_dir()."""
+    raw_root = tmp_path / "raw"
+    subfolder = raw_root / "subfolderA"
+    subfolder.mkdir(parents=True)
+    (subfolder / "scene1").write_text("not a scene folder")
+
+    with pytest.raises(FileNotFoundError, match="scene1"):
+        normalize.find_scene_folder(raw_root, "scene1")
+
+
 def test_find_scene_folder_raises_file_not_found_when_missing(tmp_path):
     """No folder anywhere under raw_root matches the scene id."""
     raw_root = tmp_path / "raw"

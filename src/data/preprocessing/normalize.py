@@ -50,7 +50,7 @@ def find_scene_folder(raw_root: Path, scene_id: str) -> Path:
     _validate_scene_id(scene_id)
     direct = raw_root / scene_id
     matches = [direct] if direct.is_dir() else []
-    matches += list(raw_root.glob(f"*/{scene_id}"))
+    matches += [p for p in raw_root.glob(f"*/{scene_id}") if p.is_dir()]
 
     if len(matches) == 1:
         return matches[0]
