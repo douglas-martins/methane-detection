@@ -16,6 +16,8 @@ configured has_plume_threshold, so that value is actually configurable
 end-to-end.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 
@@ -120,3 +122,33 @@ def test_has_plume_threshold_is_actually_configurable(tmp_path, tiny_geotiff_fac
 
     assert bool(_first_patch(lenient)["has_plume"]) is True
     assert bool(_first_patch(strict)["has_plume"]) is False
+
+
+def test_run_passes_configured_num_workers_to_patch_scenes(tmp_path, monkeypatch):
+    """num_workers only changes multiprocessing pool size, not patch_scenes's
+    output -- there's no observable state difference to assert on instead."""
+    processed_root = tmp_path / "processed"
+    splits_root = processed_root / "splits"
+    splits_root.mkdir(parents=True)
+    for name in ["train", "val", "test"]:
+        pd.DataFrame({"id": []}).to_csv(splits_root / f"{name}.csv", index=False)
+
+    captured_num_workers = []
+
+    def fake_patch_scenes(dataframe, patch_size, overlap, output_products, has_plume_threshold, num_workers=1):
+        captured_num_workers.append(num_workers)
+        return pd.DataFrame(columns=["window"])
+
+    monkeypatch.setattr(patch_extract, "patch_scenes", fake_patch_scenes)
+
+    cfg = SimpleNamespace(
+        paths=SimpleNamespace(processed_root=str(processed_root)),
+        patch=SimpleNamespace(
+            size=PATCH_SIZE, overlap=OVERLAP, has_plume_threshold=DEFAULT_THRESHOLD, num_workers=4
+        ),
+        dataset_cfg=SimpleNamespace(output_products=["labelbinary"]),
+    )
+
+    patch_extract.run(cfg)
+
+    assert captured_num_workers == [4, 4, 4]

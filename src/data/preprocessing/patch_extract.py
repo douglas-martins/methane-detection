@@ -52,6 +52,7 @@ def run(cfg) -> None:
             overlap=list(cfg.patch.overlap),
             output_products=list(cfg.dataset_cfg.output_products),
             has_plume_threshold=cfg.patch.has_plume_threshold,
+            num_workers=cfg.patch.num_workers,
         )
         out_columns = [c for c in tiled.columns if c != "window"]
         out_path = patches_root / f"{name}_tiled_{patch_size[0]}_{patch_size[1]}.csv"
