@@ -29,7 +29,7 @@ jobs:
           node-version: lts/*
 
       - name: Install commitlint
-        run: npm install --no-save @commitlint/cli @commitlint/config-conventional
+        run: npm ci --ignore-scripts
 
       - name: Print versions
         run: |
@@ -52,4 +52,20 @@ jobs:
 
       - name: Validate PR commits with commitlint
         if: github.event_name == 'pull_request'
-        run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # actions/checkout defaults to the PR's merge ref, so the config file
+          # on disk here may be whatever the PR itself changed it to. Load the
+          # config from the trusted base commit instead of auto-discovering it
+          # from the checked-out working tree, so a PR can't loosen its own
+          # commit-message rules to pass validation.
+          # Written inside the workspace (not /tmp) so commitlint's `extends`
+          # resolution can still walk up to this checkout's node_modules.
+          if ! git show "$BASE_SHA:commitlint.config.cjs" > ./.commitlint-base.config.cjs 2>/dev/null; then
+            echo "::error::commitlint.config.cjs not found at base commit $BASE_SHA -- refusing to fall back to the PR-provided config." >&2
+            exit 1
+          fi
+          npx commitlint --config ./.commitlint-base.config.cjs --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+          rm -f ./.commitlint-base.config.cjs
