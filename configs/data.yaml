@@ -21,7 +21,7 @@ patch:
   size: [128, 128]
   overlap: [64, 64]
   has_plume_threshold: 0.00244 # 10/64**2, STARCOP's own default (see datamodule.tiled_dataframe)
-  num_workers: 1 # currently hardcoded in patch_extract.py, not config-driven at all
+  num_workers: 1
 
 stats:
   bands: null # null = all input_products
