@@ -28,11 +28,16 @@ from _vendor_starcop import BAND_NORMALIZATION
 
 
 def find_scene_folder(raw_root: Path, scene_id: str) -> Path:
-    """Locate a scene's folder, flat (mini) or one subfolder level deep (raw)."""
+    """Locate a scene's folder, flat (mini) or one subfolder level deep (raw).
+
+    Collects both the flat and nested candidates before deciding, so a scene
+    that exists in both places is caught as ambiguous rather than silently
+    resolving to whichever candidate happened to be checked first.
+    """
     direct = raw_root / scene_id
-    if direct.is_dir():
-        return direct
-    matches = list(raw_root.glob(f"*/{scene_id}"))
+    matches = [direct] if direct.is_dir() else []
+    matches += list(raw_root.glob(f"*/{scene_id}"))
+
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
@@ -73,6 +78,7 @@ def select_scene(
 
 
 def run(cfg) -> None:
+    """DVC entry point: select + validate every scene in the configured dataset's manifest."""
     raw_root = Path(cfg.paths.raw_root)
     selected_root = Path(cfg.paths.processed_root) / "selected"
     input_products = list(cfg.dataset_cfg.input_products)
@@ -96,15 +102,20 @@ def run(cfg) -> None:
 
     selected_root.mkdir(parents=True, exist_ok=True)
     (selected_root / "range_check.json").write_text(json.dumps(range_check, indent=2))
+    missing_report = selected_root / "missing_scenes.json"
     if missing:
-        (selected_root / "missing_scenes.json").write_text(json.dumps(missing, indent=2))
+        missing_report.write_text(json.dumps(missing, indent=2))
+    else:
+        missing_report.unlink(missing_ok=True)
 
 
 def main() -> None:
+    """CLI entry point: resolve the Hydra config and dispatch to run()."""
     import hydra
 
     @hydra.main(version_base=None, config_path="../../../configs", config_name="data")
     def _run(cfg):
+        """Hydra-decorated wrapper receiving the composed config."""
         run(cfg)
 
     _run()

@@ -25,6 +25,7 @@ def _cfg(
     train_csv="train.csv",
     test_csv="test.csv",
 ):
+    """Build a minimal Hydra-like config exposing only what normalize.run() reads."""
     return SimpleNamespace(
         paths=SimpleNamespace(raw_root=str(raw_root), processed_root=str(processed_root)),
         dataset_cfg=SimpleNamespace(
@@ -43,6 +44,7 @@ def _write_manifest_csvs(raw_root, train_ids, test_ids=()):
 
 
 def test_copies_only_configured_bands_into_selected_folder(tmp_path, tiny_geotiff_factory):
+    """Only the configured input_products/output_products bands are copied; extras are excluded."""
     scene = tmp_path / "raw" / "scene1"
     band = np.array([[1.0, 1.0], [1.0, 1.0]], dtype="float32")
     tiny_geotiff_factory(scene / "TOA_AVIRIS_640nm.tif", band)
@@ -67,6 +69,7 @@ def test_copies_only_configured_bands_into_selected_folder(tmp_path, tiny_geotif
 
 
 def test_copied_bands_are_pixel_identical_to_source(tmp_path, tiny_geotiff_factory):
+    """select_scene() copies bands byte-for-byte -- no resampling or dtype conversion."""
     import rasterio
 
     scene = tmp_path / "raw" / "scene1"
@@ -81,6 +84,7 @@ def test_copied_bands_are_pixel_identical_to_source(tmp_path, tiny_geotiff_facto
 
 
 def test_raises_on_nan_in_a_configured_band(tmp_path, tiny_geotiff_factory):
+    """A NaN in any configured band is a hard failure, not a flag-and-continue."""
     scene = tmp_path / "raw" / "scene1"
     band_with_nan = np.array([[1.0, np.nan]], dtype="float32")
     tiny_geotiff_factory(scene / "TOA_AVIRIS_640nm.tif", band_with_nan)
@@ -95,6 +99,7 @@ def test_raises_on_nan_in_a_configured_band(tmp_path, tiny_geotiff_factory):
 
 
 def test_flags_scene_exceeding_band_normalization_clip_range(tmp_path, tiny_geotiff_factory):
+    """A band exceeding its BAND_NORMALIZATION clip range is flagged but still copied, not rejected."""
     scene = tmp_path / "raw" / "scene1"
     # TOA_AVIRIS_640nm: offset=0, factor=60, clip=(0, 2) -> normalized 200/60=3.33 > 2
     over_range_band = np.array([[200.0, 1.0]], dtype="float32")
@@ -113,6 +118,7 @@ def test_flags_scene_exceeding_band_normalization_clip_range(tmp_path, tiny_geot
 
 
 def test_find_scene_folder_locates_flat_scene(tmp_path):
+    """Mini-style layout: scene folder directly under raw_root."""
     raw_root = tmp_path / "raw"
     scene_folder = raw_root / "scene1"
     scene_folder.mkdir(parents=True)
@@ -121,6 +127,7 @@ def test_find_scene_folder_locates_flat_scene(tmp_path):
 
 
 def test_find_scene_folder_locates_nested_scene(tmp_path):
+    """Raw-style layout: scene folder one subfolder level deep under raw_root."""
     raw_root = tmp_path / "raw"
     scene_folder = raw_root / "STARCOP_train_easy" / "scene1"
     scene_folder.mkdir(parents=True)
@@ -129,6 +136,7 @@ def test_find_scene_folder_locates_nested_scene(tmp_path):
 
 
 def test_find_scene_folder_raises_file_not_found_when_missing(tmp_path):
+    """No folder anywhere under raw_root matches the scene id."""
     raw_root = tmp_path / "raw"
     raw_root.mkdir()
 
@@ -137,6 +145,7 @@ def test_find_scene_folder_raises_file_not_found_when_missing(tmp_path):
 
 
 def test_find_scene_folder_raises_value_error_when_ambiguous(tmp_path):
+    """The same scene id under two different nested subfolders is ambiguous, not a silent pick."""
     raw_root = tmp_path / "raw"
     (raw_root / "subfolderA" / "scene1").mkdir(parents=True)
     (raw_root / "subfolderB" / "scene1").mkdir(parents=True)
@@ -145,7 +154,20 @@ def test_find_scene_folder_raises_value_error_when_ambiguous(tmp_path):
         normalize.find_scene_folder(raw_root, "scene1")
 
 
+def test_find_scene_folder_raises_value_error_when_direct_and_nested_both_match(tmp_path):
+    """A flat match short-circuiting before nested folders are even checked
+    would silently hide a real duplicate instead of raising -- not just a
+    nested-vs-nested case, see test above."""
+    raw_root = tmp_path / "raw"
+    (raw_root / "scene1").mkdir(parents=True)
+    (raw_root / "subfolderA" / "scene1").mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="scene1"):
+        normalize.find_scene_folder(raw_root, "scene1")
+
+
 def test_run_writes_range_check_json_only_for_flagged_scenes(tmp_path, tiny_geotiff_factory):
+    """End-to-end: run() writes range_check.json listing only the scenes/bands that were flagged."""
     raw_root = tmp_path / "raw"
     tiny_geotiff_factory(
         raw_root / "scene_ok" / "TOA_AVIRIS_640nm.tif", np.array([[1.0]], dtype="float32")
@@ -165,6 +187,7 @@ def test_run_writes_range_check_json_only_for_flagged_scenes(tmp_path, tiny_geot
 
 
 def test_run_discovers_scenes_from_nested_subfolders(tmp_path, tiny_geotiff_factory):
+    """End-to-end: run() finds and processes a scene nested under a raw-style subfolder."""
     raw_root = tmp_path / "raw"
     tiny_geotiff_factory(
         raw_root / "subfolderA" / "scene1" / "TOA_AVIRIS_640nm.tif",
@@ -179,6 +202,7 @@ def test_run_discovers_scenes_from_nested_subfolders(tmp_path, tiny_geotiff_fact
 
 
 def test_run_logs_missing_scenes_instead_of_crashing(tmp_path, tiny_geotiff_factory):
+    """A manifest id with no matching folder anywhere is logged to missing_scenes.json, not fatal."""
     raw_root = tmp_path / "raw"
     tiny_geotiff_factory(
         raw_root / "scene_present" / "TOA_AVIRIS_640nm.tif", np.array([[1.0]], dtype="float32")
@@ -191,3 +215,22 @@ def test_run_logs_missing_scenes_instead_of_crashing(tmp_path, tiny_geotiff_fact
     missing = json.loads((processed_root / "selected" / "missing_scenes.json").read_text())
     assert missing == ["scene_missing"]
     assert (processed_root / "selected" / "scene_present" / "TOA_AVIRIS_640nm.tif").exists()
+
+
+def test_run_removes_stale_missing_scenes_json_when_no_longer_missing(tmp_path, tiny_geotiff_factory):
+    """A prior run's missing_scenes.json shouldn't linger and misreport once
+    the underlying data is fixed and re-run -- e.g. run() invoked directly
+    (not via `dvc repro`, which clears stage outputs itself)."""
+    raw_root = tmp_path / "raw"
+    tiny_geotiff_factory(
+        raw_root / "scene_present" / "TOA_AVIRIS_640nm.tif", np.array([[1.0]], dtype="float32")
+    )
+    _write_manifest_csvs(raw_root, train_ids=["scene_present"])
+    processed_root = tmp_path / "processed"
+    stale_report = processed_root / "selected" / "missing_scenes.json"
+    stale_report.parent.mkdir(parents=True)
+    stale_report.write_text(json.dumps(["scene_that_used_to_be_missing"]))
+
+    normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
+
+    assert not stale_report.exists()
