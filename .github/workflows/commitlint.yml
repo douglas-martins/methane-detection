@@ -29,7 +29,32 @@ jobs:
           node-version: lts/*
 
       - name: Install commitlint
-        run: npm ci --ignore-scripts
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # actions/checkout defaults to the PR's merge ref, so package.json/
+            # package-lock.json on disk may be whatever the PR itself changed
+            # them to. npm ci installs exactly what they say, and later steps
+            # *execute* that install via commitlint -- --ignore-scripts only
+            # blocks npm's own install-time hooks, not a maliciously repointed
+            # dependency's code running once commitlint itself is invoked. Pull
+            # both manifests from the trusted base commit and overwrite the
+            # working tree with them before installing, same trust boundary as
+            # commitlint.config.cjs below.
+            if git show "$BASE_SHA:package.json" > ./package.json.base 2>/dev/null && \
+               git show "$BASE_SHA:package-lock.json" > ./package-lock.json.base 2>/dev/null; then
+              mv ./package.json.base package.json
+              mv ./package-lock.json.base package-lock.json
+            else
+              # No manifests at base yet -- expected only for the PR that first
+              # introduces them, since there's no trusted baseline yet for a
+              # later PR to have diverged from.
+              rm -f ./package.json.base ./package-lock.json.base
+              echo "::warning::package.json/package-lock.json not found at base commit $BASE_SHA -- falling back to the PR-provided manifests (expected only for the introducing PR)."
+            fi
+          fi
+          npm ci --ignore-scripts
 
       - name: Print versions
         run: |
