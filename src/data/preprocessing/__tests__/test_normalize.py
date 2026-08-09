@@ -11,16 +11,35 @@ import json
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 import pytest
 
 import normalize
 
 
-def _cfg(raw_root, processed_root, input_products, output_products):
+def _cfg(
+    raw_root,
+    processed_root,
+    input_products,
+    output_products,
+    train_csv="train.csv",
+    test_csv="test.csv",
+):
     return SimpleNamespace(
         paths=SimpleNamespace(raw_root=str(raw_root), processed_root=str(processed_root)),
-        dataset_cfg=SimpleNamespace(input_products=input_products, output_products=output_products),
+        dataset_cfg=SimpleNamespace(
+            input_products=input_products,
+            output_products=output_products,
+            train_csv=train_csv,
+            test_csv=test_csv,
+        ),
     )
+
+
+def _write_manifest_csvs(raw_root, train_ids, test_ids=()):
+    """Write train.csv/test.csv with just the `id` column normalize.run() reads."""
+    pd.DataFrame({"id": list(train_ids)}).to_csv(raw_root / "train.csv", index=False)
+    pd.DataFrame({"id": list(test_ids)}).to_csv(raw_root / "test.csv", index=False)
 
 
 def test_copies_only_configured_bands_into_selected_folder(tmp_path, tiny_geotiff_factory):
@@ -93,6 +112,39 @@ def test_flags_scene_exceeding_band_normalization_clip_range(tmp_path, tiny_geot
     assert (output / "TOA_AVIRIS_640nm.tif").exists()  # flagged, not rejected
 
 
+def test_find_scene_folder_locates_flat_scene(tmp_path):
+    raw_root = tmp_path / "raw"
+    scene_folder = raw_root / "scene1"
+    scene_folder.mkdir(parents=True)
+
+    assert normalize.find_scene_folder(raw_root, "scene1") == scene_folder
+
+
+def test_find_scene_folder_locates_nested_scene(tmp_path):
+    raw_root = tmp_path / "raw"
+    scene_folder = raw_root / "STARCOP_train_easy" / "scene1"
+    scene_folder.mkdir(parents=True)
+
+    assert normalize.find_scene_folder(raw_root, "scene1") == scene_folder
+
+
+def test_find_scene_folder_raises_file_not_found_when_missing(tmp_path):
+    raw_root = tmp_path / "raw"
+    raw_root.mkdir()
+
+    with pytest.raises(FileNotFoundError, match="scene1"):
+        normalize.find_scene_folder(raw_root, "scene1")
+
+
+def test_find_scene_folder_raises_value_error_when_ambiguous(tmp_path):
+    raw_root = tmp_path / "raw"
+    (raw_root / "subfolderA" / "scene1").mkdir(parents=True)
+    (raw_root / "subfolderB" / "scene1").mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="scene1"):
+        normalize.find_scene_folder(raw_root, "scene1")
+
+
 def test_run_writes_range_check_json_only_for_flagged_scenes(tmp_path, tiny_geotiff_factory):
     raw_root = tmp_path / "raw"
     tiny_geotiff_factory(
@@ -101,6 +153,7 @@ def test_run_writes_range_check_json_only_for_flagged_scenes(tmp_path, tiny_geot
     tiny_geotiff_factory(
         raw_root / "scene_flagged" / "TOA_AVIRIS_640nm.tif", np.array([[200.0]], dtype="float32")
     )
+    _write_manifest_csvs(raw_root, train_ids=["scene_ok", "scene_flagged"])
     processed_root = tmp_path / "processed"
 
     normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
@@ -109,3 +162,32 @@ def test_run_writes_range_check_json_only_for_flagged_scenes(tmp_path, tiny_geot
     assert report == {"scene_flagged": ["TOA_AVIRIS_640nm"]}
     assert (processed_root / "selected" / "scene_ok" / "TOA_AVIRIS_640nm.tif").exists()
     assert (processed_root / "selected" / "scene_flagged" / "TOA_AVIRIS_640nm.tif").exists()
+
+
+def test_run_discovers_scenes_from_nested_subfolders(tmp_path, tiny_geotiff_factory):
+    raw_root = tmp_path / "raw"
+    tiny_geotiff_factory(
+        raw_root / "subfolderA" / "scene1" / "TOA_AVIRIS_640nm.tif",
+        np.array([[1.0]], dtype="float32"),
+    )
+    _write_manifest_csvs(raw_root, train_ids=["scene1"])
+    processed_root = tmp_path / "processed"
+
+    normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
+
+    assert (processed_root / "selected" / "scene1" / "TOA_AVIRIS_640nm.tif").exists()
+
+
+def test_run_logs_missing_scenes_instead_of_crashing(tmp_path, tiny_geotiff_factory):
+    raw_root = tmp_path / "raw"
+    tiny_geotiff_factory(
+        raw_root / "scene_present" / "TOA_AVIRIS_640nm.tif", np.array([[1.0]], dtype="float32")
+    )
+    _write_manifest_csvs(raw_root, train_ids=["scene_present", "scene_missing"])
+    processed_root = tmp_path / "processed"
+
+    normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
+
+    missing = json.loads((processed_root / "selected" / "missing_scenes.json").read_text())
+    assert missing == ["scene_missing"]
+    assert (processed_root / "selected" / "scene_present" / "TOA_AVIRIS_640nm.tif").exists()

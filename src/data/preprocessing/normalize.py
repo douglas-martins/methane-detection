@@ -21,9 +21,23 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import rasterio
 
 from _vendor_starcop import BAND_NORMALIZATION
+
+
+def find_scene_folder(raw_root: Path, scene_id: str) -> Path:
+    """Locate a scene's folder, flat (mini) or one subfolder level deep (raw)."""
+    direct = raw_root / scene_id
+    if direct.is_dir():
+        return direct
+    matches = list(raw_root.glob(f"*/{scene_id}"))
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError(f"Scene '{scene_id}' found in multiple locations under {raw_root}: {matches}")
+    raise FileNotFoundError(f"Scene '{scene_id}' not found under {raw_root}")
 
 
 def select_scene(
@@ -64,16 +78,26 @@ def run(cfg) -> None:
     input_products = list(cfg.dataset_cfg.input_products)
     output_products = list(cfg.dataset_cfg.output_products)
 
+    train_ids = pd.read_csv(raw_root / cfg.dataset_cfg.train_csv)["id"]
+    test_ids = pd.read_csv(raw_root / cfg.dataset_cfg.test_csv)["id"]
+    scene_ids = sorted(set(train_ids) | set(test_ids))
+
     range_check = {}
-    for scene_folder in sorted(p for p in raw_root.iterdir() if p.is_dir()):
-        flagged = select_scene(
-            scene_folder, selected_root / scene_folder.name, input_products, output_products
-        )
+    missing = []
+    for scene_id in scene_ids:
+        try:
+            scene_folder = find_scene_folder(raw_root, scene_id)
+        except FileNotFoundError:
+            missing.append(scene_id)
+            continue
+        flagged = select_scene(scene_folder, selected_root / scene_id, input_products, output_products)
         if flagged:
-            range_check[scene_folder.name] = flagged
+            range_check[scene_id] = flagged
 
     selected_root.mkdir(parents=True, exist_ok=True)
     (selected_root / "range_check.json").write_text(json.dumps(range_check, indent=2))
+    if missing:
+        (selected_root / "missing_scenes.json").write_text(json.dumps(missing, indent=2))
 
 
 def main() -> None:
