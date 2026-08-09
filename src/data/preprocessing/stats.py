@@ -101,6 +101,7 @@ def _load_patches_dataframe(path: Path) -> pd.DataFrame:
 
 
 def run(cfg) -> None:
+    """DVC entry point: write band_stats.json and class_distribution.json for the train split."""
     patches_root = Path(cfg.paths.processed_root) / "patches"
     stats_root = Path(cfg.paths.processed_root) / "stats"
     stats_root.mkdir(parents=True, exist_ok=True)
@@ -119,10 +120,12 @@ def run(cfg) -> None:
 
 
 def main() -> None:
+    """CLI entry point: resolve the Hydra config and dispatch to run()."""
     import hydra
 
     @hydra.main(version_base=None, config_path="../../../configs", config_name="data")
     def _run(cfg):
+        """Hydra-decorated wrapper receiving the composed config."""
         run(cfg)
 
     _run()

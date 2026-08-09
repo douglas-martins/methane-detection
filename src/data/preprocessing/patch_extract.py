@@ -39,6 +39,7 @@ def patch_scenes(
 
 
 def run(cfg) -> None:
+    """DVC entry point: tile every split (train/val/test) into patches."""
     splits_root = Path(cfg.paths.processed_root) / "splits"
     patches_root = Path(cfg.paths.processed_root) / "patches"
     patches_root.mkdir(parents=True, exist_ok=True)
@@ -60,10 +61,12 @@ def run(cfg) -> None:
 
 
 def main() -> None:
+    """CLI entry point: resolve the Hydra config and dispatch to run()."""
     import hydra
 
     @hydra.main(version_base=None, config_path="../../../configs", config_name="data")
     def _run(cfg):
+        """Hydra-decorated wrapper receiving the composed config."""
         run(cfg)
 
     _run()

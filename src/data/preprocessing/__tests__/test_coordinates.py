@@ -10,6 +10,7 @@ import coordinates
 
 
 def test_scene_centroid_latlon_matches_raster_bounds_centroid(tmp_path, tiny_geotiff_factory):
+    """Returned (lat, lon) is the midpoint of the raster's own bounds, not an arbitrary corner."""
     band_path = tiny_geotiff_factory(tmp_path / "bandA.tif", np.zeros((4, 4), dtype="float32"))
 
     lat, lon = coordinates.scene_centroid_latlon(band_path)
@@ -21,6 +22,7 @@ def test_scene_centroid_latlon_matches_raster_bounds_centroid(tmp_path, tiny_geo
 
 
 def test_scene_centroid_scales_with_raster_size(tmp_path, tiny_geotiff_factory):
+    """A different raster shape moves the centroid accordingly -- not hardcoded to the 4x4 case above."""
     band_path = tiny_geotiff_factory(tmp_path / "bandA.tif", np.zeros((10, 6), dtype="float32"))
 
     lat, lon = coordinates.scene_centroid_latlon(band_path)
@@ -54,6 +56,7 @@ def test_collect_scene_coordinates_ignores_non_directory_entries(tmp_path, tiny_
 
 
 def test_run_writes_scene_coordinates_csv(tmp_path, tiny_geotiff_factory):
+    """End-to-end: run() writes a real, parseable scene_coordinates.csv with correct values."""
     processed_root = tmp_path / "processed"
     tiny_geotiff_factory(
         processed_root / "selected" / "sceneA" / "mag1c.tif", np.zeros((4, 4), dtype="float32")

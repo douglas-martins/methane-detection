@@ -16,6 +16,7 @@ import stats
 
 
 def _dataframe_for_scenes(scene_folders: list) -> pd.DataFrame:
+    """Build a minimal STARCOPDataset-compatible dataframe, one row per scene folder."""
     # has_plume is read unconditionally by STARCOPDataset.__getitem__, even
     # when it isn't among the requested products.
     return pd.DataFrame(
@@ -24,6 +25,7 @@ def _dataframe_for_scenes(scene_folders: list) -> pd.DataFrame:
 
 
 def test_computes_exact_mean_and_std_for_constant_band(tmp_path, tiny_geotiff_factory):
+    """A constant-valued band has mean equal to that value and std exactly 0."""
     scene = tmp_path / "scene1"
     tiny_geotiff_factory(scene / "bandA.tif", np.full((4, 4), 5.0, dtype="float32"))
     dataframe = _dataframe_for_scenes([scene])
@@ -35,6 +37,7 @@ def test_computes_exact_mean_and_std_for_constant_band(tmp_path, tiny_geotiff_fa
 
 
 def test_computes_correct_min_max_for_known_band(tmp_path, tiny_geotiff_factory):
+    """min/max match the known extremes of a small, hand-picked pixel array."""
     scene = tmp_path / "scene1"
     array = np.array([[0.0, 10.0], [5.0, 3.0]], dtype="float32")
     tiny_geotiff_factory(scene / "bandA.tif", array)
@@ -47,6 +50,7 @@ def test_computes_correct_min_max_for_known_band(tmp_path, tiny_geotiff_factory)
 
 
 def test_only_reports_configured_stats_bands(tmp_path, tiny_geotiff_factory):
+    """A band present on disk but not passed in `bands` is excluded from the result."""
     scene = tmp_path / "scene1"
     tiny_geotiff_factory(scene / "bandA.tif", np.full((2, 2), 1.0, dtype="float32"))
     tiny_geotiff_factory(scene / "bandB.tif", np.full((2, 2), 2.0, dtype="float32"))
@@ -58,6 +62,7 @@ def test_only_reports_configured_stats_bands(tmp_path, tiny_geotiff_factory):
 
 
 def test_aggregates_across_multiple_scenes(tmp_path, tiny_geotiff_factory):
+    """Stats are pooled across all scenes' pixels, not computed per-scene and averaged."""
     scene1, scene2 = tmp_path / "scene1", tmp_path / "scene2"
     tiny_geotiff_factory(scene1 / "bandA.tif", np.full((2, 2), 0.0, dtype="float32"))
     tiny_geotiff_factory(scene2 / "bandA.tif", np.full((2, 2), 10.0, dtype="float32"))
@@ -71,6 +76,7 @@ def test_aggregates_across_multiple_scenes(tmp_path, tiny_geotiff_factory):
 
 
 def test_run_defaults_bands_to_input_products_when_stats_bands_unset(tmp_path, tiny_geotiff_factory):
+    """End-to-end: with cfg.stats.bands=None, run() falls back to dataset_cfg.input_products."""
     processed_root = tmp_path / "processed"
     patches_root = processed_root / "patches"
     scene = tmp_path / "raw_scene"
@@ -106,6 +112,7 @@ def test_run_defaults_bands_to_input_products_when_stats_bands_unset(tmp_path, t
 
 
 def test_run_writes_class_distribution_json(tmp_path, tiny_geotiff_factory):
+    """End-to-end: run() writes class_distribution.json alongside band_stats.json."""
     processed_root = tmp_path / "processed"
     patches_root = processed_root / "patches"
     scene = tmp_path / "raw_scene"
@@ -142,6 +149,7 @@ def test_run_writes_class_distribution_json(tmp_path, tiny_geotiff_factory):
 
 
 def test_class_distribution_counts_positive_and_background_pixels(tmp_path, tiny_geotiff_factory):
+    """Positive/background/total pixel counts and derived fractions match a known label array."""
     scene = tmp_path / "scene1"
     array = np.array([[1.0, 0.0], [1.0, 0.0]], dtype="float32")
     tiny_geotiff_factory(scene / "labelbinary.tif", array)
@@ -157,6 +165,7 @@ def test_class_distribution_counts_positive_and_background_pixels(tmp_path, tiny
 
 
 def test_class_distribution_aggregates_across_scenes(tmp_path, tiny_geotiff_factory):
+    """Positive/total pixel counts are pooled across scenes, not computed per-scene."""
     scene1, scene2 = tmp_path / "scene1", tmp_path / "scene2"
     tiny_geotiff_factory(scene1 / "labelbinary.tif", np.zeros((2, 2), dtype="float32"))
     tiny_geotiff_factory(scene2 / "labelbinary.tif", np.ones((2, 2), dtype="float32"))
@@ -169,6 +178,7 @@ def test_class_distribution_aggregates_across_scenes(tmp_path, tiny_geotiff_fact
 
 
 def test_class_distribution_imbalance_ratio_is_none_when_no_positives(tmp_path, tiny_geotiff_factory):
+    """A band with zero positive pixels reports imbalance_ratio=None instead of dividing by zero."""
     scene = tmp_path / "scene1"
     tiny_geotiff_factory(scene / "labelbinary.tif", np.zeros((2, 2), dtype="float32"))
     dataframe = _dataframe_for_scenes([scene])

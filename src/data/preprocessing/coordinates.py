@@ -36,6 +36,7 @@ def collect_scene_coordinates(selected_root: Path, reference_band: str) -> list[
 
 
 def run(cfg) -> None:
+    """DVC entry point: write `scene_coordinates.csv` for the configured dataset."""
     selected_root = Path(cfg.paths.processed_root) / "selected"
     coordinates_root = Path(cfg.paths.processed_root) / "coordinates"
     coordinates_root.mkdir(parents=True, exist_ok=True)
@@ -50,10 +51,12 @@ def run(cfg) -> None:
 
 
 def main() -> None:
+    """CLI entry point: resolve the Hydra config and dispatch to run()."""
     import hydra
 
     @hydra.main(version_base=None, config_path="../../../configs", config_name="data")
     def _run(cfg):
+        """Hydra-decorated wrapper receiving the composed config."""
         run(cfg)
 
     _run()

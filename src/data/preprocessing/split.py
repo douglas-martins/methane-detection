@@ -40,6 +40,7 @@ def repoint_folder(dataframe: pd.DataFrame, selected_root: Path) -> pd.DataFrame
 
 
 def run(cfg) -> None:
+    """DVC entry point: write train/val/test split CSVs for the configured dataset."""
     raw_root = Path(cfg.paths.raw_root)
     selected_root = Path(cfg.paths.processed_root) / "selected"
     splits_root = Path(cfg.paths.processed_root) / "splits"
@@ -57,10 +58,12 @@ def run(cfg) -> None:
 
 
 def main() -> None:
+    """CLI entry point: resolve the Hydra config and dispatch to run()."""
     import hydra
 
     @hydra.main(version_base=None, config_path="../../../configs", config_name="data")
     def _run(cfg):
+        """Hydra-decorated wrapper receiving the composed config."""
         run(cfg)
 
     _run()

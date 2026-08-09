@@ -10,6 +10,7 @@ import _vendor_starcop
 
 
 def test_shim_exposes_real_starcop_symbols():
+    """The re-exported symbols come from the real vendored module, not a stub."""
     assert _vendor_starcop.BAND_NORMALIZATION["mag1c"] == {
         "offset": 0,
         "factor": 1750,

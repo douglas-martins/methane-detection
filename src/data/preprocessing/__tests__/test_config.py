@@ -13,6 +13,7 @@ CONFIG_DIR = str(Path(__file__).resolve().parents[4] / "configs")
 
 
 def test_starcop_mini_config_resolves_expected_values():
+    """`dataset=starcop_mini` pulls in mini's CSV names, raw_root, and default num_workers."""
     with initialize_config_dir(config_dir=CONFIG_DIR, version_base=None):
         cfg = compose(config_name="data", overrides=["dataset=starcop_mini"])
     assert cfg.dataset == "starcop_mini"
@@ -22,6 +23,7 @@ def test_starcop_mini_config_resolves_expected_values():
 
 
 def test_starcop_raw_config_resolves_expected_values():
+    """`dataset=starcop_raw` pulls in raw's CSV names, raw_root, and its bumped num_workers override."""
     with initialize_config_dir(config_dir=CONFIG_DIR, version_base=None):
         cfg = compose(config_name="data", overrides=["dataset=starcop_raw"])
     assert cfg.dataset == "starcop_raw"
@@ -31,6 +33,7 @@ def test_starcop_raw_config_resolves_expected_values():
 
 
 def test_default_dataset_is_starcop_mini_when_unspecified():
+    """No `dataset=` override composes the same config as `dataset=starcop_mini`."""
     with initialize_config_dir(config_dir=CONFIG_DIR, version_base=None):
         cfg = compose(config_name="data")
     assert cfg.dataset == "starcop_mini"
