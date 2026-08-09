@@ -63,9 +63,18 @@ jobs:
           # commit-message rules to pass validation.
           # Written inside the workspace (not /tmp) so commitlint's `extends`
           # resolution can still walk up to this checkout's node_modules.
-          if ! git show "$BASE_SHA:commitlint.config.cjs" > ./.commitlint-base.config.cjs 2>/dev/null; then
-            echo "::error::commitlint.config.cjs not found at base commit $BASE_SHA -- refusing to fall back to the PR-provided config." >&2
+          if git show "$BASE_SHA:commitlint.config.cjs" > ./.commitlint-base.config.cjs 2>/dev/null; then
+            CONFIG_PATH=./.commitlint-base.config.cjs
+          elif [ -f commitlint.config.cjs ]; then
+            # No config at base yet -- expected only for the PR that first
+            # introduces commitlint.config.cjs, since there's no trusted
+            # baseline yet for a later PR to have diverged from. Every PR
+            # after this one merges will always find a base config above.
+            echo "::warning::commitlint.config.cjs not found at base commit $BASE_SHA -- falling back to the PR-provided config (expected only for the introducing PR)."
+            CONFIG_PATH=commitlint.config.cjs
+          else
+            echo "::error::commitlint.config.cjs not found at base commit $BASE_SHA or in the PR's working tree." >&2
             exit 1
           fi
-          npx commitlint --config ./.commitlint-base.config.cjs --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+          npx commitlint --config "$CONFIG_PATH" --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
           rm -f ./.commitlint-base.config.cjs
