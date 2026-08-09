@@ -56,3 +56,15 @@ stages:
         - configs/dataset/${item}.yaml
       outs:
         - data/processed/${item}/stats
+
+  coordinates:
+    foreach: ${datasets}
+    do:
+      cmd: python src/data/preprocessing/coordinates.py dataset=${item}
+      deps:
+        - src/data/preprocessing/coordinates.py
+        - data/processed/${item}/selected
+        - configs/data.yaml
+        - configs/dataset/${item}.yaml
+      outs:
+        - data/processed/${item}/coordinates
