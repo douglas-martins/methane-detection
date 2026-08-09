@@ -15,8 +15,14 @@ def test_creates_target_dir_if_missing(tmp_path, fake_zip_factory, monkeypatch):
     """target_dir doesn't need to exist beforehand -- download_and_extract creates it."""
     target_dir = tmp_path / "does_not_exist_yet"
 
-    def fake_download(id, output, quiet):
-        """Stand in for gdown.download: write a fake zip instead of hitting the network."""
+    def fake_download(output, quiet, **kwargs):
+        """Stand in for gdown.download: write a fake zip instead of hitting the network.
+
+        Accepts (and ignores) the `id` keyword via **kwargs rather than a named
+        parameter, since gdown.download's real signature is always called as
+        gdown.download(id=..., output=..., quiet=...) and a local `id` param
+        would shadow the builtin.
+        """
         fake_zip_factory(Path(output), {"file.txt": b"data"})
 
     monkeypatch.setattr(download_mini_dataset.gdown, "download", fake_download)
