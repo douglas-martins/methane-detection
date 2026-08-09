@@ -1,0 +1,13 @@
+# @package _global_
+dataset: starcop_mini
+
+paths:
+  raw_root: data/${dataset}
+  processed_root: data/processed/${dataset}
+
+dataset_cfg:
+  # STARCOP's shipped default (vendor/starcop/scripts/configs/config.yaml): mag1c + AVIRIS RGB
+  input_products: ["mag1c", "TOA_AVIRIS_640nm", "TOA_AVIRIS_550nm", "TOA_AVIRIS_460nm"]
+  output_products: ["labelbinary"]
+  train_csv: train_mini10.csv
+  test_csv: test_mini10.csv

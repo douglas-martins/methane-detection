@@ -1,0 +1,15 @@
+# @package _global_
+dataset: starcop_raw
+
+paths:
+  raw_root: data/${dataset}
+  processed_root: data/processed/${dataset}
+
+dataset_cfg:
+  input_products: ["mag1c", "TOA_AVIRIS_640nm", "TOA_AVIRIS_550nm", "TOA_AVIRIS_460nm"]
+  output_products: ["labelbinary"]
+  train_csv: train.csv
+  test_csv: test.csv
+
+patch:
+  num_workers: 4 # raw is ~200x mini's scene count; bump parallelism for patch_extract
