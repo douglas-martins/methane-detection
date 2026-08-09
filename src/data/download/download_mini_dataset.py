@@ -29,7 +29,7 @@ ASSETS = [
 
 
 def download_and_extract(file_id: str, filename: str, target_dir: Path) -> None:
-    """Download `filename` from Google Drive into `target_dir`, extract it, then delete the zip."""
+    """Download `filename` if needed, extract it into `target_dir`, then delete the zip."""
     target_dir.mkdir(parents=True, exist_ok=True)
     zip_path = target_dir / filename
     if not zip_path.exists():
