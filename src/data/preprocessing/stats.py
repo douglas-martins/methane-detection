@@ -54,6 +54,37 @@ def compute_band_stats(dataframe: pd.DataFrame, bands: list[str]) -> dict:
     }
 
 
+def compute_class_distribution(dataframe: pd.DataFrame, bands: list[str]) -> dict:
+    """Compute exact positive/background pixel counts per output band (e.g. labelbinary).
+
+    Same running-count accumulation as compute_band_stats(), for the same
+    reason: at starcop_raw's patch count, holding every patch's label array
+    in memory at once isn't necessary when a positive-pixel tally is O(1)
+    per band.
+    """
+    dataset = STARCOPDataset(dataframe, input_products=[], output_products=bands)
+    running = {band: {"positive": 0, "total": 0} for band in bands}
+
+    for idx in tqdm(range(len(dataset)), total=len(dataset), desc="Computing class distribution", mininterval=5.0):
+        output_tensor = dataset[idx]["output"].numpy()
+        for band_idx, band in enumerate(bands):
+            arr = output_tensor[band_idx]
+            s = running[band]
+            s["positive"] += int((arr > 0).sum())
+            s["total"] += arr.size
+
+    return {
+        band: {
+            "positive_pixels": s["positive"],
+            "background_pixels": s["total"] - s["positive"],
+            "total_pixels": s["total"],
+            "positive_fraction": s["positive"] / s["total"],
+            "imbalance_ratio": (s["total"] - s["positive"]) / s["positive"] if s["positive"] else None,
+        }
+        for band, s in running.items()
+    }
+
+
 def _load_patches_dataframe(path: Path) -> pd.DataFrame:
     """Read a patch_extract.py output CSV, rebuilding the `window` column patch_extract.py dropped."""
     dataframe = pd.read_csv(path)
@@ -80,8 +111,11 @@ def run(cfg) -> None:
 
     bands = list(cfg.stats.bands) if cfg.stats.bands else list(cfg.dataset_cfg.input_products)
     band_stats = compute_band_stats(dataframe, bands)
-
     (stats_root / "band_stats.json").write_text(json.dumps(band_stats, indent=2))
+
+    output_bands = list(cfg.dataset_cfg.output_products)
+    class_distribution = compute_class_distribution(dataframe, output_bands)
+    (stats_root / "class_distribution.json").write_text(json.dumps(class_distribution, indent=2))
 
 
 def main() -> None:
