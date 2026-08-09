@@ -13,28 +13,44 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import rasterio.windows
+from tqdm import tqdm
 
 from _vendor_starcop import STARCOPDataset
 
 
 def compute_band_stats(dataframe: pd.DataFrame, bands: list[str]) -> dict:
-    """Compute exact per-band mean/std/min/max over every row in `dataframe`."""
-    dataset = STARCOPDataset(dataframe, input_products=bands, output_products=[])
-    per_band_arrays = {band: [] for band in bands}
+    """Compute exact per-band mean/std/min/max over every row in `dataframe`.
 
-    for idx in range(len(dataset)):
+    Accumulates a running sum/sum-of-squares/min/max per band instead of
+    materializing every patch's every band array before reducing -- at
+    starcop_raw's scale that would hold ~35GB of arrays in memory
+    simultaneously (see starcop-raw-pipeline-plan.md). Peak memory here is
+    O(1) per band, not O(all patches).
+    """
+    dataset = STARCOPDataset(dataframe, input_products=bands, output_products=[])
+    running = {band: {"count": 0, "sum": 0.0, "sum_sq": 0.0, "min": np.inf, "max": -np.inf} for band in bands}
+
+    # mininterval=5: redirected (non-tty) output writes one line per refresh
+    # instead of overwriting in place, so a low interval would flood a log file.
+    for idx in tqdm(range(len(dataset)), total=len(dataset), desc="Computing band stats", mininterval=5.0):
         input_tensor = dataset[idx]["input"].numpy()
         for band_idx, band in enumerate(bands):
-            per_band_arrays[band].append(input_tensor[band_idx])
+            arr = input_tensor[band_idx]
+            s = running[band]
+            s["count"] += arr.size
+            s["sum"] += float(arr.sum())
+            s["sum_sq"] += float(np.square(arr, dtype=np.float64).sum())
+            s["min"] = min(s["min"], float(arr.min()))
+            s["max"] = max(s["max"], float(arr.max()))
 
     return {
         band: {
-            "mean": float(np.mean(arrays)),
-            "std": float(np.std(arrays)),
-            "min": float(np.min(arrays)),
-            "max": float(np.max(arrays)),
+            "mean": (mean := s["sum"] / s["count"]),
+            "std": float(np.sqrt(s["sum_sq"] / s["count"] - mean**2)),
+            "min": s["min"],
+            "max": s["max"],
         }
-        for band, arrays in per_band_arrays.items()
+        for band, s in running.items()
     }
 
 

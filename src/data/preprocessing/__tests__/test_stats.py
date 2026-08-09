@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import stats
 
@@ -98,3 +99,32 @@ def test_run_defaults_bands_to_input_products_when_stats_bands_unset(tmp_path, t
 
     result = json.loads((processed_root / "stats" / "band_stats.json").read_text())
     assert result["bandA"]["mean"] == 1.0
+
+
+def test_compute_band_stats_matches_two_pass_result_for_larger_dataset(tmp_path, tiny_geotiff_factory):
+    """Pinning test for the incremental (running-sum) rewrite of
+    compute_band_stats(): at starcop_raw's scale, materializing every
+    patch's every band array before reducing costs ~35GB of peak RAM (see
+    starcop-raw-pipeline-plan.md), so the implementation switches to a
+    running per-band total. This test proves that rewrite stays numerically
+    equivalent to computing mean/std/min/max directly over all the raw
+    arrays, for a dataset too large to plausibly get right by eyeballing a
+    single constant-value scene."""
+    rng = np.random.default_rng(42)
+    scene_folders = []
+    raw_arrays = []
+    for i in range(60):
+        array = rng.uniform(0.0, 100.0, size=(4, 4)).astype("float32")
+        scene = tmp_path / f"scene{i}"
+        tiny_geotiff_factory(scene / "bandA.tif", array)
+        scene_folders.append(scene)
+        raw_arrays.append(array)
+    dataframe = _dataframe_for_scenes(scene_folders)
+    all_values = np.concatenate([a.ravel() for a in raw_arrays])
+
+    result = stats.compute_band_stats(dataframe, bands=["bandA"])
+
+    assert result["bandA"]["mean"] == pytest.approx(float(np.mean(all_values)), rel=1e-6)
+    assert result["bandA"]["std"] == pytest.approx(float(np.std(all_values)), rel=1e-6)
+    assert result["bandA"]["min"] == pytest.approx(float(np.min(all_values)))
+    assert result["bandA"]["max"] == pytest.approx(float(np.max(all_values)))
