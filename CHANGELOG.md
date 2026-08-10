@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v0.6.1 (2026-08-10)
+
+### Bug Fixes
+
+- **ci**: Fail build_command if uv lock upgrade fails
+  ([`de30aa2`](https://github.com/douglas-martins/methane-detection/commit/de30aa2afce6f1c36665603404c2880ff926e88a))
+
+- **ci**: Keep RELEASE_TOKEN scoped to the git push only
+  ([`ca954fc`](https://github.com/douglas-martins/methane-detection/commit/ca954fc291e79fed155077a0730bf0df4305a4b2))
+
+- **ci**: Let badge-commit steps push to protected main
+  ([`5e96347`](https://github.com/douglas-martins/methane-detection/commit/5e96347e6c8f55ea588875af3dae037a4712bd15))
+
+- **ci**: Let semantic-release push version bumps to protected main
+  ([`0b4ac95`](https://github.com/douglas-martins/methane-detection/commit/0b4ac95cf0b82d7d003179cefe6d004b95c4b4f8))
+
+- **ci**: Make badge-commit push resilient and keep uv.lock in sync
+  ([`a586cb1`](https://github.com/douglas-martins/methane-detection/commit/a586cb1ffc836bc73ab2f674bb8a3779751b4eab))
+
+- **ci**: Scope RELEASE_TOKEN to only the badge-commit push
+  ([`f6b69ac`](https://github.com/douglas-martins/methane-detection/commit/f6b69ac40319685cd0e193af13766617b0ff42f7))
+
+
 ## v0.6.0 (2026-08-10)
 
 ### Bug Fixes
