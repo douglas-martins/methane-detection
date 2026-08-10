@@ -71,6 +71,14 @@ build_command = """
     git add uv.lock
 """
 
+[tool.semantic_release.remote]
+# main is protected, so the git push needs the admin RELEASE_TOKEN PAT
+# persisted by the workflow's checkout step, not the github_token above
+# (kept as the narrower default GITHUB_TOKEN for the release action's API
+# calls). Without this, PSR would overwrite the remote URL's credentials
+# with github_token and the push would hit GH006 again.
+ignore_token_for_push = true
+
 [tool.semantic_release.commit_parser_options]
 minor_tags = ["feat"]
 patch_tags = ["fix", "perf"]
