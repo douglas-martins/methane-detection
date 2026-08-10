@@ -1,0 +1,9 @@
+{
+  "name": "methane-detection-commitlint",
+  "private": false,
+  "description": "Pinned devDependencies for the Commitlint CI workflow (.github/workflows/commitlint.yml) -- not a published package.",
+  "devDependencies": {
+    "@commitlint/cli": "21.2.1",
+    "@commitlint/config-conventional": "21.2.0"
+  }
+}

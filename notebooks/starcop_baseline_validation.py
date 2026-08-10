@@ -42,6 +42,7 @@ root_folder = str(DATA_ROOT)
 
 
 def load_model_with_datamodule(model_path: Path, config_path: Path):
+    """Load a pretrained STARCOP checkpoint and its matching data module against the local mini dataset."""
     config_model = omegaconf.OmegaConf.load(config_path)
     config = omegaconf.OmegaConf.merge(config_general, config_model)
 
@@ -68,6 +69,7 @@ def load_model_with_datamodule(model_path: Path, config_path: Path):
 
 
 def validate_model(name: str, model_dir: Path) -> dict:
+    """Run one pretrained model over the mini test split, saving a sample mask PNG and returning pixel-level metrics."""
     print(f"\n=== {name} ===")
     model_path = model_dir / "final_checkpoint_model.ckpt"
     config_path = model_dir / "config.yaml"
@@ -116,6 +118,7 @@ def validate_model(name: str, model_dir: Path) -> dict:
 
 
 def main() -> None:
+    """Validate both baseline checkpoints and write their metrics to metrics.json."""
     results = {}
     results["HyperSTARCOP"] = validate_model("HyperSTARCOP", MODELS_ROOT / "hyperstarcop_magic_rgb")
     results["MultiSTARCOP"] = validate_model("MultiSTARCOP", MODELS_ROOT / "multistarcop_varon")

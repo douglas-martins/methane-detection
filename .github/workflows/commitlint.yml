@@ -1,0 +1,116 @@
+name: Commitlint
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commitlint-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install commitlint
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # actions/checkout defaults to the PR's merge ref, so package.json/
+            # package-lock.json on disk may be whatever the PR itself changed
+            # them to. npm ci installs exactly what they say, and later steps
+            # *execute* that install via commitlint -- --ignore-scripts only
+            # blocks npm's own install-time hooks, not a maliciously repointed
+            # dependency's code running once commitlint itself is invoked. Pull
+            # both manifests from the trusted base commit and overwrite the
+            # working tree with them before installing, same trust boundary as
+            # commitlint.config.cjs below.
+            if git show "$BASE_SHA:package.json" > ./package.json.base 2>/dev/null && \
+               git show "$BASE_SHA:package-lock.json" > ./package-lock.json.base 2>/dev/null; then
+              mv ./package.json.base package.json
+              mv ./package-lock.json.base package-lock.json
+            else
+              # No manifests at base yet -- expected only for the PR that first
+              # introduces them, since there's no trusted baseline yet for a
+              # later PR to have diverged from.
+              rm -f ./package.json.base ./package-lock.json.base
+              echo "::warning::package.json/package-lock.json not found at base commit $BASE_SHA -- falling back to the PR-provided manifests (expected only for the introducing PR)."
+            fi
+          fi
+          npm ci --ignore-scripts
+
+      - name: Print versions
+        run: |
+          git --version
+          node --version
+          npm --version
+          npx commitlint --version
+
+      - name: Validate pushed commits with commitlint
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
+        run: |
+          if [ "$AFTER_SHA" = "0000000000000000000000000000000000000000" ]; then
+            # Branch deletion push event -- there's no ref left to validate.
+            echo "AFTER_SHA is all-zero (branch deletion); skipping commitlint."
+          elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            npx commitlint --to "$AFTER_SHA" --verbose
+          else
+            npx commitlint --from "$BEFORE_SHA" --to "$AFTER_SHA" --verbose
+          fi
+
+      - name: Validate PR commits with commitlint
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # actions/checkout defaults to the PR's merge ref, so the config file
+          # on disk here may be whatever the PR itself changed it to. Load the
+          # config from the trusted base commit instead of auto-discovering it
+          # from the checked-out working tree, so a PR can't loosen its own
+          # commit-message rules to pass validation.
+          # Written inside the workspace (not /tmp) so commitlint's `extends`
+          # resolution can still walk up to this checkout's node_modules. A
+          # fixed filename here would let a PR pre-plant a symlink at that
+          # exact path (git show's `>` redirect follows symlinks), so use a
+          # freshly-generated, unpredictable name via mktemp instead; the EXIT
+          # trap covers cleanup even if commitlint itself exits non-zero
+          # (the normal case when it finds a bad commit message), which the
+          # old unconditional `rm -f` at the end of the script never reached.
+          TEMP_CONFIG=$(mktemp --suffix=.cjs ./.commitlint-base.XXXXXX)
+          trap 'rm -f "$TEMP_CONFIG"' EXIT
+
+          if git show "$BASE_SHA:commitlint.config.cjs" > "$TEMP_CONFIG" 2>/dev/null; then
+            CONFIG_PATH="$TEMP_CONFIG"
+          elif [ -f commitlint.config.cjs ]; then
+            # No config at base yet -- expected only for the PR that first
+            # introduces commitlint.config.cjs, since there's no trusted
+            # baseline yet for a later PR to have diverged from. Every PR
+            # after this one merges will always find a base config above.
+            echo "::warning::commitlint.config.cjs not found at base commit $BASE_SHA -- falling back to the PR-provided config (expected only for the introducing PR)."
+            CONFIG_PATH=commitlint.config.cjs
+          else
+            echo "::error::commitlint.config.cjs not found at base commit $BASE_SHA or in the PR's working tree." >&2
+            exit 1
+          fi
+          npx commitlint --config "$CONFIG_PATH" --from "$BASE_SHA" --to "$HEAD_SHA" --verbose

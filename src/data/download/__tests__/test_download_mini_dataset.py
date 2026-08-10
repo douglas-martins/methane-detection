@@ -12,9 +12,17 @@ import download_mini_dataset
 
 
 def test_creates_target_dir_if_missing(tmp_path, fake_zip_factory, monkeypatch):
+    """target_dir doesn't need to exist beforehand -- download_and_extract creates it."""
     target_dir = tmp_path / "does_not_exist_yet"
 
-    def fake_download(id, output, quiet):
+    def fake_download(output, quiet, **kwargs):
+        """Stand in for gdown.download: write a fake zip instead of hitting the network.
+
+        Accepts (and ignores) the `id` keyword via **kwargs rather than a named
+        parameter, since gdown.download's real signature is always called as
+        gdown.download(id=..., output=..., quiet=...) and a local `id` param
+        would shadow the builtin.
+        """
         fake_zip_factory(Path(output), {"file.txt": b"data"})
 
     monkeypatch.setattr(download_mini_dataset.gdown, "download", fake_download)
@@ -25,6 +33,7 @@ def test_creates_target_dir_if_missing(tmp_path, fake_zip_factory, monkeypatch):
 
 
 def test_skips_download_if_zip_already_exists(tmp_path, fake_zip_factory, monkeypatch):
+    """A zip already sitting in target_dir is reused, not re-downloaded."""
     zip_path = tmp_path / "asset.zip"
     fake_zip_factory(zip_path, {"file.txt": b"data"})
     download_calls = Mock()
@@ -36,6 +45,7 @@ def test_skips_download_if_zip_already_exists(tmp_path, fake_zip_factory, monkey
 
 
 def test_downloads_when_zip_missing(tmp_path, fake_zip_factory, monkeypatch):
+    """No zip in target_dir -- gdown.download is called with the right id/output path."""
     download_calls = Mock(
         side_effect=lambda id, output, quiet: fake_zip_factory(Path(output), {"file.txt": b"data"})
     )
@@ -49,6 +59,7 @@ def test_downloads_when_zip_missing(tmp_path, fake_zip_factory, monkeypatch):
 
 
 def test_extracts_zip_contents_into_target_dir(tmp_path, fake_zip_factory, monkeypatch):
+    """A downloaded zip's contents land in target_dir once extraction completes."""
     zip_path = tmp_path / "asset.zip"
     fake_zip_factory(zip_path, {"scene.csv": b"a,b,c"})
     monkeypatch.setattr(download_mini_dataset.gdown, "download", Mock())
@@ -59,6 +70,7 @@ def test_extracts_zip_contents_into_target_dir(tmp_path, fake_zip_factory, monke
 
 
 def test_deletes_zip_after_extraction(tmp_path, fake_zip_factory, monkeypatch):
+    """The zip itself is removed once its contents are extracted."""
     zip_path = tmp_path / "asset.zip"
     fake_zip_factory(zip_path, {"scene.csv": b"a,b,c"})
     monkeypatch.setattr(download_mini_dataset.gdown, "download", Mock())
@@ -89,6 +101,7 @@ def test_flattens_nested_folder_matching_zip_stem(tmp_path, fake_zip_factory, mo
 
 
 def test_no_flatten_when_no_nested_folder_present(tmp_path, fake_zip_factory, monkeypatch):
+    """A zip without a top-level folder matching its own stem is left as-is (no flattening applied)."""
     zip_path = tmp_path / "checkpoint.zip"
     fake_zip_factory(zip_path, {"model.pt": b"weights"})
     monkeypatch.setattr(download_mini_dataset.gdown, "download", Mock())
@@ -100,6 +113,7 @@ def test_no_flatten_when_no_nested_folder_present(tmp_path, fake_zip_factory, mo
 
 
 def test_flatten_preserves_preexisting_files_in_target_dir(tmp_path, fake_zip_factory, monkeypatch):
+    """Flattening a nested zip doesn't disturb files already present in target_dir."""
     (tmp_path / "already_here.txt").write_text("keep me")
     zip_path = tmp_path / "STARCOP_mini.zip"
     fake_zip_factory(zip_path, {"new_file.csv": b"x"}, nested_under="STARCOP_mini")
@@ -112,6 +126,7 @@ def test_flatten_preserves_preexisting_files_in_target_dir(tmp_path, fake_zip_fa
 
 
 def test_main_calls_download_and_extract_for_each_asset(monkeypatch):
+    """main() dispatches download_and_extract once per entry in ASSETS, in order."""
     calls = []
     monkeypatch.setattr(
         download_mini_dataset,

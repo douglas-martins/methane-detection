@@ -39,6 +39,7 @@ def patch_scenes(
 
 
 def run(cfg) -> None:
+    """DVC entry point: tile every split (train/val/test) into patches."""
     splits_root = Path(cfg.paths.processed_root) / "splits"
     patches_root = Path(cfg.paths.processed_root) / "patches"
     patches_root.mkdir(parents=True, exist_ok=True)
@@ -52,6 +53,7 @@ def run(cfg) -> None:
             overlap=list(cfg.patch.overlap),
             output_products=list(cfg.dataset_cfg.output_products),
             has_plume_threshold=cfg.patch.has_plume_threshold,
+            num_workers=cfg.patch.num_workers,
         )
         out_columns = [c for c in tiled.columns if c != "window"]
         out_path = patches_root / f"{name}_tiled_{patch_size[0]}_{patch_size[1]}.csv"
@@ -59,10 +61,12 @@ def run(cfg) -> None:
 
 
 def main() -> None:
+    """CLI entry point: resolve the Hydra config and dispatch to run()."""
     import hydra
 
     @hydra.main(version_base=None, config_path="../../../configs", config_name="data")
     def _run(cfg):
+        """Hydra-decorated wrapper receiving the composed config."""
         run(cfg)
 
     _run()

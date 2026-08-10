@@ -5,6 +5,11 @@
 # JetBrains IDE project files
 /.idea/
 
+# Node (commitlint CI tooling only -- package.json/package-lock.json ARE
+# committed for reproducible, lockfile-pinned installs; only the installed
+# tree is ignored. See .github/workflows/commitlint.yml)
+node_modules/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

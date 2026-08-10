@@ -26,6 +26,7 @@ def tiny_geotiff_factory():
     """
 
     def _make(path: Path, array: np.ndarray) -> Path:
+        """Write `array` as a single-band GeoTIFF at `path`, creating parent dirs as needed."""
         path.parent.mkdir(parents=True, exist_ok=True)
         with rasterio.open(
             path,
