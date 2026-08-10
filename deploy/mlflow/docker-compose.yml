@@ -15,7 +15,7 @@ services:
       retries: 5
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v3.15.0
+    image: ghcr.io/mlflow/mlflow:v3.15.1
     restart: unless-stopped
     depends_on:
       postgres:
@@ -52,7 +52,7 @@ services:
         check_hex_secret MLFLOW_ADMIN_PASSWORD "$$MLFLOW_ADMIN_PASSWORD"
         check_hex_secret MLFLOW_FLASK_SERVER_SECRET_KEY "$$MLFLOW_FLASK_SERVER_SECRET_KEY"
 
-        pip install --no-cache-dir psycopg2-binary boto3
+        pip install --no-cache-dir psycopg2-binary boto3 Flask-WTF
 
         cat > /tmp/basic_auth.ini <<CONF
         [mlflow]
