@@ -69,7 +69,10 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.event.after }}
         run: |
-          if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+          if [ "$AFTER_SHA" = "0000000000000000000000000000000000000000" ]; then
+            # Branch deletion push event -- there's no ref left to validate.
+            echo "AFTER_SHA is all-zero (branch deletion); skipping commitlint."
+          elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
             npx commitlint --to "$AFTER_SHA" --verbose
           else
             npx commitlint --from "$BEFORE_SHA" --to "$AFTER_SHA" --verbose
