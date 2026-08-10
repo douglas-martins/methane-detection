@@ -61,6 +61,14 @@ omit = [
 version_toml = ["pyproject.toml:project.version"]
 commit_parser = "conventional"
 allow_zero_version = true
+# uv.lock pins this project's own version independently of pyproject.toml;
+# without this, PSR's version bump leaves uv.lock stale and the next
+# `uv sync` in CI silently rewrites it, leaving an unstaged diff behind.
+build_command = """
+    python -m pip install uv
+    uv lock --upgrade-package "$PACKAGE_NAME"
+    git add uv.lock
+"""
 
 [tool.semantic_release.commit_parser_options]
 minor_tags = ["feat"]
