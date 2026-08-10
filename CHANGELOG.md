@@ -2,6 +2,28 @@
 
 <!-- version list -->
 
+## v0.7.0 (2026-08-10)
+
+### Bug Fixes
+
+- **deploy**: Pin mlflow image to 3.14.0 instead of :latest
+  ([`45344c9`](https://github.com/douglas-martins/methane-detection/commit/45344c934793bf5525050c744bae7367dfac3dba))
+
+- **deploy**: Pin mlflow image to 3.14.0 instead of :latest
+  ([`e92835a`](https://github.com/douglas-martins/methane-detection/commit/e92835a6963cbf1f119019b91f7ad8b6a46ae827))
+
+- **deploy**: Pin mlflow image to 3.14.0 instead of :latest
+  ([`302d256`](https://github.com/douglas-martins/methane-detection/commit/302d256c48e2521219e5b7dc6036ee4c8f16339d))
+
+### Features
+
+- **deploy**: Add MLflow Coolify docker-compose stack
+  ([`513d12e`](https://github.com/douglas-martins/methane-detection/commit/513d12eed0ab18de510a556e35b3759d0ae600d2))
+
+- **deploy**: Fail fast on placeholder or non-hex secrets in mlflow startup
+  ([`dd84de1`](https://github.com/douglas-martins/methane-detection/commit/dd84de10c212adf1c265c061e4c6cc3ad9ecd7b3))
+
+
 ## v0.6.1 (2026-08-10)
 
 ### Bug Fixes
