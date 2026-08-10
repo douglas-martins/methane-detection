@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - mlflow-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "5000"
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${B2_APPLICATION_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${B2_APPLICATION_KEY}
+      MLFLOW_FLASK_SERVER_SECRET_KEY: ${MLFLOW_FLASK_SERVER_SECRET_KEY}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      B2_BUCKET_NAME: ${B2_BUCKET_NAME}
+      MLFLOW_ADMIN_USERNAME: ${MLFLOW_ADMIN_USERNAME}
+      MLFLOW_ADMIN_PASSWORD: ${MLFLOW_ADMIN_PASSWORD}
+      MLFLOW_SERVER_ALLOWED_HOSTS: ${MLFLOW_DOMAIN}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        pip install --no-cache-dir psycopg2-binary boto3
+
+        cat > /tmp/basic_auth.ini <<CONF
+        [mlflow]
+        default_permission = READ
+        database_uri = postgresql://$$POSTGRES_USER:$$POSTGRES_PASSWORD@postgres:5432/$$POSTGRES_DB
+        admin_username = $$MLFLOW_ADMIN_USERNAME
+        admin_password = $$MLFLOW_ADMIN_PASSWORD
+        authorization_function = mlflow.server.auth:authenticate_request_basic_auth
+        CONF
+
+        export MLFLOW_AUTH_CONFIG_PATH=/tmp/basic_auth.ini
+        exec mlflow server \
+          --app-name basic-auth \
+          --backend-store-uri "postgresql://$$POSTGRES_USER:$$POSTGRES_PASSWORD@postgres:5432/$$POSTGRES_DB" \
+          --default-artifact-root "s3://$$B2_BUCKET_NAME/mlflow-artifacts" \
+          --host 0.0.0.0 \
+          --port 5000
+
+volumes:
+  mlflow-postgres-data:
