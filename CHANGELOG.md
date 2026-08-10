@@ -2,6 +2,74 @@
 
 <!-- version list -->
 
+## v0.6.0 (2026-08-10)
+
+### Bug Fixes
+
+- **ci**: Fall back to PR's own commitlint config when base commit lacks one
+  ([`2ed71b9`](https://github.com/douglas-martins/methane-detection/commit/2ed71b99eefefef13d74f5493e482a5baff9ff19))
+
+- **ci**: Harden commitlint checkout, push linting, and config file
+  ([`c20b2d4`](https://github.com/douglas-martins/methane-detection/commit/c20b2d4b663c5a9e32c4e52cfb2ce5719d70d929))
+
+- **ci**: Install commitlint dependencies from the trusted base commit's manifests
+  ([`f4ecf69`](https://github.com/douglas-martins/methane-detection/commit/f4ecf69a80ba1896c2f433e6f8c4f304b079d92c))
+
+- **ci**: Load commitlint config from the PR's base commit, not the merge ref and pin commitlint
+  ([`444cbb6`](https://github.com/douglas-martins/methane-detection/commit/444cbb6af35ee1e48398c725aa15065c4b702dbe))
+
+- **ci**: Pin commitlint dependencies via a committed lockfile
+  ([`02ed9ea`](https://github.com/douglas-martins/methane-detection/commit/02ed9ead2dcb66ff9a5033a5ff5d51b8ab3a6464))
+
+- **ci**: Skip commitlint validation on branch-deletion push events
+  ([`1620b68`](https://github.com/douglas-martins/methane-detection/commit/1620b68e82a8f09c82948423ee7467b67f56a3fb))
+
+- **ci**: Use an unpredictable temp file and EXIT trap for the base commitlint config
+  ([`14336ad`](https://github.com/douglas-martins/methane-detection/commit/14336addaf33d0b5f58df80a06d5dd2b115c6348))
+
+- **data**: Catch scene ambiguity between flat and nested layouts; clear stale missing-scenes report
+  ([`a1fb841`](https://github.com/douglas-martins/methane-detection/commit/a1fb841f7330537f8a9144061c2edab3e941d402))
+
+- **data**: Exclude non-directory matches from nested scene-folder glob
+  ([`7fd94c8`](https://github.com/douglas-martins/methane-detection/commit/7fd94c8fb630687d6f69083827407e541cc6dc05))
+
+- **data**: Reject path-traversal and absolute scene ids
+  ([`7d7501e`](https://github.com/douglas-martins/methane-detection/commit/7d7501e00e58fdd269df18b38ce1e236385f1893))
+
+### Features
+
+- **ci**: Add commitlint enforcement for conventional commit messages
+  ([`7f23097`](https://github.com/douglas-martins/methane-detection/commit/7f23097a29dc3cefd91a81e1d1145ab6ece52410))
+
+- **data**: Add coordinates stage for per-scene geographic metadata
+  ([`275989e`](https://github.com/douglas-martins/methane-detection/commit/275989e938ff68583b6a0a408c72b360764591b3))
+
+- **data**: Compute pixel-level class distribution in stats stage
+  ([`e4b518a`](https://github.com/douglas-martins/methane-detection/commit/e4b518ac6b41b39121ceaa098e4f99a5ad29ce25))
+
+- **data**: Discover starcop_raw scenes from CSV manifest instead of directory listing
+  ([`4902461`](https://github.com/douglas-martins/methane-detection/commit/49024619cf8f846327376b9c389120255bf9e723))
+
+- **data**: Generate per-dataset DVC stages via foreach template
+  ([`1cfb230`](https://github.com/douglas-martins/methane-detection/commit/1cfb230a96a0ee6786a75d9d432d1b0a590585ea))
+
+- **data**: Parameterize preprocessing config for multi-dataset support
+  ([`3962708`](https://github.com/douglas-martins/methane-detection/commit/396270892ee2a3ad53e62794f965873aba521b13))
+
+- **data**: Wire configurable num_workers into patch_extract stage
+  ([`683c514`](https://github.com/douglas-martins/methane-detection/commit/683c514d89be638653ca60d7c2504f4858d035fc))
+
+### Performance Improvements
+
+- **data**: Compute band stats incrementally to avoid OOM at starcop_raw scale
+  ([`176ae83`](https://github.com/douglas-martins/methane-detection/commit/176ae83bf6ba03f0542e154a51e34e8360948679))
+
+### Refactoring
+
+- **test**: Avoid shadowing builtin id in fake_download
+  ([`03d703d`](https://github.com/douglas-martins/methane-detection/commit/03d703d70c8c0c2ddf2ff16fb366882b375030fc))
+
+
 ## v0.5.0 (2026-08-06)
 
 ### Bug Fixes
