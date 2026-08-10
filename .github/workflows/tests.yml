@@ -75,7 +75,7 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add docs/badges/tests-env-a.svg docs/badges/coverage-env-a.svg
           git diff --cached --quiet || git commit -m "chore(badges): update test/coverage badges [skip ci]"
-          git pull --rebase origin "$GITHUB_REF_NAME"
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME"
           git push
 
   environment-b-tests:
@@ -124,5 +124,5 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add docs/badges/tests-env-b.svg docs/badges/coverage-env-b.svg
           git diff --cached --quiet || git commit -m "chore(badges): update env-b test/coverage badges [skip ci]"
-          git pull --rebase origin "$GITHUB_REF_NAME"
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME"
           git push

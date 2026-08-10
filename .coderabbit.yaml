@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.json
+
+reviews:
+  # Submit a formal Approve/Request changes review instead of just
+  # commenting, so CodeRabbit's review can satisfy the branch protection
+  # rule requiring 1 approving review (PR authors can't approve their own
+  # PRs, so this is otherwise a manual "@coderabbitai approve" every time).
+  request_changes_workflow: true
