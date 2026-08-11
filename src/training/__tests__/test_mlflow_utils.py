@@ -1,9 +1,39 @@
 """Tests for src/training/mlflow_utils.py -- pure functions, no MLflow SDK
 calls, no live server needed (Test Size: Small)."""
 
+import pytest
 from omegaconf import OmegaConf
 
 import mlflow_utils
+
+
+class TestRequireMlflowTrackingEnv:
+    def test_passes_when_all_vars_set(self, monkeypatch):
+        monkeypatch.setenv("MLFLOW_TRACKING_URI", "https://mlflow.example.com")
+        monkeypatch.setenv("MLFLOW_TRACKING_USERNAME", "user")
+        monkeypatch.setenv("MLFLOW_TRACKING_PASSWORD", "pass")
+
+        mlflow_utils.require_mlflow_tracking_env()
+
+    def test_raises_when_uri_missing(self, monkeypatch):
+        monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+        monkeypatch.setenv("MLFLOW_TRACKING_USERNAME", "user")
+        monkeypatch.setenv("MLFLOW_TRACKING_PASSWORD", "pass")
+
+        with pytest.raises(RuntimeError, match="MLFLOW_TRACKING_URI"):
+            mlflow_utils.require_mlflow_tracking_env()
+
+    def test_raises_listing_all_missing_vars(self, monkeypatch):
+        monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+        monkeypatch.delenv("MLFLOW_TRACKING_USERNAME", raising=False)
+        monkeypatch.delenv("MLFLOW_TRACKING_PASSWORD", raising=False)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            mlflow_utils.require_mlflow_tracking_env()
+
+        assert "MLFLOW_TRACKING_URI" in str(exc_info.value)
+        assert "MLFLOW_TRACKING_USERNAME" in str(exc_info.value)
+        assert "MLFLOW_TRACKING_PASSWORD" in str(exc_info.value)
 
 
 class TestBuildRunTags:
