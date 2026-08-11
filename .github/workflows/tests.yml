@@ -129,6 +129,9 @@ jobs:
         # add: sudo apt-get update && sudo apt-get install -y libgdal-dev gdal-bin
         run: uv sync
 
+      - name: Check docstring coverage
+        run: make docstring-coverage
+
       - name: Run tests with coverage
         run: make coverage-env-b
 
