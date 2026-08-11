@@ -1,0 +1,25 @@
+# Composed on top of vendor/starcop/scripts/configs/config.yaml (unmodified)
+# by src/training/train.py -- see mlops-methane-detection-plan.md TASK-2.2.
+# Merged as OmegaConf.merge(overlay, hydra_settings): hydra_settings (which
+# already carries Hydra's own CLI-applied overrides, e.g. `+machine=desktop`)
+# wins on any key collision, so overlay values here are defaults only.
+
+# Required: which compute this run executed on. No default -- every run must
+# pass +machine=desktop|macbook|colab on the CLI.
+machine: ???
+
+# Required: which DVC-processed dataset this run trains on (drives the
+# dataset_version/dataset_dirty MLflow tags via src/training/dvc_dataset_version.py).
+# No default -- every run must pass +dataset_name=starcop_mini|starcop_raw.
+dataset_name: ???
+
+# Train-time spatial augmentations (kornia.augmentation.AugmentationSequential,
+# applied via a runtime attribute override on data_module.train_dataset --
+# datamodule.py itself is never edited, see TASK-2.2 decision 6). Defaults
+# match the values STARCOP hardcodes at datamodule.py:128.
+dataset:
+  augmentations:
+    rotation_p: 0.5
+    rotation_degrees: 90
+    hflip_p: 0.5
+    vflip_p: 0.5
