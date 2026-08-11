@@ -38,15 +38,23 @@ jobs:
           # both manifests from the trusted base commit and overwrite the
           # working tree with them before installing, same trust boundary as
           # commitlint.config.cjs below.
-          if git show "$BASE_SHA:package.json" > ./package.json.base 2>/dev/null && \
-             git show "$BASE_SHA:package-lock.json" > ./package-lock.json.base 2>/dev/null; then
-            mv ./package.json.base package.json
-            mv ./package-lock.json.base package-lock.json
+          # Fixed staging filenames here would let a PR pre-plant a symlink at
+          # that exact path (git show's `>` redirect follows symlinks),
+          # diverting the trusted write and leaving the PR's own content in
+          # place at the real destination -- same risk the mktemp'd
+          # commitlint config below already guards against. Use unpredictable
+          # names for the staging files too.
+          PKG_JSON_TMP=$(mktemp ./package.json.base.XXXXXX)
+          PKG_LOCK_TMP=$(mktemp ./package-lock.json.base.XXXXXX)
+          if git show "$BASE_SHA:package.json" > "$PKG_JSON_TMP" 2>/dev/null && \
+             git show "$BASE_SHA:package-lock.json" > "$PKG_LOCK_TMP" 2>/dev/null; then
+            mv "$PKG_JSON_TMP" package.json
+            mv "$PKG_LOCK_TMP" package-lock.json
           else
             # No manifests at base yet -- expected only for the PR that first
             # introduces them, since there's no trusted baseline yet for a
             # later PR to have diverged from.
-            rm -f ./package.json.base ./package-lock.json.base
+            rm -f "$PKG_JSON_TMP" "$PKG_LOCK_TMP"
             echo "::warning::package.json/package-lock.json not found at base commit $BASE_SHA -- falling back to the PR-provided manifests (expected only for the introducing PR)."
           fi
 
@@ -55,10 +63,11 @@ jobs:
           # including the commitlint step below -- e.g. a `node-options` entry
           # would inject flags into that later npx invocation too. Reset it to
           # the trusted base the same way, so a PR can't smuggle either in.
-          if git show "$BASE_SHA:.npmrc" > ./.npmrc.base 2>/dev/null; then
-            mv ./.npmrc.base .npmrc
+          NPMRC_TMP=$(mktemp ./.npmrc.base.XXXXXX)
+          if git show "$BASE_SHA:.npmrc" > "$NPMRC_TMP" 2>/dev/null; then
+            mv "$NPMRC_TMP" .npmrc
           else
-            rm -f ./.npmrc.base .npmrc
+            rm -f "$NPMRC_TMP" .npmrc
           fi
 
           npm ci --ignore-scripts
