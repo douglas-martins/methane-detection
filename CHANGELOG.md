@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v0.8.0 (2026-08-11)
+
+### Bug Fixes
+
+- **env-a**: Pin setuptools<81 and numpy<2 for pytorch_lightning/wandb imports
+  ([`6e3c012`](https://github.com/douglas-martins/methane-detection/commit/6e3c01298dbd95225b331b6114dd806481c2e5f9))
+
+- **training**: Resume training from last.ckpt instead of the checkpoint directory
+  ([`300268c`](https://github.com/douglas-martins/methane-detection/commit/300268ce2065dedd1084d2d36b4c07d51234a63a))
+
+- **training**: Validate MLflow tracking env vars before the first MLflow call
+  ([`39f487d`](https://github.com/douglas-martins/methane-detection/commit/39f487d05e124eba79f986646a93080bf6373b8c))
+
+### Build System
+
+- **deps**: Add interrogate for docstring coverage checks
+  ([`2495f7c`](https://github.com/douglas-martins/methane-detection/commit/2495f7c23ca138a7b21dd194a8e8cdf6ae26e0c7))
+
+- **deps**: Add MLflow + boto3 client dependencies for Environment A
+  ([`2f38254`](https://github.com/douglas-martins/methane-detection/commit/2f382548ce8a54c2706c188c6894769c37dd96b4))
+
+### Features
+
+- **training**: Add MLflow-tracked STARCOP training entrypoint
+  ([`4b9ab57`](https://github.com/douglas-martins/methane-detection/commit/4b9ab57977d86adef50e4360d1daa49bafd9cb02))
+
+
 ## v0.7.0 (2026-08-10)
 
 ### Bug Fixes
