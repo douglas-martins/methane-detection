@@ -110,12 +110,16 @@ jobs:
           # environment-b-tests runs as a separate job in this same workflow
           # run and pushes its own badge commit to main independently -- both
           # can pull the same base and race to push. Retry with a fresh
-          # rebase on rejection instead of failing the job outright.
+          # rebase on rejection instead of failing the job outright. Pull and
+          # push are combined in one `if` so a pull failure (this shell runs
+          # under `bash -e`) is caught by the retry loop instead of aborting
+          # the script outright; a failed rebase can also leave the tree
+          # mid-rebase, so reset before every attempt.
           for attempt in 1 2 3 4 5; do
-            git pull --rebase --autostash origin "$GITHUB_REF_NAME"
-            if git push; then
+            if git pull --rebase --autostash origin "$GITHUB_REF_NAME" && git push; then
               exit 0
             fi
+            git rebase --abort || true
             echo "::warning::badge push rejected (attempt $attempt/5), retrying after rebase..."
             sleep $((attempt * 2))
           done
@@ -187,12 +191,16 @@ jobs:
           # environment-a-tests runs as a separate job in this same workflow
           # run and pushes its own badge commit to main independently -- both
           # can pull the same base and race to push. Retry with a fresh
-          # rebase on rejection instead of failing the job outright.
+          # rebase on rejection instead of failing the job outright. Pull and
+          # push are combined in one `if` so a pull failure (this shell runs
+          # under `bash -e`) is caught by the retry loop instead of aborting
+          # the script outright; a failed rebase can also leave the tree
+          # mid-rebase, so reset before every attempt.
           for attempt in 1 2 3 4 5; do
-            git pull --rebase --autostash origin "$GITHUB_REF_NAME"
-            if git push; then
+            if git pull --rebase --autostash origin "$GITHUB_REF_NAME" && git push; then
               exit 0
             fi
+            git rebase --abort || true
             echo "::warning::badge push rejected (attempt $attempt/5), retrying after rebase..."
             sleep $((attempt * 2))
           done
