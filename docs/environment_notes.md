@@ -2,7 +2,7 @@
 
 ## Environment A — MLflow client (TASK-2.2)
 
-`vendor/starcop/scripts/train.py` (Environment A, `vendor/starcop/.venv`) logs
+`src/training/train.py` (Environment A, `vendor/starcop/.venv`) logs
 every training run to the MLflow server deployed in TASK-2.1
 (`https://mlflow.ghostface.tech`).
 
@@ -39,9 +39,13 @@ per-machine launch scripts from TASK-3.3 once they exist) before running
 | `MLFLOW_TRACKING_PASSWORD` | MLflow basic-auth password |
 
 These are the MLflow client's own standard environment variables — read
-automatically by `mlflow.start_run()`/`MLFlowLogger`, no code needed to
-consume them. If any of the three is unset, the training run will fail at
-the first MLflow API call rather than silently training without tracking.
+automatically by `mlflow.start_run()`/`MLFlowLogger`. Note that
+`mlflow.start_run()` does *not* fail on its own when `MLFLOW_TRACKING_URI` is
+unset — it silently falls back to a local file/sqlite tracking store, so a
+missing var would otherwise train without ever reaching the server. To avoid
+that, `train.py` calls `mlflow_utils.require_mlflow_tracking_env()` up front,
+before any MLflow call, which raises `RuntimeError` if any of the three is
+unset.
 
 **A fourth, separate set is needed for artifact uploads** (checkpoint, confusion
 matrix PNG, prediction images) — found while running TASK-2.2's live validation:
