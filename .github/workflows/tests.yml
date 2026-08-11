@@ -23,8 +23,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: tests-${{ github.ref_name }}
-  cancel-in-progress: true
+  # Push-to-main runs share a group with the Release workflow, which also
+  # pushes directly to main (the version-bump commit) -- serializing them
+  # avoids "Upstream branch has changed" when both try to push at once.
+  # cancel-in-progress must stay false for that shared group so Release
+  # doesn't get cancelled out from under itself; PR runs keep their own
+  # per-branch group with cancellation so stale pushes still get superseded.
+  group: ${{ github.event_name == 'push' && 'main-push-serial' || format('tests-{0}', github.ref_name) }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   environment-a-tests:
@@ -94,10 +100,31 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
           git add docs/badges/tests-env-a.svg docs/badges/coverage-env-a.svg
-          git diff --cached --quiet || git commit -m "chore(badges): update test/coverage badges [skip ci]"
+          if git diff --cached --quiet; then
+            echo "No badge changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(badges): update test/coverage badges [skip ci]"
           git remote set-url origin "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME"
-          git push
+
+          # environment-b-tests runs as a separate job in this same workflow
+          # run and pushes its own badge commit to main independently -- both
+          # can pull the same base and race to push. Retry with a fresh
+          # rebase on rejection instead of failing the job outright. Pull and
+          # push are combined in one `if` so a pull failure (this shell runs
+          # under `bash -e`) is caught by the retry loop instead of aborting
+          # the script outright; a failed rebase can also leave the tree
+          # mid-rebase, so reset before every attempt.
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin "$GITHUB_REF_NAME" && git push; then
+              exit 0
+            fi
+            git rebase --abort || true
+            echo "::warning::badge push rejected (attempt $attempt/5), retrying after rebase..."
+            sleep $((attempt * 2))
+          done
+          echo "::error::failed to push badge commit after 5 attempts" >&2
+          exit 1
 
   environment-b-tests:
     # Covers src/data/preprocessing/__tests__ (the DVC pipeline stage scripts).
@@ -154,7 +181,28 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
           git add docs/badges/tests-env-b.svg docs/badges/coverage-env-b.svg
-          git diff --cached --quiet || git commit -m "chore(badges): update env-b test/coverage badges [skip ci]"
+          if git diff --cached --quiet; then
+            echo "No badge changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(badges): update env-b test/coverage badges [skip ci]"
           git remote set-url origin "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME"
-          git push
+
+          # environment-a-tests runs as a separate job in this same workflow
+          # run and pushes its own badge commit to main independently -- both
+          # can pull the same base and race to push. Retry with a fresh
+          # rebase on rejection instead of failing the job outright. Pull and
+          # push are combined in one `if` so a pull failure (this shell runs
+          # under `bash -e`) is caught by the retry loop instead of aborting
+          # the script outright; a failed rebase can also leave the tree
+          # mid-rebase, so reset before every attempt.
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin "$GITHUB_REF_NAME" && git push; then
+              exit 0
+            fi
+            git rebase --abort || true
+            echo "::warning::badge push rejected (attempt $attempt/5), retrying after rebase..."
+            sleep $((attempt * 2))
+          done
+          echo "::error::failed to push badge commit after 5 attempts" >&2
+          exit 1

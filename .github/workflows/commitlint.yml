@@ -2,9 +2,6 @@ name: Commitlint
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -32,28 +29,47 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # actions/checkout defaults to the PR's merge ref, so package.json/
-            # package-lock.json on disk may be whatever the PR itself changed
-            # them to. npm ci installs exactly what they say, and later steps
-            # *execute* that install via commitlint -- --ignore-scripts only
-            # blocks npm's own install-time hooks, not a maliciously repointed
-            # dependency's code running once commitlint itself is invoked. Pull
-            # both manifests from the trusted base commit and overwrite the
-            # working tree with them before installing, same trust boundary as
-            # commitlint.config.cjs below.
-            if git show "$BASE_SHA:package.json" > ./package.json.base 2>/dev/null && \
-               git show "$BASE_SHA:package-lock.json" > ./package-lock.json.base 2>/dev/null; then
-              mv ./package.json.base package.json
-              mv ./package-lock.json.base package-lock.json
-            else
-              # No manifests at base yet -- expected only for the PR that first
-              # introduces them, since there's no trusted baseline yet for a
-              # later PR to have diverged from.
-              rm -f ./package.json.base ./package-lock.json.base
-              echo "::warning::package.json/package-lock.json not found at base commit $BASE_SHA -- falling back to the PR-provided manifests (expected only for the introducing PR)."
-            fi
+          # actions/checkout defaults to the PR's merge ref, so package.json/
+          # package-lock.json on disk may be whatever the PR itself changed
+          # them to. npm ci installs exactly what they say, and later steps
+          # *execute* that install via commitlint -- --ignore-scripts only
+          # blocks npm's own install-time hooks, not a maliciously repointed
+          # dependency's code running once commitlint itself is invoked. Pull
+          # both manifests from the trusted base commit and overwrite the
+          # working tree with them before installing, same trust boundary as
+          # commitlint.config.cjs below.
+          # Fixed staging filenames here would let a PR pre-plant a symlink at
+          # that exact path (git show's `>` redirect follows symlinks),
+          # diverting the trusted write and leaving the PR's own content in
+          # place at the real destination -- same risk the mktemp'd
+          # commitlint config below already guards against. Use unpredictable
+          # names for the staging files too.
+          PKG_JSON_TMP=$(mktemp ./package.json.base.XXXXXX)
+          PKG_LOCK_TMP=$(mktemp ./package-lock.json.base.XXXXXX)
+          if git show "$BASE_SHA:package.json" > "$PKG_JSON_TMP" 2>/dev/null && \
+             git show "$BASE_SHA:package-lock.json" > "$PKG_LOCK_TMP" 2>/dev/null; then
+            mv "$PKG_JSON_TMP" package.json
+            mv "$PKG_LOCK_TMP" package-lock.json
+          else
+            # No manifests at base yet -- expected only for the PR that first
+            # introduces them, since there's no trusted baseline yet for a
+            # later PR to have diverged from.
+            rm -f "$PKG_JSON_TMP" "$PKG_LOCK_TMP"
+            echo "::warning::package.json/package-lock.json not found at base commit $BASE_SHA -- falling back to the PR-provided manifests (expected only for the introducing PR)."
           fi
+
+          # .npmrc isn't a manifest npm ci needs, but it's still config npm/npx
+          # read from the working directory for every command in this job,
+          # including the commitlint step below -- e.g. a `node-options` entry
+          # would inject flags into that later npx invocation too. Reset it to
+          # the trusted base the same way, so a PR can't smuggle either in.
+          NPMRC_TMP=$(mktemp ./.npmrc.base.XXXXXX)
+          if git show "$BASE_SHA:.npmrc" > "$NPMRC_TMP" 2>/dev/null; then
+            mv "$NPMRC_TMP" .npmrc
+          else
+            rm -f "$NPMRC_TMP" .npmrc
+          fi
+
           npm ci --ignore-scripts
 
       - name: Print versions
@@ -63,23 +79,7 @@ jobs:
           npm --version
           npx commitlint --version
 
-      - name: Validate pushed commits with commitlint
-        if: github.event_name == 'push'
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          AFTER_SHA: ${{ github.event.after }}
-        run: |
-          if [ "$AFTER_SHA" = "0000000000000000000000000000000000000000" ]; then
-            # Branch deletion push event -- there's no ref left to validate.
-            echo "AFTER_SHA is all-zero (branch deletion); skipping commitlint."
-          elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-            npx commitlint --to "$AFTER_SHA" --verbose
-          else
-            npx commitlint --from "$BEFORE_SHA" --to "$AFTER_SHA" --verbose
-          fi
-
       - name: Validate PR commits with commitlint
-        if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

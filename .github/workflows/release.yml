@@ -9,7 +9,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref_name }}
+  # Shared with the Tests workflow's push-to-main runs: both push commits
+  # directly to main (badge commits there, the version bump here), so they
+  # must be serialized -- run them side by side and whichever pushes second
+  # hits a stale upstream ref and fails ("Upstream branch has changed").
+  group: main-push-serial
   cancel-in-progress: false
 
 jobs:
