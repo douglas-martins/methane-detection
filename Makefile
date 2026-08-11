@@ -1,14 +1,15 @@
 ENV_A_PYTHON := vendor/starcop/.venv/bin/python
 ENV_A_GENBADGE := vendor/starcop/.venv/bin/genbadge
-ENV_A_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop
-ENV_A_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preprocessing
+ENV_A_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop src/training/__tests__
+ENV_A_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preprocessing --cov=src/training
 
 ENV_B_PYTHON := .venv/bin/python
 ENV_B_GENBADGE := .venv/bin/genbadge
-ENV_B_TEST_PATHS := src/data/preprocessing/__tests__
-ENV_B_COV_PATHS := --cov=src/data/preprocessing
+ENV_B_INTERROGATE := .venv/bin/interrogate
+ENV_B_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__
+ENV_B_COV_PATHS := --cov=src/data/preprocessing --cov=src/training
 
-.PHONY: test-env-a coverage test-env-b coverage-env-b badges badges-env-b test
+.PHONY: test-env-a coverage test-env-b coverage-env-b badges badges-env-b test docstring-coverage
 
 test-env-a:
 	$(ENV_A_PYTHON) -m pytest $(ENV_A_TEST_PATHS) -v
@@ -35,5 +36,8 @@ badges-env-b: coverage-env-b
 	mkdir -p docs/badges
 	$(ENV_B_GENBADGE) tests -i junit-env-b.xml -o docs/badges/tests-env-b.svg
 	$(ENV_B_GENBADGE) coverage -i coverage-env-b.xml -o docs/badges/coverage-env-b.svg
+
+docstring-coverage:
+	$(ENV_B_INTERROGATE) -v .
 
 test: test-env-a test-env-b

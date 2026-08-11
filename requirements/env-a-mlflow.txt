@@ -1,0 +1,40 @@
+# MLflow client dependencies for Environment A (vendor/starcop/.venv, Python 3.10).
+# Layered on top of vendor/starcop/requirements.txt via:
+#   uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/env-a-mlflow.txt
+# vendor/starcop/requirements.txt is submodule-owned and must never be edited directly.
+# See mlops-methane-detection-plan.md TASK-2.2.
+mlflow
+
+# Required client-side for any MLflow client writing artifacts to the B2-backed
+# (S3-compatible) artifact store on the tracking server — same reason boto3 was
+# added to Environment B's pyproject.toml in TASK-2.1.
+boto3
+
+# Pin: mlflow-skinny requires protobuf>=3.12,<8; wandb==0.13.3 (pinned in
+# vendor/starcop/requirements.txt) ships protobuf-generated files that only
+# load under protobuf<4 (unpinned resolution pulls protobuf 6.x, which breaks
+# wandb's old-style _pb2.py files at import time — "Descriptors cannot be
+# created directly"). Pin inside the shared range so both coexist.
+protobuf<4
+
+# Pins below fix a real gap found in CI, unrelated to mlflow itself: they make
+# pytorch_lightning==1.6.4/wandb==0.13.3 (both pinned in vendor/starcop's own
+# requirements.txt, both 2022-era) importable at all under a freshly resolved
+# venv today. Nothing in this repo's test suite exercised that import chain
+# (starcop.data.data_logger -> pytorch_lightning, starcop.data.datamodule ->
+# wandb) before src/training/'s composition-seam modules did — a local venv
+# set up months ago can mask this since the pin only bites on a *fresh*
+# resolve, which is exactly what CI (and any new dev machine) always does.
+#
+# - setuptools>=82 removed `pkg_resources` entirely; pytorch_lightning 1.6.4
+#   still does `import pkg_resources` unconditionally at module level
+#   (pytorch_lightning/utilities/imports.py) -> ModuleNotFoundError. The pin
+#   below (<81) is intentionally more conservative than the >=82 boundary
+#   that actually drops pkg_resources -- no need to track that line exactly.
+setuptools<81
+
+# - An unpinned resolve picks numpy 2.x; wandb 0.13.3 uses `np.float_`
+#   (removed in NumPy 2.0) at module level (wandb/sdk/data_types/_dtypes.py)
+#   -> AttributeError. numpy<2 also matches what torch==1.13.1 (vendor/starcop's
+#   own pin) actually expects.
+numpy<2

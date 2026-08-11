@@ -27,6 +27,7 @@ dependencies = [
 dev = [
     "python-semantic-release>=9",
     "genbadge[tests,coverage]",
+    "interrogate",
 ]
 
 [tool.uv]
@@ -35,6 +36,18 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["src", "tests"]
 python_files = ["test_*.py"]
+
+[tool.interrogate]
+# Test methods are intentionally undocumented project-wide -- their
+# descriptive names (test_raises_when_uri_missing, ...) already read as the
+# spec, so a docstring on top would just restate the name. Private/magic
+# methods are exempted for the same reason: they're implementation detail
+# the class docstring already covers.
+exclude = ["*/__tests__/*", "vendor", ".venv"]
+ignore-private = true
+ignore-magic = true
+ignore-nested-functions = true
+fail-under = 80
 
 [tool.coverage.run]
 branch = true
