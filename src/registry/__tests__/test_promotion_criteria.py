@@ -44,6 +44,36 @@ class TestCheckThresholds:
         assert "val_accuracy" in reasons[0]
         assert "missing" in reasons[0].lower()
 
+    def test_returns_a_reason_when_metric_is_nan(self):
+        # nan < threshold is False in Python, so without an explicit finite
+        # check a NaN metric would silently pass check_thresholds.
+        reasons = promotion_criteria.check_thresholds(
+            metrics={"val_accuracy": math.nan, "val_f1score": 0.8},
+            thresholds={"val_accuracy": 0.85, "val_f1score": 0.70},
+        )
+
+        assert len(reasons) == 1
+        assert "val_accuracy" in reasons[0]
+
+    def test_returns_a_reason_when_metric_is_positive_infinity(self):
+        # inf < threshold is also False, so +inf would silently pass too.
+        reasons = promotion_criteria.check_thresholds(
+            metrics={"val_accuracy": math.inf, "val_f1score": 0.8},
+            thresholds={"val_accuracy": 0.85, "val_f1score": 0.70},
+        )
+
+        assert len(reasons) == 1
+        assert "val_accuracy" in reasons[0]
+
+    def test_returns_a_reason_when_metric_is_negative_infinity(self):
+        reasons = promotion_criteria.check_thresholds(
+            metrics={"val_accuracy": -math.inf, "val_f1score": 0.8},
+            thresholds={"val_accuracy": 0.85, "val_f1score": 0.70},
+        )
+
+        assert len(reasons) == 1
+        assert "val_accuracy" in reasons[0]
+
 
 class TestIsLossHistoryStable:
     def test_true_for_a_smoothly_decreasing_history(self):
@@ -69,8 +99,8 @@ class TestIsLossHistoryStable:
     def test_false_for_empty_history(self):
         assert promotion_criteria.is_loss_history_stable([]) is False
 
-    def test_true_for_a_history_shorter_than_the_window(self):
-        assert promotion_criteria.is_loss_history_stable([0.5, 0.48], window=5) is True
+    def test_false_for_a_history_shorter_than_the_window(self):
+        assert promotion_criteria.is_loss_history_stable([0.5, 0.48], window=5) is False
 
 
 class TestEvaluateStaging:

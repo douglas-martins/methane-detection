@@ -41,12 +41,19 @@ def check_thresholds(metrics: Dict[str, float], thresholds: Dict[str, float]) ->
 
     A metric absent from `metrics` entirely is treated as a failure (not
     skipped) -- Production must never promote silently just because its
-    test-set metrics were never logged (e.g. run_validation failed).
+    test-set metrics were never logged (e.g. run_validation failed). A
+    non-finite value (NaN, +-inf) is rejected explicitly rather than
+    compared directly: `nan < threshold` and `inf < threshold` are both
+    False in Python, so without this check a corrupted metric would
+    silently pass instead of failing the threshold it can't meaningfully
+    satisfy.
     """
     reasons = []
     for name, threshold in thresholds.items():
         if name not in metrics:
             reasons.append(f"missing metric: {name}")
+        elif not math.isfinite(metrics[name]):
+            reasons.append(f"{name}={metrics[name]} is not a finite value")
         elif metrics[name] < threshold:
             reasons.append(f"{name}={metrics[name]} is below threshold {threshold}")
     return reasons
@@ -59,11 +66,16 @@ def is_loss_history_stable(
 ) -> bool:
     """True if `loss_history` (in logged order) shows no NaN/Inf and the
     stddev of consecutive deltas over its last `window` values stays within
-    `max_delta_stddev`. False for an empty history.
+    `max_delta_stddev`. False for an empty history, or one shorter than
+    `window` -- too few logged epochs to judge stability from (a single
+    delta's population stddev is trivially 0 regardless of its size, so a
+    short history must not be treated as automatically stable).
     """
     if not loss_history:
         return False
     if not all(math.isfinite(value) for value in loss_history):
+        return False
+    if len(loss_history) < window:
         return False
 
     recent = loss_history[-window:]
