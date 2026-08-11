@@ -6,8 +6,8 @@ ENV_A_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preproce
 ENV_B_PYTHON := .venv/bin/python
 ENV_B_GENBADGE := .venv/bin/genbadge
 ENV_B_INTERROGATE := .venv/bin/interrogate
-ENV_B_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__
-ENV_B_COV_PATHS := --cov=src/data/preprocessing --cov=src/training
+ENV_B_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/registry/__tests__
+ENV_B_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/registry
 
 .PHONY: test-env-a coverage test-env-b coverage-env-b badges badges-env-b test docstring-coverage
 

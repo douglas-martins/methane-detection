@@ -173,6 +173,10 @@ venv/
 # real record of a run is the MLflow server, not these local files.
 /experiments/
 mlflow.db
+# MLflow's default artifact-store fallback (relative to cwd) when using a
+# sqlite/db tracking backend without an explicit --default-artifact-root --
+# hits easily when running src/registry/promote_model.py manually (TASK-2.3).
+/mlruns/
 ENV/
 env.bak/
 venv.bak/
