@@ -50,9 +50,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import kornia.augmentation as K  # noqa: E402
 import metrics_ext  # noqa: E402
+import mlflow.pytorch  # noqa: E402
 import mlflow_utils  # noqa: E402
 import plot_confusion_matrix as pcm  # noqa: E402
 import settings_overlay  # noqa: E402
+import validation_metrics  # noqa: E402
 from _vendor_starcop_training import ImageLogger, get_model, run_validation  # noqa: E402
 from dvc_dataset_version import get_dataset_version, is_dataset_dirty  # noqa: E402
 from mlflow_image_logger import MultiLoggerImageLogger  # noqa: E402
@@ -242,6 +244,10 @@ def train(hydra_settings: DictConfig) -> None:
         final_checkpoint_path = os.path.join(experiment_path, "final_checkpoint_model.ckpt")
         trainer.save_checkpoint(final_checkpoint_path)
         mlflow.log_artifact(final_checkpoint_path, artifact_path="checkpoint")
+        # Logged via the pytorch flavor (MLmodel metadata), in addition to the
+        # raw checkpoint above, so registered versions (TASK-2.3) are loadable
+        # via mlflow.pyfunc.load_model -- the raw checkpoint alone isn't.
+        mlflow.pytorch.log_model(model, artifact_path="model")
 
         mlflow.log_figure(pcm.plot_confusion_matrix(model._last_confusion_matrix), "confusion_matrix.png")
 
@@ -254,10 +260,15 @@ def train(hydra_settings: DictConfig) -> None:
         # rather than failing an otherwise-successful training+tracking run --
         # the MLflow run this task validates has already fully succeeded by
         # this point (metrics, tags, checkpoint, images all logged above).
+        # Despite the "val data" label (inherited from STARCOP's own naming),
+        # this dataloader is the held-out *test* split (ProcessedDatasetDataModule's
+        # test_dataset_plot, sourced from splits/test.csv -- see TASK-2.2 step
+        # 4b) -- the metrics logged here are what TASK-2.3's Production
+        # promotion criteria checks.
         log.info("Running validation of val data")
         dataloader_val = data_module.test_plot_dataloader(batch_size=1, num_workers=data_module.num_workers)
         try:
-            run_validation(
+            _, test_metrics = run_validation(
                 model,
                 dataloader_val,
                 products_plot=settings.products_plot,
@@ -265,6 +276,7 @@ def train(hydra_settings: DictConfig) -> None:
                 verbose=False,
                 path_save_results=os.path.join(experiment_path, "validation"),
             )
+            mlflow.log_metrics(validation_metrics.extract_scalar_metrics(test_metrics, prefix="test"))
         except Exception:
             log.warning("run_validation (val data) failed -- skipping, see TASK-2.2 note", exc_info=True)
 
