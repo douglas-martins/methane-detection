@@ -35,6 +35,8 @@ DEFAULT_EXPERIMENT_ID = "0"
 
 @dataclass
 class PromotionOutcome:
+    """Result of decide_and_promote: which stage (if any) a run was promoted to."""
+
     run_id: str
     stage: Optional[str]
     model_version: Optional[ModelVersion]
@@ -85,6 +87,7 @@ def decide_and_promote(
 
 
 def main() -> None:
+    """CLI entrypoint: parses args, runs decide_and_promote, and reports the outcome."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     log = logging.getLogger(__name__)
 

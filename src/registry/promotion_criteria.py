@@ -30,6 +30,8 @@ DEFAULT_MAX_LOSS_DELTA_STDDEV = 0.1
 
 @dataclass
 class PromotionDecision:
+    """Outcome of evaluating a run against one stage's promotion criteria."""
+
     promote: bool
     reasons: List[str] = field(default_factory=list)
 
@@ -72,6 +74,7 @@ def is_loss_history_stable(
 
 
 def evaluate_staging(metrics: Dict[str, float], val_loss_history: List[float]) -> PromotionDecision:
+    """Evaluates a run against Staging's thresholds plus loss-stability."""
     reasons = check_thresholds(metrics, STAGING_THRESHOLDS)
     if not is_loss_history_stable(val_loss_history):
         reasons.append(
@@ -81,5 +84,6 @@ def evaluate_staging(metrics: Dict[str, float], val_loss_history: List[float]) -
 
 
 def evaluate_production(metrics: Dict[str, float]) -> PromotionDecision:
+    """Evaluates a run against Production's (held-out test-set) thresholds."""
     reasons = check_thresholds(metrics, PRODUCTION_THRESHOLDS)
     return PromotionDecision(promote=not reasons, reasons=reasons)
