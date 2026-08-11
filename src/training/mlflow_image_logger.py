@@ -17,15 +17,22 @@ from _vendor_starcop_training import ImageLogger
 
 
 class MultiLoggerImageLogger(ImageLogger):
+    """ImageLogger that fans figures out to every logger in Trainer(logger=[...]),
+    instead of assuming a single W&B-shaped experiment (see module docstring)."""
+
     def on_train_epoch_end(self, trainer, model, unused=None) -> None:
+        """Builds and logs the train-split figures for this epoch."""
         figures = self.on_split_epoch_end(self.batch_train, model, "train")
         self._log_to_all(trainer, figures)
 
     def on_validation_epoch_end(self, trainer, model) -> None:
+        """Builds and logs the val-split figures for this epoch."""
         figures = self.on_split_epoch_end(self.batch_test, model, "val")
         self._log_to_all(trainer, figures)
 
     def _log_to_all(self, trainer, figures) -> None:
+        """Logs `figures` to each configured logger, using each one's own API
+        (MLFlowLogger has no batched dict-log call, unlike WandbLogger)."""
         loggers = getattr(trainer, "loggers", None) or [trainer.logger]
         for logger in loggers:
             if logger is None:

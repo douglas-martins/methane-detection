@@ -12,6 +12,7 @@ CLASS_NAMES = ("background", "methane")
 
 
 def plot_confusion_matrix(cm, class_names=CLASS_NAMES) -> plt.Figure:
+    """Renders a 2x2 confusion matrix tensor/array as an annotated heatmap figure."""
     cm_np = cm.detach().cpu().numpy() if hasattr(cm, "detach") else cm
 
     fig, ax = plt.subplots()

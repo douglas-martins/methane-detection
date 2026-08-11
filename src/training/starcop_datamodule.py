@@ -63,7 +63,12 @@ def _load_dataframe(path: Union[str, Path], repo_root: Union[str, Path]) -> pd.D
 
 
 class ProcessedDatasetDataModule(Permian2019DataModule):
+    """Permian2019DataModule sourced from this project's DVC-processed
+    data/processed/<dataset_name>/{patches,splits}/ layout -- see module
+    docstring for what's overridden and why."""
+
     def __init__(self, settings, dataset_name: str, repo_root: Union[str, Path]):
+        """Resolves this dataset's patches/splits directories under `repo_root`."""
         super().__init__(settings)
         self.dataset_name = dataset_name
         self.repo_root = Path(repo_root)
@@ -71,6 +76,9 @@ class ProcessedDatasetDataModule(Permian2019DataModule):
         self.splits_dir = self.repo_root / "data" / "processed" / dataset_name / "splits"
 
     def prepare_data(self):
+        """Loads this project's train/val/test CSVs and builds the
+        train/train_plot/train_non_tiled/val/test/test_plot STARCOPDatasets --
+        see module docstring for the split-to-dataset mapping."""
         log = logging.getLogger(__name__)
 
         if self.weight_loss is not None:

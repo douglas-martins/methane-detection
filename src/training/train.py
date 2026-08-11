@@ -115,6 +115,8 @@ def _build_augmentations(settings: DictConfig, data_keys) -> K.AugmentationSeque
 
 @hydra.main(version_base=None, config_path=_VENDOR_CONFIG_DIR, config_name="config")
 def train(hydra_settings: DictConfig) -> None:
+    """Hydra entrypoint: runs one MLflow-tracked STARCOP training + validation
+    pass -- see module docstring for the composition decisions involved."""
     log = logging.getLogger(__name__)
 
     settings = settings_overlay.merge_overlay(hydra_settings, _OVERLAY_PATH)
