@@ -1,12 +1,12 @@
 ENV_A_PYTHON := vendor/starcop/.venv/bin/python
 ENV_A_GENBADGE := vendor/starcop/.venv/bin/genbadge
-ENV_A_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop
-ENV_A_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preprocessing
+ENV_A_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop src/training/__tests__
+ENV_A_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preprocessing --cov=src/training
 
 ENV_B_PYTHON := .venv/bin/python
 ENV_B_GENBADGE := .venv/bin/genbadge
-ENV_B_TEST_PATHS := src/data/preprocessing/__tests__
-ENV_B_COV_PATHS := --cov=src/data/preprocessing
+ENV_B_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__
+ENV_B_COV_PATHS := --cov=src/data/preprocessing --cov=src/training
 
 .PHONY: test-env-a coverage test-env-b coverage-env-b badges badges-env-b test
 

@@ -162,10 +162,17 @@ activemq-data/
 
 # Environments
 .env
+.env.mlflow
 .envrc
 .venv
 env/
 venv/
+
+# Training run outputs (TASK-2.2) -- Hydra's own run dir (checkpoints,
+# .hydra/ config snapshots, logs) and any local MLflow fallback store; the
+# real record of a run is the MLflow server, not these local files.
+/experiments/
+mlflow.db
 ENV/
 env.bak/
 venv.bak/
