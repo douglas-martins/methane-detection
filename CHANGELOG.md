@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v0.9.1 (2026-08-11)
+
+### Bug Fixes
+
+- **ci**: Reset .npmrc to the trusted base commit before installing commitlint deps
+  ([`8533a9c`](https://github.com/douglas-martins/methane-detection/commit/8533a9c4885d385a3e083294f97c576da3ed8202))
+
+- **ci**: Reset .npmrc to the trusted base commit before installing commitlint deps
+  ([`ecabe50`](https://github.com/douglas-martins/methane-detection/commit/ecabe50e719850545801d9ca25e198b3477612f5))
+
+- **ci**: Retry badge-commit push after rebase to survive job races
+  ([`80c7e73`](https://github.com/douglas-martins/methane-detection/commit/80c7e7319e468e7dc30c63058207fae76d872592))
+
+- **ci**: Retry badge-commit push after rebase to survive job races
+  ([`b54275d`](https://github.com/douglas-martins/methane-detection/commit/b54275db3e2c2029f8276e8f1a10a1c21b6302b6))
+
+- **ci**: Serialize Release and Tests push-to-main runs to stop the git-push race
+  ([`831681f`](https://github.com/douglas-martins/methane-detection/commit/831681f7fbad82ff4a6d7a2645a3e2ecf902e2fb))
+
+- **release**: Skip CI on the semantic-release version-bump commit
+  ([`adeb30c`](https://github.com/douglas-martins/methane-detection/commit/adeb30c793ffb504b97ee6a712f96db0d8755cb6))
+
+
 ## v0.9.0 (2026-08-11)
 
 ### Bug Fixes
