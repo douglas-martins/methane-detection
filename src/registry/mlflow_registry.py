@@ -54,7 +54,9 @@ def register_and_promote(
 ) -> ModelVersion:
     """Registers `run_id`'s `artifact_path` artifact as a new version of
     `model_name` (creating the registered model if it doesn't exist yet) and
-    transitions that version to `stage`.
+    transitions that version to `stage`. Idempotent per run_id: a repeat call
+    for a run already registered under `model_name` reuses that version
+    instead of creating a duplicate (e.g. a retried CI promotion step).
     """
     try:
         client.create_registered_model(model_name)
@@ -62,8 +64,23 @@ def register_and_promote(
         if exc.error_code != "RESOURCE_ALREADY_EXISTS":
             raise
 
-    model_version = client.create_model_version(
-        name=model_name, source=f"runs:/{run_id}/{artifact_path}", run_id=run_id
+    existing = [
+        version
+        for version in client.search_model_versions(f"name='{model_name}'")
+        if version.run_id == run_id
+    ]
+    if len(existing) > 1:
+        raise ValueError(
+            f"run {run_id!r} matches {len(existing)} existing versions of "
+            f"{model_name!r} (versions {[v.version for v in existing]}); expected at most 1"
+        )
+
+    model_version = (
+        existing[0]
+        if existing
+        else client.create_model_version(
+            name=model_name, source=f"runs:/{run_id}/{artifact_path}", run_id=run_id
+        )
     )
     return client.transition_model_version_stage(
         name=model_name, version=model_version.version, stage=stage

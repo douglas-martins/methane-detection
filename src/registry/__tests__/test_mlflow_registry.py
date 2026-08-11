@@ -105,3 +105,19 @@ class TestRegisterAndPromote:
 
         assert int(second.version) == int(first.version) + 1
         assert second.current_stage == "Production"
+
+    def test_calling_it_twice_for_the_same_run_reuses_the_version_instead_of_duplicating(
+        self, client, tmp_path
+    ):
+        run = self._run_with_model_artifact(client, tmp_path)
+
+        first = mlflow_registry.register_and_promote(
+            client, run_id=run.info.run_id, model_name="methane-cnn-starcop", stage="Staging"
+        )
+        second = mlflow_registry.register_and_promote(
+            client, run_id=run.info.run_id, model_name="methane-cnn-starcop", stage="Production"
+        )
+
+        assert second.version == first.version
+        assert second.current_stage == "Production"
+        assert len(client.search_model_versions("name='methane-cnn-starcop'")) == 1
