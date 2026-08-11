@@ -1,0 +1,18 @@
+# MLflow client dependencies for Environment A (vendor/starcop/.venv, Python 3.10).
+# Layered on top of vendor/starcop/requirements.txt via:
+#   uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/env-a-mlflow.txt
+# vendor/starcop/requirements.txt is submodule-owned and must never be edited directly.
+# See mlops-methane-detection-plan.md TASK-2.2.
+mlflow
+
+# Required client-side for any MLflow client writing artifacts to the B2-backed
+# (S3-compatible) artifact store on the tracking server — same reason boto3 was
+# added to Environment B's pyproject.toml in TASK-2.1.
+boto3
+
+# Pin: mlflow-skinny requires protobuf>=3.12,<8; wandb==0.13.3 (pinned in
+# vendor/starcop/requirements.txt) ships protobuf-generated files that only
+# load under protobuf<4 (unpinned resolution pulls protobuf 6.x, which breaks
+# wandb's old-style _pb2.py files at import time — "Descriptors cannot be
+# created directly"). Pin inside the shared range so both coexist.
+protobuf<4
