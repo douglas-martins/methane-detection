@@ -4,9 +4,12 @@ on:
   pull_request:
     paths: &test-paths
       - "src/data/**"
+      - "src/training/**"
+      - "configs/training/**"
       - "vendor/starcop/**"
       - "tests/vendor_starcop/**"
       - "requirements/env-a-dev.txt"
+      - "requirements/env-a-mlflow.txt"
       - "conftest.py"
       - "pyproject.toml"
       - "Makefile"
@@ -58,6 +61,16 @@ jobs:
             -r vendor/starcop/requirements.txt \
             -r requirements/env-a-dev.txt
           uv pip install --python vendor/starcop/.venv/bin/python -e vendor/starcop
+
+      - name: Install MLflow client dependencies
+        # src/training/'s composition-seam modules (_vendor_starcop_training.py)
+        # are the first thing in this repo's Environment A test suite to import
+        # starcop.data.data_logger/datamodule, which pull in pytorch_lightning
+        # and wandb -- requirements/env-a-mlflow.txt pins setuptools/numpy/protobuf
+        # to versions those 2022-era packages actually still import under.
+        run: |
+          uv pip install --python vendor/starcop/.venv/bin/python \
+            -r requirements/env-a-mlflow.txt
 
       - name: Run tests with coverage
         run: make coverage
