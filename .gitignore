@@ -176,7 +176,9 @@ mlflow.db
 # MLflow's default artifact-store fallback (relative to cwd) when using a
 # sqlite/db tracking backend without an explicit --default-artifact-root --
 # hits easily when running src/registry/promote_model.py manually (TASK-2.3).
-/mlruns/
+# Unanchored so it's caught regardless of which directory the fallback
+# ends up in (its location depends on invocation cwd, not repo root).
+mlruns/
 ENV/
 env.bak/
 venv.bak/
