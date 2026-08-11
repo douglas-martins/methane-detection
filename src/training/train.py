@@ -23,7 +23,8 @@ Run with (Environment A):
         +machine=desktop +dataset_name=starcop_mini
 
 Requires MLFLOW_TRACKING_URI / MLFLOW_TRACKING_USERNAME / MLFLOW_TRACKING_PASSWORD
-(see docs/environment_notes.md) -- fails fast at the first MLflow API call if unset.
+(see docs/environment_notes.md) -- validated up front, before any MLflow call,
+so a missing var raises instead of silently training against a local store.
 """
 
 import logging
@@ -134,6 +135,8 @@ def train(hydra_settings: DictConfig) -> None:
     # MLflow run + dual logger setup
     dataset_version = get_dataset_version(settings.dataset_name, _DVC_LOCK_PATH)
     dataset_dirty = is_dataset_dirty(settings.dataset_name, _REPO_ROOT)
+
+    mlflow_utils.require_mlflow_tracking_env()
 
     # `with` (not manual start_run/end_run) so a crash anywhere below marks
     # the run FAILED on the server instead of leaving it stuck RUNNING forever.
