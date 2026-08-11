@@ -187,6 +187,7 @@ def train(hydra_settings: DictConfig) -> None:
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_path,
             save_top_k=True,
+            save_last=True,
             verbose=True,
             monitor=metric_monitor,
             mode="min",
@@ -222,10 +223,18 @@ def train(hydra_settings: DictConfig) -> None:
             val_check_interval=settings.training.val_check_interval,
             log_every_n_steps=settings.training.train_log_every_n_steps,
         )
+        # pytorch_lightning 1.6.4's ckpt_path only accepts a checkpoint *file*
+        # (or the literal "best") -- there's no "last" token in this version,
+        # unlike newer Lightning releases -- so resuming must point at the
+        # last.ckpt file save_last=True (above) writes into checkpoint_path.
         trainer.fit(
             model,
             data_module,
-            ckpt_path=checkpoint_path if settings.resume_from_checkpoint else None,
+            ckpt_path=(
+                os.path.join(checkpoint_path, "last.ckpt")
+                if settings.resume_from_checkpoint
+                else None
+            ),
         )
 
         final_checkpoint_path = os.path.join(experiment_path, "final_checkpoint_model.ckpt")
