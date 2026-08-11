@@ -23,8 +23,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: tests-${{ github.ref_name }}
-  cancel-in-progress: true
+  # Push-to-main runs share a group with the Release workflow, which also
+  # pushes directly to main (the version-bump commit) -- serializing them
+  # avoids "Upstream branch has changed" when both try to push at once.
+  # cancel-in-progress must stay false for that shared group so Release
+  # doesn't get cancelled out from under itself; PR runs keep their own
+  # per-branch group with cancellation so stale pushes still get superseded.
+  group: ${{ github.event_name == 'push' && 'main-push-serial' || format('tests-{0}', github.ref_name) }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   environment-a-tests:
