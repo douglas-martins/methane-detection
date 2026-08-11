@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v0.9.0 (2026-08-11)
+
+### Bug Fixes
+
+- **registry**: Reject non-finite metrics and under-length loss histories
+  ([`98a0184`](https://github.com/douglas-martins/methane-detection/commit/98a01844bccaa68bbc27d1f65a3eb6b2476fc991))
+
+- **registry**: Reuse existing model version on repeat registration
+  ([`b42e471`](https://github.com/douglas-martins/methane-detection/commit/b42e471d15abab8737b44562d2c4fda6804ef2f5))
+
+### Features
+
+- **registry**: Add MLflow model registry promotion workflow
+  ([`7303ac0`](https://github.com/douglas-martins/methane-detection/commit/7303ac054532d1a2552dfdfe347b8ba43f20784c))
+
+- **training**: Log held-out test-set metrics and pytorch model artifact to MLflow
+  ([`de40934`](https://github.com/douglas-martins/methane-detection/commit/de409341fb9b3053679ce48bc03f0cbe585b8a52))
+
+
 ## v0.8.0 (2026-08-11)
 
 ### Bug Fixes
