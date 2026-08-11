@@ -49,6 +49,18 @@ jobs:
             rm -f ./package.json.base ./package-lock.json.base
             echo "::warning::package.json/package-lock.json not found at base commit $BASE_SHA -- falling back to the PR-provided manifests (expected only for the introducing PR)."
           fi
+
+          # .npmrc isn't a manifest npm ci needs, but it's still config npm/npx
+          # read from the working directory for every command in this job,
+          # including the commitlint step below -- e.g. a `node-options` entry
+          # would inject flags into that later npx invocation too. Reset it to
+          # the trusted base the same way, so a PR can't smuggle either in.
+          if git show "$BASE_SHA:.npmrc" > ./.npmrc.base 2>/dev/null; then
+            mv ./.npmrc.base .npmrc
+          else
+            rm -f ./.npmrc.base .npmrc
+          fi
+
           npm ci --ignore-scripts
 
       - name: Print versions
