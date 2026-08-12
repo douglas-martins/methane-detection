@@ -23,6 +23,22 @@ mlflow<3.7
 # added to Environment B's pyproject.toml in TASK-2.1.
 boto3
 
+# NOTE on pytorch-lightning (MPS, TASK-3.2): vendor/starcop/requirements.txt
+# pins pytorch-lightning==1.6.4 exactly, which predates Lightning's own
+# MPSAccelerator (added in 1.7.0) -- Trainer(accelerator="mps") silently
+# resolves to CPUAccelerator instead of raising, so a run completes FINISHED
+# with real metrics while never touching the GPU. Because vendor's pin is
+# exact (==), it can't be overridden from a second -r file in the same
+# resolve (uv/pip combine constraints across -r files rather than letting
+# the later file win) -- so this is NOT listed here. Instead, run this as a
+# separate command *after* the install above, on Environment A / macOS
+# only, before using accelerator=mps:
+#   uv pip install --python vendor/starcop/.venv/bin/python \
+#     "pytorch-lightning>=1.7.0,<2.0" "torch==1.13.1"
+# 1.9.5 is the highest 1.x release compatible with the pinned torch==1.13.1
+# (an unconstrained resolve wants to bump torch itself -- rejected; see
+# mlops-methane-detection-plan.md TASK-3.2 for the tested upgrade path).
+
 # Pin: mlflow-skinny requires protobuf>=3.12,<8; wandb==0.13.3 (pinned in
 # vendor/starcop/requirements.txt) ships protobuf-generated files that only
 # load under protobuf<4 (unpinned resolution pulls protobuf 6.x, which breaks
