@@ -3,7 +3,20 @@
 #   uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/env-a-mlflow.txt
 # vendor/starcop/requirements.txt is submodule-owned and must never be edited directly.
 # See mlops-methane-detection-plan.md TASK-2.2.
-mlflow
+#
+# Pin: mlflow>=3.10's `mlflow.pytorch.save_model()` does
+# `from torch.export import Dim as ExportDim` unconditionally at the top of
+# the function body (mlflow/pytorch/__init__.py) — not gated behind the
+# opt-in `export_model` flag, so it breaks *every* call to
+# mlflow.pytorch.log_model(), not just export-format ones. `torch.export`
+# doesn't exist before torch 2.1; Environment A pins torch==1.13.1
+# (vendor/starcop/requirements.txt), so any unpinned resolve landing on
+# mlflow>=3.10 makes every training run fail at the model-logging step with
+# `ModuleNotFoundError: No module named 'torch.export'` — found live while
+# validating TASK-3.2 (an MPS run reached FINISHED-quality training/metrics
+# but the server-side run showed FAILED because of this). Verified 3.7.0 and
+# below have no torch.export reference in that file; 3.10.0+ does.
+mlflow<3.7
 
 # Required client-side for any MLflow client writing artifacts to the B2-backed
 # (S3-compatible) artifact store on the tracking server — same reason boto3 was
