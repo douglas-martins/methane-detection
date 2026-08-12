@@ -48,10 +48,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import accelerator_check  # noqa: E402
 import kornia.augmentation as K  # noqa: E402
 import metrics_ext  # noqa: E402
 import mlflow.pytorch  # noqa: E402
 import mlflow_utils  # noqa: E402
+import normalizer_dtype_fix  # noqa: E402
 import plot_confusion_matrix as pcm  # noqa: E402
 import settings_overlay  # noqa: E402
 import validation_metrics  # noqa: E402
@@ -185,6 +187,8 @@ def train(hydra_settings: DictConfig) -> None:
         settings.model.train = True
         model = get_model(settings, settings.experiment_name)
         model.val_epoch_end = types.MethodType(_patched_val_epoch_end, model)
+        # This is a workaround for a bug in STARCOP's ModelModule that causes on MPS backend
+        normalizer_dtype_fix.cast_normalizer_params_to_float32(model.normalizer)
 
         # Checkpointing
         metric_monitor = "val_loss"
@@ -227,6 +231,17 @@ def train(hydra_settings: DictConfig) -> None:
             val_check_interval=settings.training.val_check_interval,
             log_every_n_steps=settings.training.train_log_every_n_steps,
         )
+
+        resolved_device = trainer.strategy.root_device
+        log.info(
+            "Resolved accelerator=%s device=%s (requested accelerator=%s)",
+            type(trainer.accelerator).__name__,
+            resolved_device,
+            settings.training.accelerator,
+        )
+        accelerator_check.assert_resolved_accelerator(settings.training.accelerator, resolved_device.type)
+        mlflow.set_tag("resolved_device", str(resolved_device))
+
         # pytorch_lightning 1.6.4's ckpt_path only accepts a checkpoint *file*
         # (or the literal "best") -- there's no "last" token in this version,
         # unlike newer Lightning releases -- so resuming must point at the

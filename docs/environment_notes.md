@@ -65,3 +65,110 @@ is actually logged):
 
 Same B2 Application Key already provisioned for the MLflow server in TASK-2.1 —
 no new key needs creating, just exporting client-side under boto3's expected names.
+
+## Environment A — Apple MPS training (TASK-3.2)
+
+Real 5-epoch `starcop_mini` training on Apple Silicon (M4 Pro), verified end
+to end. Three real, unrelated blockers were found and fixed getting there —
+each is a genuine gap in a pinned dependency, not something specific to this
+project's own code:
+
+### 1. pytorch-lightning==1.6.4 silently falls back to CPU on `accelerator=mps`
+
+Lightning's `MPSAccelerator` was only added in 1.7.0; 1.6.4's accelerator
+registry has no `mps.py` at all. `Trainer(accelerator="mps")` under 1.6.4
+does **not** raise — it silently resolves to `CPUAccelerator` (`GPU
+available: False, used: False` printed, no exception), so a run would
+complete `FINISHED` with real metrics while never touching the GPU.
+
+Fix: upgrade to `pytorch-lightning==1.9.5` (highest 1.x compatible with the
+pinned `torch==1.13.1` — an unconstrained resolve wants to bump torch too).
+Can't be pinned inside `requirements/env-a-mlflow.txt` alongside vendor's
+own exact `==1.6.4` pin (uv/pip combine constraints across `-r` files rather
+than letting a later file win), so run as a **separate command** after the
+normal install, only needed for `accelerator=mps` runs:
+
+```bash
+uv pip install --python vendor/starcop/.venv/bin/python \
+  "pytorch-lightning>=1.7.0,<2.0" "torch==1.13.1"
+```
+
+`src/training/train.py` also guards against this class of bug going
+forward: after constructing the `Trainer`, it asserts the resolved
+`trainer.strategy.root_device` is actually `mps` when `accelerator=mps` was
+requested (`src/training/accelerator_check.py`), raising instead of
+trusting the request matches what Lightning resolved, and tags every run
+with `resolved_device` so it's visible in the MLflow UI without digging
+through logs.
+
+### 2. STARCOP's `DataNormalizer` builds int64 Parameters that crash MPS's `clamp`
+
+`vendor/starcop/starcop/data/normalizer_module.py` builds
+`offsets_input`/`factors_input`/`clip_min_input`/`clip_max_input` via
+`torch.from_numpy(np.array(python_ints_or_floats))`. When every value for
+the active `input_products` happens to be a plain int (e.g. `clip: (0, 2)`
+for the AVIRIS bands + mag1c used by `starcop_mini`), numpy infers `int64`.
+`torch.clamp` on CPU implicitly promotes an int64 bound against a float32
+input; **MPS's clamp kernel cannot broadcast a dtype-mismatched pair and
+aborts the whole process** (`LLVM ERROR: Failed to infer result type(s)`,
+not a catchable Python exception — the process dies with SIGABRT).
+
+Fix (composition, no vendor edit): `src/training/normalizer_dtype_fix.py`
+casts those Parameters to float32 in place after model construction. This
+is numerically a no-op (same values, wider dtype — `int64` bounds already
+implicitly promote to float in the clamp computation itself) and safe on
+every backend, so it runs unconditionally rather than gated on accelerator.
+
+### 3. `torch.unique` has no MPS kernel in torch 1.13.1
+
+torchmetrics 0.10.0's `BinaryConfusionMatrix.update()` calls
+`torch.unique(target)` for validation — `NotImplementedError: The operator
+'aten::_unique2' is not currently implemented for the MPS device`. PyTorch's
+own error message names the fix: set
+`PYTORCH_ENABLE_MPS_FALLBACK=1`, which makes unimplemented MPS ops silently
+fall back to CPU per-op (slower for that op only, everything else still
+runs on MPS). Required for every `accelerator=mps` run:
+
+```bash
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+```
+
+### 4. (Unrelated to MPS) unpinned `mlflow` breaks `mlflow.pytorch.log_model` under torch 1.13.1
+
+Found while validating the MPS run above, but affects **every** accelerator
+equally — it's an environment drift bug, not an MPS-specific one.
+`requirements/env-a-mlflow.txt` pinned `mlflow` with no version bound at
+all; a fresh resolve landed on `mlflow==3.15.1`, whose
+`mlflow.pytorch.save_model()` does `from torch.export import Dim as
+ExportDim` **unconditionally at the top of the function body** — not gated
+behind the opt-in `export_model` flag, so it breaks every call to
+`mlflow.pytorch.log_model()`, not just export-format ones. `torch.export`
+doesn't exist before torch 2.1; Environment A pins `torch==1.13.1`. Any run
+(CPU or MPS) that reached the model-logging step would fail with
+`ModuleNotFoundError: No module named 'torch.export'`, marking the MLflow
+run `FAILED` even though training itself completed successfully.
+
+Fix: `requirements/env-a-mlflow.txt` now pins `mlflow<3.7` (verified 3.7.0
+and below have no `torch.export` reference in `mlflow/pytorch/__init__.py`;
+3.10.0+ does — resolved to `mlflow==3.6.0`).
+
+### Verified (2026-08-12)
+
+5-epoch `starcop_mini` run, `accelerator=mps devices=1`, run
+`71e388fabefd40e892483f552a97efbb`: status `FINISHED`, `resolved_device`
+tag = `mps:0` (not silently CPU — see blocker 1), checkpoint +
+confusion-matrix PNG + prediction images all logged, real metrics
+(`val_loss=0.0494`, `val_f1score_background=0.998`,
+`val_iou=0.118`). Same known limitation as TASK-2.2's CPU run: the
+post-training `run_validation` diagnostic calls warn-and-skip on
+`starcop_mini`'s small/skewed test split (documented there already, not a
+new issue).
+
+**Benchmark vs TASK-2.2's CPU baseline** (same `starcop_mini` config, same
+5 epochs, same M4 Pro hardware, run `ef9b1c7172e1447e8db0ff765032faf9`):
+
+| Metric | CPU (`accelerator=cpu`) | MPS (`accelerator=mps devices=1`) |
+| --- | --- | --- |
+| Total wall-clock (5 epochs) | 519.8s (8.66 min) | 258.4s (4.31 min) |
+| Per-epoch | ~104.0s | ~51.7s |
+| Speedup | — | **~2.0x** |
