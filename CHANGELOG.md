@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.10.0 (2026-08-12)
+
+### Bug Fixes
+
+- **env-a**: Pin mlflow<3.7 to avoid torch.export ModuleNotFoundError under torch 1.13.1
+  ([`e37daba`](https://github.com/douglas-martins/methane-detection/commit/e37daba5aed1ad060c8458a5f31fa814f13acf2c))
+
+### Features
+
+- **training**: Validate and enable MPS acceleration on Apple Silicon (M4 Pro)
+  ([`75b672a`](https://github.com/douglas-martins/methane-detection/commit/75b672a9f745c8fd90af1ecbd7b033318b07f5c0))
+
+
 ## v0.9.1 (2026-08-11)
 
 ### Bug Fixes
