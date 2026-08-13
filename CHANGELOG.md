@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v0.12.0 (2026-08-13)
+
+### Bug Fixes
+
+- **registry**: Pin checkpoint digest and download revision in HF baseline import
+  ([`0405907`](https://github.com/douglas-martins/methane-detection/commit/0405907bf98c265f5e205f5ee0ede6fc2b9f84a4))
+
+- **registry**: Pin HuggingFace revision to a reviewed commit instead of a live lookup
+  ([`5bfd9f9`](https://github.com/douglas-martins/methane-detection/commit/5bfd9f9bfc8b5adfff7d5b08da80a53660dc4363))
+
+### Features
+
+- **registry**: Add HuggingFace STARCOP baseline import into MLflow
+  ([`8ffb764`](https://github.com/douglas-martins/methane-detection/commit/8ffb764ce30130211a08e1d55ec28d91fcbaf6c5))
+
+
 ## v0.11.0 (2026-08-13)
 
 ### Features
