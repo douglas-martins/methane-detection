@@ -31,10 +31,10 @@ OUTPUT_DIR = PROJECT_ROOT / "docs" / "baseline_validation"
 
 sys.path.insert(0, str(STARCOP_ROOT))
 
-from starcop.torch_utils import to_device  # noqa: E402
 import starcop.plot as starcoplot  # noqa: E402
 from starcop.data.datamodule import Permian2019DataModule  # noqa: E402
 from starcop.models.model_module import ModelModule  # noqa: E402
+from starcop.torch_utils import to_device  # noqa: E402
 
 device = torch.device("cpu")
 config_general = omegaconf.OmegaConf.load(STARCOP_ROOT / "scripts" / "configs" / "config.yaml")
@@ -42,7 +42,8 @@ root_folder = str(DATA_ROOT)
 
 
 def load_model_with_datamodule(model_path: Path, config_path: Path):
-    """Load a pretrained STARCOP checkpoint and its matching data module against the local mini dataset."""
+    """Load a pretrained STARCOP checkpoint and its matching data module against the local
+    mini dataset."""
     config_model = omegaconf.OmegaConf.load(config_path)
     config = omegaconf.OmegaConf.merge(config_general, config_model)
 
@@ -69,7 +70,8 @@ def load_model_with_datamodule(model_path: Path, config_path: Path):
 
 
 def validate_model(name: str, model_dir: Path) -> dict:
-    """Run one pretrained model over the mini test split, saving a sample mask PNG and returning pixel-level metrics."""
+    """Run one pretrained model over the mini test split, saving a sample mask PNG and
+    returning pixel-level metrics."""
     print(f"\n=== {name} ===")
     model_path = model_dir / "final_checkpoint_model.ckpt"
     config_path = model_dir / "config.yaml"

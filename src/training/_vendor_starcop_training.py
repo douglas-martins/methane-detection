@@ -21,8 +21,8 @@ if str(_VENDOR_STARCOP) not in sys.path:
 from starcop import metrics as starcop_metrics  # noqa: E402
 from starcop.data import feature_extration  # noqa: E402
 from starcop.data.data_logger import ImageLogger  # noqa: E402
-from starcop.data.dataset import STARCOPDataset  # noqa: E402
 from starcop.data.datamodule import Permian2019DataModule, add_sample_weight  # noqa: E402
+from starcop.data.dataset import STARCOPDataset  # noqa: E402
 from starcop.dataset_setup import get_dataset  # noqa: E402
 from starcop.model_setup import get_model  # noqa: E402
 from starcop.validation import run_validation  # noqa: E402

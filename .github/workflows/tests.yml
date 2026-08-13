@@ -81,6 +81,25 @@ jobs:
       - name: Run tests with coverage
         run: make coverage
 
+      - name: Verify CODECOV_TOKEN is set for push uploads
+        if: github.event_name == 'push'
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -z "$CODECOV_TOKEN" ]; then
+            echo "::error::CODECOV_TOKEN secret is required for coverage uploads on push to main." >&2
+            exit 1
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          flags: env-a
+          name: env-a-coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
+
       - name: Generate badges
         run: make badges
 
@@ -161,6 +180,25 @@ jobs:
 
       - name: Run tests with coverage
         run: make coverage-env-b
+
+      - name: Verify CODECOV_TOKEN is set for push uploads
+        if: github.event_name == 'push'
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -z "$CODECOV_TOKEN" ]; then
+            echo "::error::CODECOV_TOKEN secret is required for coverage uploads on push to main." >&2
+            exit 1
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage-env-b.xml
+          flags: env-b
+          name: env-b-coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
 
       - name: Generate badges
         run: make badges-env-b

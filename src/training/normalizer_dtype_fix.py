@@ -37,4 +37,8 @@ def cast_normalizer_params_to_float32(normalizer: torch.nn.Module) -> None:
         param = getattr(normalizer, name, None)
         if param is None or param.dtype == torch.float32:
             continue
-        setattr(normalizer, name, torch.nn.Parameter(param.data.float(), requires_grad=param.requires_grad))
+        setattr(
+            normalizer,
+            name,
+            torch.nn.Parameter(param.data.float(), requires_grad=param.requires_grad),
+        )

@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
-
 import stats
 
 
@@ -75,7 +74,9 @@ def test_aggregates_across_multiple_scenes(tmp_path, tiny_geotiff_factory):
     assert result["bandA"]["max"] == 10.0
 
 
-def test_run_defaults_bands_to_input_products_when_stats_bands_unset(tmp_path, tiny_geotiff_factory):
+def test_run_defaults_bands_to_input_products_when_stats_bands_unset(
+    tmp_path, tiny_geotiff_factory
+):
     """End-to-end: with cfg.stats.bands=None, run() falls back to dataset_cfg.input_products."""
     processed_root = tmp_path / "processed"
     patches_root = processed_root / "patches"
@@ -177,7 +178,9 @@ def test_class_distribution_aggregates_across_scenes(tmp_path, tiny_geotiff_fact
     assert result["labelbinary"]["total_pixels"] == 8
 
 
-def test_class_distribution_imbalance_ratio_is_none_when_no_positives(tmp_path, tiny_geotiff_factory):
+def test_class_distribution_imbalance_ratio_is_none_when_no_positives(
+    tmp_path, tiny_geotiff_factory
+):
     """A band with zero positive pixels reports imbalance_ratio=None instead of dividing by zero."""
     scene = tmp_path / "scene1"
     tiny_geotiff_factory(scene / "labelbinary.tif", np.zeros((2, 2), dtype="float32"))
@@ -189,7 +192,9 @@ def test_class_distribution_imbalance_ratio_is_none_when_no_positives(tmp_path, 
     assert result["labelbinary"]["imbalance_ratio"] is None
 
 
-def test_compute_band_stats_matches_two_pass_result_for_larger_dataset(tmp_path, tiny_geotiff_factory):
+def test_compute_band_stats_matches_two_pass_result_for_larger_dataset(
+    tmp_path, tiny_geotiff_factory
+):
     """Pinning test for the incremental (running-sum) rewrite of
     compute_band_stats(): at starcop_raw's scale, materializing every
     patch's every band array before reducing costs ~35GB of peak RAM (see
@@ -216,3 +221,42 @@ def test_compute_band_stats_matches_two_pass_result_for_larger_dataset(tmp_path,
     assert result["bandA"]["std"] == pytest.approx(float(np.std(all_values)), rel=1e-6)
     assert result["bandA"]["min"] == pytest.approx(float(np.min(all_values)))
     assert result["bandA"]["max"] == pytest.approx(float(np.max(all_values)))
+
+
+def test_run_produces_byte_identical_stats_across_two_runs(
+    tmp_path, tiny_geotiff_factory, assert_trees_identical
+):
+    """DVC reproducibility: run() twice against the same patches (into separate
+    output roots) must produce byte-identical stats/ trees."""
+    scene = tmp_path / "raw_scene"
+    tiny_geotiff_factory(scene / "bandA.tif", np.full((4, 4), 1.0, dtype="float32"))
+    label_array = np.zeros((4, 4), dtype="float32")
+    label_array[0, 0] = 1.0
+    tiny_geotiff_factory(scene / "labelbinary.tif", label_array)
+
+    def _cfg(processed_root):
+        patches_root = processed_root / "patches"
+        patches_root.mkdir(parents=True)
+        pd.DataFrame(
+            {
+                "folder": [str(scene)],
+                "window_col_off": [0],
+                "window_row_off": [0],
+                "window_width": [4],
+                "window_height": [4],
+                "has_plume": [False],
+            }
+        ).to_csv(patches_root / "train_tiled_4_4.csv", index=False)
+        return SimpleNamespace(
+            paths=SimpleNamespace(processed_root=str(processed_root)),
+            patch=SimpleNamespace(size=[4, 4]),
+            dataset_cfg=SimpleNamespace(input_products=["bandA"], output_products=["labelbinary"]),
+            stats=SimpleNamespace(bands=None),
+        )
+
+    processed_root_a = tmp_path / "processed_a"
+    processed_root_b = tmp_path / "processed_b"
+    stats.run(_cfg(processed_root_a))
+    stats.run(_cfg(processed_root_b))
+
+    assert_trees_identical(processed_root_a / "stats", processed_root_b / "stats")

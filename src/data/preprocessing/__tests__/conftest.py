@@ -6,6 +6,7 @@ default import mode only adds the test file's own directory to sys.path, not
 its parent. Mirrors src/data/download/__tests__/conftest.py.
 """
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -43,3 +44,28 @@ def tiny_geotiff_factory():
         return path
 
     return _make
+
+
+def _hash_tree(root: Path) -> dict:
+    """Map every file under `root` (relative path -> sha256) for a full content comparison."""
+    return {
+        str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+@pytest.fixture
+def assert_trees_identical():
+    """Assert two directory trees hold byte-identical files at the same relative paths.
+
+    Used by each stage's TestReproducibility-style tests to prove `run()`
+    called twice against the same input produces the same output -- a
+    content comparison (sha256), not filecmp's default shallow
+    size/mtime check.
+    """
+
+    def _assert(dir_a: Path, dir_b: Path) -> None:
+        assert _hash_tree(dir_a) == _hash_tree(dir_b)
+
+    return _assert

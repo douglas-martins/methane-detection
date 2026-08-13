@@ -23,7 +23,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import rasterio
-
 from _vendor_starcop import BAND_NORMALIZATION
 
 
@@ -55,7 +54,9 @@ def find_scene_folder(raw_root: Path, scene_id: str) -> Path:
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
-        raise ValueError(f"Scene '{scene_id}' found in multiple locations under {raw_root}: {matches}")
+        raise ValueError(
+            f"Scene '{scene_id}' found in multiple locations under {raw_root}: {matches}"
+        )
     raise FileNotFoundError(f"Scene '{scene_id}' not found under {raw_root}")
 
 
@@ -105,13 +106,17 @@ def run(cfg) -> None:
     range_check = {}
     missing = []
     for scene_id in scene_ids:
-        _validate_scene_id(scene_id)  # guards selected_root/scene_id below, independent of find_scene_folder's own check
+        _validate_scene_id(
+            scene_id
+        )  # guards selected_root/scene_id below, independent of find_scene_folder's own check
         try:
             scene_folder = find_scene_folder(raw_root, scene_id)
         except FileNotFoundError:
             missing.append(scene_id)
             continue
-        flagged = select_scene(scene_folder, selected_root / scene_id, input_products, output_products)
+        flagged = select_scene(
+            scene_folder, selected_root / scene_id, input_products, output_products
+        )
         if flagged:
             range_check[scene_id] = flagged
 

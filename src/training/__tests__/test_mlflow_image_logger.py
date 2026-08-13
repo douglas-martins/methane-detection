@@ -11,7 +11,6 @@ checks -- tests assert on recorded state.
 """
 
 import pytest
-
 from _vendor_starcop_training import ImageLogger
 from mlflow_image_logger import MultiLoggerImageLogger
 
@@ -66,9 +65,7 @@ def _image_logger_with_canned_figures(cls, figures):
 
 
 class TestUnmodifiedImageLoggerBreaksUnderMultiLogger:
-    def test_on_train_epoch_end_raises_with_unpatched_image_logger_when_trainer_has_multiple_loggers(
-        self,
-    ):
+    def test_raises_with_unpatched_image_logger_when_trainer_has_multiple_loggers(self):
         il = _image_logger_with_canned_figures(ImageLogger, {"train_batch": "fake-fig"})
         trainer = FakeTrainer(loggers=[FakeWandbLogger(), FakeMLFlowLogger()])
 
@@ -120,4 +117,7 @@ class TestMultiLoggerImageLogger:
         ml.on_train_epoch_end(trainer, model=None)
 
         artifact_files = {f for _, _, f in mlflow_logger.experiment.logged_figures}
-        assert artifact_files == {"images/train_batch_epoch_0.png", "images/extra_batch_epoch_0.png"}
+        assert artifact_files == {
+            "images/train_batch_epoch_0.png",
+            "images/extra_batch_epoch_0.png",
+        }

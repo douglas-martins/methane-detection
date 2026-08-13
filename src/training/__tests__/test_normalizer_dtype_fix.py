@@ -15,9 +15,8 @@ runtime attribute override, not an edit to vendor/starcop/ (composition-only
 rule, decision 0 in TASK-2.2).
 """
 
-import torch
-
 import normalizer_dtype_fix
+import torch
 
 
 class _FakeNormalizer(torch.nn.Module):

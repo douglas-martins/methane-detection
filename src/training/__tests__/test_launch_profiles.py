@@ -6,9 +6,8 @@ thin, untested glue instead of duplicating this decision logic in shell --
 see mlops-methane-detection-plan.md TASK-3.3a.
 """
 
-import pytest
-
 import launch_profiles
+import pytest
 
 
 class TestBuildLaunchArgs:

@@ -1,0 +1,23 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto      # compare against the base commit rather than a fixed %
+        threshold: 1%      # tolerate small fluctuation instead of blocking every PR
+    patch:
+      default:
+        target: auto
+comment:
+  layout: "reach, diff, flags, files"
+  require_changes: false
+flags:
+  env-a:
+    paths:
+      - src/data/download/
+      - vendor/starcop/scripts/preprocessing/
+      - src/training/
+  env-b:
+    paths:
+      - src/data/preprocessing/
+      - src/training/
+      - src/registry/

@@ -36,7 +36,6 @@ from pathlib import Path
 import hydra
 import matplotlib
 import mlflow
-from hydra.utils import get_original_cwd
 from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
@@ -57,7 +56,7 @@ import normalizer_dtype_fix  # noqa: E402
 import plot_confusion_matrix as pcm  # noqa: E402
 import settings_overlay  # noqa: E402
 import validation_metrics  # noqa: E402
-from _vendor_starcop_training import ImageLogger, get_model, run_validation  # noqa: E402
+from _vendor_starcop_training import get_model, run_validation  # noqa: E402
 from dvc_dataset_version import get_dataset_version, is_dataset_dirty  # noqa: E402
 from mlflow_image_logger import MultiLoggerImageLogger  # noqa: E402
 from starcop_datamodule import ProcessedDatasetDataModule  # noqa: E402
@@ -208,7 +207,9 @@ def train(hydra_settings: DictConfig) -> None:
             mode="min",
         )
 
-        batch_train = next(iter(data_module.train_plot_dataloader(batch_size=settings.plot_samples)))
+        batch_train = next(
+            iter(data_module.train_plot_dataloader(batch_size=settings.plot_samples))
+        )
         batch_test = next(iter(data_module.test_plot_dataloader(batch_size=settings.plot_samples)))
         image_logger = MultiLoggerImageLogger(
             batch_train=batch_train,
@@ -239,7 +240,9 @@ def train(hydra_settings: DictConfig) -> None:
             resolved_device,
             settings.training.accelerator,
         )
-        accelerator_check.assert_resolved_accelerator(settings.training.accelerator, resolved_device.type)
+        accelerator_check.assert_resolved_accelerator(
+            settings.training.accelerator, resolved_device.type
+        )
         mlflow.set_tag("resolved_device", str(resolved_device))
 
         # pytorch_lightning 1.6.4's ckpt_path only accepts a checkpoint *file*
@@ -264,7 +267,9 @@ def train(hydra_settings: DictConfig) -> None:
         # via mlflow.pyfunc.load_model -- the raw checkpoint alone isn't.
         mlflow.pytorch.log_model(model, artifact_path="model")
 
-        mlflow.log_figure(pcm.plot_confusion_matrix(model._last_confusion_matrix), "confusion_matrix.png")
+        mlflow.log_figure(
+            pcm.plot_confusion_matrix(model._last_confusion_matrix), "confusion_matrix.png"
+        )
 
         # run_validation is STARCOP's own unmodified diagnostic/reporting pass
         # (difficulty-stratified metrics + per-sample plots) -- it unconditionally
@@ -281,7 +286,9 @@ def train(hydra_settings: DictConfig) -> None:
         # 4b) -- the metrics logged here are what TASK-2.3's Production
         # promotion criteria checks.
         log.info("Running validation of val data")
-        dataloader_val = data_module.test_plot_dataloader(batch_size=1, num_workers=data_module.num_workers)
+        dataloader_val = data_module.test_plot_dataloader(
+            batch_size=1, num_workers=data_module.num_workers
+        )
         try:
             _, test_metrics = run_validation(
                 model,
@@ -291,9 +298,13 @@ def train(hydra_settings: DictConfig) -> None:
                 verbose=False,
                 path_save_results=os.path.join(experiment_path, "validation"),
             )
-            mlflow.log_metrics(validation_metrics.extract_scalar_metrics(test_metrics, prefix="test"))
+            mlflow.log_metrics(
+                validation_metrics.extract_scalar_metrics(test_metrics, prefix="test")
+            )
         except Exception:
-            log.warning("run_validation (val data) failed -- skipping, see TASK-2.2 note", exc_info=True)
+            log.warning(
+                "run_validation (val data) failed -- skipping, see TASK-2.2 note", exc_info=True
+            )
 
         log.info("Running validation of train data")
         dataloader_train = DataLoader(
@@ -312,7 +323,9 @@ def train(hydra_settings: DictConfig) -> None:
                 path_save_results=os.path.join(experiment_path, "train"),
             )
         except Exception:
-            log.warning("run_validation (train data) failed -- skipping, see TASK-2.2 note", exc_info=True)
+            log.warning(
+                "run_validation (train data) failed -- skipping, see TASK-2.2 note", exc_info=True
+            )
 
     log.info(f"Finished: results saved to {experiment_path}")
 

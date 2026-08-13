@@ -13,9 +13,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import rasterio.windows
-from tqdm import tqdm
-
 from _vendor_starcop import STARCOPDataset
+from tqdm import tqdm
 
 
 def compute_band_stats(dataframe: pd.DataFrame, bands: list[str]) -> dict:
@@ -28,11 +27,16 @@ def compute_band_stats(dataframe: pd.DataFrame, bands: list[str]) -> dict:
     O(1) per band, not O(all patches).
     """
     dataset = STARCOPDataset(dataframe, input_products=bands, output_products=[])
-    running = {band: {"count": 0, "sum": 0.0, "sum_sq": 0.0, "min": np.inf, "max": -np.inf} for band in bands}
+    running = {
+        band: {"count": 0, "sum": 0.0, "sum_sq": 0.0, "min": np.inf, "max": -np.inf}
+        for band in bands
+    }
 
     # mininterval=5: redirected (non-tty) output writes one line per refresh
     # instead of overwriting in place, so a low interval would flood a log file.
-    for idx in tqdm(range(len(dataset)), total=len(dataset), desc="Computing band stats", mininterval=5.0):
+    for idx in tqdm(
+        range(len(dataset)), total=len(dataset), desc="Computing band stats", mininterval=5.0
+    ):
         input_tensor = dataset[idx]["input"].numpy()
         for band_idx, band in enumerate(bands):
             arr = input_tensor[band_idx]
@@ -65,7 +69,12 @@ def compute_class_distribution(dataframe: pd.DataFrame, bands: list[str]) -> dic
     dataset = STARCOPDataset(dataframe, input_products=[], output_products=bands)
     running = {band: {"positive": 0, "total": 0} for band in bands}
 
-    for idx in tqdm(range(len(dataset)), total=len(dataset), desc="Computing class distribution", mininterval=5.0):
+    for idx in tqdm(
+        range(len(dataset)),
+        total=len(dataset),
+        desc="Computing class distribution",
+        mininterval=5.0,
+    ):
         output_tensor = dataset[idx]["output"].numpy()
         for band_idx, band in enumerate(bands):
             arr = output_tensor[band_idx]
@@ -79,14 +88,17 @@ def compute_class_distribution(dataframe: pd.DataFrame, bands: list[str]) -> dic
             "background_pixels": s["total"] - s["positive"],
             "total_pixels": s["total"],
             "positive_fraction": s["positive"] / s["total"],
-            "imbalance_ratio": (s["total"] - s["positive"]) / s["positive"] if s["positive"] else None,
+            "imbalance_ratio": (s["total"] - s["positive"]) / s["positive"]
+            if s["positive"]
+            else None,
         }
         for band, s in running.items()
     }
 
 
 def _load_patches_dataframe(path: Path) -> pd.DataFrame:
-    """Read a patch_extract.py output CSV, rebuilding the `window` column patch_extract.py dropped."""
+    """Read a patch_extract.py output CSV, rebuilding the `window` column patch_extract.py
+    dropped."""
     dataframe = pd.read_csv(path)
     dataframe["window"] = dataframe.apply(
         lambda row: rasterio.windows.Window(

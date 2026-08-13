@@ -4,10 +4,9 @@ against a fresh local sqlite tracking store (Test Size: Medium), exercising
 the actual experiment -> staging -> production ladder end to end.
 """
 
+import promote_model
 import pytest
 from mlflow.tracking import MlflowClient
-
-import promote_model
 
 SMOOTH_LOSS_HISTORY = [0.9, 0.7, 0.6, 0.55, 0.5, 0.48, 0.47]
 SPIKING_LOSS_HISTORY = [0.5, 0.9, 0.05, 0.85, 0.02]

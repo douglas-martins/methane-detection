@@ -9,10 +9,9 @@ historically never supported the model registry at all, so sqlite is both
 the only realistic option and what the real tracking server itself uses.
 """
 
+import mlflow_registry
 import pytest
 from mlflow.tracking import MlflowClient
-
-import mlflow_registry
 
 
 @pytest.fixture

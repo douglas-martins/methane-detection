@@ -10,13 +10,14 @@ leakage TASK-1.2 calls out.
 from types import SimpleNamespace
 
 import pandas as pd
-
 import split
 
 
 def _rows_for_scene(name: str, n_rows: int) -> list[dict]:
     """Build n_rows synthetic window rows for one scene, all sharing the same `name`."""
-    return [{"id": f"{name}_w{i}", "name": name, "folder": f"/orig/{name}_w{i}"} for i in range(n_rows)]
+    return [
+        {"id": f"{name}_w{i}", "name": name, "folder": f"/orig/{name}_w{i}"} for i in range(n_rows)
+    ]
 
 
 def _train_dataframe(scene_names: list[str], rows_per_scene: int = 2) -> pd.DataFrame:
@@ -70,7 +71,8 @@ def test_val_fraction_approximates_configured_value_at_scene_level():
 
 
 def test_repoint_folder_only_changes_folder_column(tmp_path):
-    """repoint_folder() rewrites `folder` to selected_root/<id> and leaves every other column alone."""
+    """repoint_folder() rewrites `folder` to selected_root/<id> and leaves every other
+    column alone."""
     dataframe = pd.DataFrame(
         {"id": ["ang1_w0", "ang1_w1"], "name": ["ang1", "ang1"], "folder": ["/orig/a", "/orig/b"]}
     )
@@ -86,7 +88,8 @@ def test_repoint_folder_only_changes_folder_column(tmp_path):
 
 
 def test_run_writes_train_val_test_csvs_with_no_scene_leakage(tmp_path):
-    """End-to-end: run() writes train/val/test.csv, preserves test membership, and avoids scene leakage."""
+    """End-to-end: run() writes train/val/test.csv, preserves test membership, and
+    avoids scene leakage."""
     raw_root = tmp_path / "raw"
     raw_root.mkdir(parents=True)
     train_scenes = [f"scene{i}" for i in range(8)]
@@ -113,3 +116,37 @@ def test_run_writes_train_val_test_csvs_with_no_scene_leakage(tmp_path):
     assert set(train_out["name"]) & set(val_out["name"]) == set()
     assert list(test_out["id"]) == ["test_scene_w0"]
     assert test_out["folder"].iloc[0] == str(processed_root / "selected" / "test_scene_w0")
+
+
+def test_run_produces_byte_identical_splits_across_two_runs(tmp_path, assert_trees_identical):
+    """DVC reproducibility: same seed + same input run() twice must produce
+    byte-identical splits/ trees. Reruns into the *same* processed_root
+    (snapshotting the first run's output before the second overwrites it) --
+    repoint_folder() bakes processed_root's own absolute path into `folder`,
+    so two different processed_roots would differ on that column alone,
+    which isn't a reproducibility bug."""
+    import shutil
+
+    raw_root = tmp_path / "raw"
+    raw_root.mkdir(parents=True)
+    train_scenes = [f"scene{i}" for i in range(8)]
+    _train_dataframe(train_scenes).to_csv(raw_root / "train.csv", index=False)
+    test_df = pd.DataFrame(
+        {"id": ["test_scene_w0"], "name": ["test_scene"], "folder": ["/orig/test_scene_w0"]}
+    )
+    test_df.to_csv(raw_root / "test.csv", index=False)
+
+    processed_root = tmp_path / "processed"
+    cfg = SimpleNamespace(
+        paths=SimpleNamespace(raw_root=str(raw_root), processed_root=str(processed_root)),
+        dataset_cfg=SimpleNamespace(train_csv="train.csv", test_csv="test.csv"),
+        split=SimpleNamespace(val_fraction=0.25, seed=42, stratify_by="name"),
+    )
+
+    split.run(cfg)
+    first_run_snapshot = tmp_path / "first_run_snapshot"
+    shutil.copytree(processed_root / "splits", first_run_snapshot)
+
+    split.run(cfg)
+
+    assert_trees_identical(first_run_snapshot, processed_root / "splits")

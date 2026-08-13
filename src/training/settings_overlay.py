@@ -36,9 +36,7 @@ def validate_machine(settings: DictConfig) -> None:
 
     machine = settings.machine
     if machine not in VALID_MACHINES:
-        raise ValueError(
-            f"settings.machine={machine!r} is not one of {VALID_MACHINES}."
-        )
+        raise ValueError(f"settings.machine={machine!r} is not one of {VALID_MACHINES}.")
 
 
 def validate_dataset_name(settings: DictConfig) -> None:

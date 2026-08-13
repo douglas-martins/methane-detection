@@ -13,7 +13,6 @@ configured `patch.has_plume_threshold`, overriding the hardcoded value.
 from pathlib import Path
 
 import pandas as pd
-
 from _vendor_starcop import tiled_dataframe
 
 
