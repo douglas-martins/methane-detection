@@ -9,7 +9,10 @@ ENV_B_INTERROGATE := .venv/bin/interrogate
 ENV_B_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/registry/__tests__
 ENV_B_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/registry
 
-.PHONY: test-env-a coverage test-env-b coverage-env-b badges badges-env-b test docstring-coverage
+BATS_IMAGE := bats/bats:latest
+SCRIPTS_TEST_PATHS := scripts/__tests__
+
+.PHONY: test-env-a coverage test-env-b coverage-env-b badges badges-env-b test docstring-coverage test-scripts
 
 test-env-a:
 	$(ENV_A_PYTHON) -m pytest $(ENV_A_TEST_PATHS) -v
@@ -39,5 +42,8 @@ badges-env-b: coverage-env-b
 
 docstring-coverage:
 	$(ENV_B_INTERROGATE) -v .
+
+test-scripts:
+	docker run --rm -v "$$PWD":/code -w /code $(BATS_IMAGE) $(SCRIPTS_TEST_PATHS)
 
 test: test-env-a test-env-b
