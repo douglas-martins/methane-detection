@@ -28,6 +28,7 @@ dev = [
     "python-semantic-release>=9",
     "genbadge[tests,coverage]",
     "interrogate",
+    "ruff",
 ]
 
 [tool.uv]
@@ -36,6 +37,16 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["src", "tests"]
 python_files = ["test_*.py"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+# vendor/starcop is a git submodule, composition-only -- never linted or
+# reformatted, even by an autofix. See vendor-starcop-composition-only.
+extend-exclude = ["vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
 
 [tool.interrogate]
 # Test methods are intentionally undocumented project-wide -- their

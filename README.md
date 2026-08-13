@@ -4,6 +4,7 @@
 ![coverage (env A)](docs/badges/coverage-env-a.svg)
 ![tests (env B)](docs/badges/tests-env-b.svg)
 ![coverage (env B)](docs/badges/coverage-env-b.svg)
+[![Lint](https://github.com/douglas-martins/methane-detection/actions/workflows/lint.yml/badge.svg)](https://github.com/douglas-martins/methane-detection/actions/workflows/lint.yml)
 
 Master's Final Project — Semantic Segmentation of Methane Plumes using CNN on Hyperspectral Imagery.
 

@@ -1,0 +1,56 @@
+name: Lint
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install Environment B dependencies
+        run: uv sync
+
+      - name: Determine changed Python files
+        id: changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # main itself carries pre-existing ruff findings (see
+          # mlops-methane-detection-plan.md TASK-4.2's 2026-08-12 baseline
+          # audit) -- linting the whole tree on every PR would block merges
+          # on violations the PR never introduced. Scope to the PR's own
+          # changed Python files instead, the same base/head-diff approach
+          # commitlint.yml already uses for commit messages. vendor/starcop
+          # is excluded from ruff entirely (composition-only submodule, see
+          # pyproject.toml's [tool.ruff] extend-exclude).
+          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- '*.py' | grep -v '^vendor/' || true)
+          {
+            echo "files<<PYFILES_EOF"
+            echo "$FILES"
+            echo "PYFILES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run ruff check
+        if: steps.changed.outputs.files != ''
+        run: printf '%s\n' "${{ steps.changed.outputs.files }}" | xargs -r -d '\n' .venv/bin/ruff check
+
+      - name: Run ruff format --check
+        if: steps.changed.outputs.files != ''
+        run: printf '%s\n' "${{ steps.changed.outputs.files }}" | xargs -r -d '\n' .venv/bin/ruff format --check
