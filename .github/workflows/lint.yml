@@ -49,8 +49,12 @@ jobs:
 
       - name: Run ruff check
         if: steps.changed.outputs.files != ''
-        run: printf '%s\n' "${{ steps.changed.outputs.files }}" | xargs -r -d '\n' .venv/bin/ruff check
+        env:
+          FILES: ${{ steps.changed.outputs.files }}
+        run: printf '%s\n' "$FILES" | xargs -r -d '\n' .venv/bin/ruff check --
 
       - name: Run ruff format --check
         if: steps.changed.outputs.files != ''
-        run: printf '%s\n' "${{ steps.changed.outputs.files }}" | xargs -r -d '\n' .venv/bin/ruff format --check
+        env:
+          FILES: ${{ steps.changed.outputs.files }}
+        run: printf '%s\n' "$FILES" | xargs -r -d '\n' .venv/bin/ruff format --check --
