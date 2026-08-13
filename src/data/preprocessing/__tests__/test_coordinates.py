@@ -77,3 +77,26 @@ def test_run_writes_scene_coordinates_csv(tmp_path, tiny_geotiff_factory):
     assert rows[0]["scene_id"] == "sceneA"
     assert float(rows[0]["lat"]) == pytest.approx(-2.0)
     assert float(rows[0]["lon"]) == pytest.approx(2.0)
+
+
+def test_run_produces_byte_identical_coordinates_across_two_runs(
+    tmp_path, tiny_geotiff_factory, assert_trees_identical
+):
+    """DVC reproducibility: run() twice against the same selected/ scenes (into
+    separate output roots) must produce byte-identical coordinates/ trees."""
+
+    def _cfg(processed_root):
+        tiny_geotiff_factory(
+            processed_root / "selected" / "sceneA" / "mag1c.tif", np.zeros((4, 4), dtype="float32")
+        )
+        return SimpleNamespace(
+            paths=SimpleNamespace(processed_root=str(processed_root)),
+            dataset_cfg=SimpleNamespace(input_products=["mag1c", "TOA_AVIRIS_640nm"]),
+        )
+
+    processed_root_a = tmp_path / "processed_a"
+    processed_root_b = tmp_path / "processed_b"
+    coordinates.run(_cfg(processed_root_a))
+    coordinates.run(_cfg(processed_root_b))
+
+    assert_trees_identical(processed_root_a / "coordinates", processed_root_b / "coordinates")

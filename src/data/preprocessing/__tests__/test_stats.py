@@ -216,3 +216,40 @@ def test_compute_band_stats_matches_two_pass_result_for_larger_dataset(tmp_path,
     assert result["bandA"]["std"] == pytest.approx(float(np.std(all_values)), rel=1e-6)
     assert result["bandA"]["min"] == pytest.approx(float(np.min(all_values)))
     assert result["bandA"]["max"] == pytest.approx(float(np.max(all_values)))
+
+
+def test_run_produces_byte_identical_stats_across_two_runs(tmp_path, tiny_geotiff_factory, assert_trees_identical):
+    """DVC reproducibility: run() twice against the same patches (into separate
+    output roots) must produce byte-identical stats/ trees."""
+    scene = tmp_path / "raw_scene"
+    tiny_geotiff_factory(scene / "bandA.tif", np.full((4, 4), 1.0, dtype="float32"))
+    label_array = np.zeros((4, 4), dtype="float32")
+    label_array[0, 0] = 1.0
+    tiny_geotiff_factory(scene / "labelbinary.tif", label_array)
+
+    def _cfg(processed_root):
+        patches_root = processed_root / "patches"
+        patches_root.mkdir(parents=True)
+        pd.DataFrame(
+            {
+                "folder": [str(scene)],
+                "window_col_off": [0],
+                "window_row_off": [0],
+                "window_width": [4],
+                "window_height": [4],
+                "has_plume": [False],
+            }
+        ).to_csv(patches_root / "train_tiled_4_4.csv", index=False)
+        return SimpleNamespace(
+            paths=SimpleNamespace(processed_root=str(processed_root)),
+            patch=SimpleNamespace(size=[4, 4]),
+            dataset_cfg=SimpleNamespace(input_products=["bandA"], output_products=["labelbinary"]),
+            stats=SimpleNamespace(bands=None),
+        )
+
+    processed_root_a = tmp_path / "processed_a"
+    processed_root_b = tmp_path / "processed_b"
+    stats.run(_cfg(processed_root_a))
+    stats.run(_cfg(processed_root_b))
+
+    assert_trees_identical(processed_root_a / "stats", processed_root_b / "stats")

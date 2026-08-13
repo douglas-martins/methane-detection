@@ -158,3 +158,35 @@ def test_run_passes_configured_num_workers_to_patch_scenes(tmp_path, monkeypatch
     patch_extract.run(cfg)
 
     assert captured_num_workers == [4, 4, 4]
+
+
+def test_run_produces_byte_identical_patches_across_two_runs(
+    tmp_path, tiny_geotiff_factory, assert_trees_identical
+):
+    """DVC reproducibility: run() twice against the same splits (into separate
+    output roots) must produce byte-identical patches/ trees. num_workers=1
+    to keep tiling single-process -- multiprocessing row order isn't the
+    thing under test here."""
+    scene_folder = tmp_path / "scene1"
+    tiny_geotiff_factory(scene_folder / "labelbinary.tif", np.zeros((512, 512), dtype="float32"))
+    row = _scene_row("scene1", scene_folder)
+
+    def _cfg(processed_root):
+        splits_root = processed_root / "splits"
+        splits_root.mkdir(parents=True)
+        for name in ["train", "val", "test"]:
+            pd.DataFrame([row]).to_csv(splits_root / f"{name}.csv", index=False)
+        return SimpleNamespace(
+            paths=SimpleNamespace(processed_root=str(processed_root)),
+            patch=SimpleNamespace(
+                size=PATCH_SIZE, overlap=OVERLAP, has_plume_threshold=DEFAULT_THRESHOLD, num_workers=1
+            ),
+            dataset_cfg=SimpleNamespace(output_products=["labelbinary"]),
+        )
+
+    processed_root_a = tmp_path / "processed_a"
+    processed_root_b = tmp_path / "processed_b"
+    patch_extract.run(_cfg(processed_root_a))
+    patch_extract.run(_cfg(processed_root_b))
+
+    assert_trees_identical(processed_root_a / "patches", processed_root_b / "patches")

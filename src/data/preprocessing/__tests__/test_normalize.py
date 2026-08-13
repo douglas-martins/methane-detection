@@ -297,6 +297,25 @@ def test_run_logs_missing_scenes_instead_of_crashing(tmp_path, tiny_geotiff_fact
     assert (processed_root / "selected" / "scene_present" / "TOA_AVIRIS_640nm.tif").exists()
 
 
+def test_run_produces_byte_identical_output_across_two_runs(
+    tmp_path, tiny_geotiff_factory, assert_trees_identical
+):
+    """DVC reproducibility: the same raw input run() twice (into separate output
+    roots) must produce byte-identical selected/ trees -- not just equal JSON."""
+    raw_root = tmp_path / "raw"
+    tiny_geotiff_factory(
+        raw_root / "scene1" / "TOA_AVIRIS_640nm.tif", np.array([[1.0, 2.5]], dtype="float32")
+    )
+    _write_manifest_csvs(raw_root, train_ids=["scene1"])
+
+    processed_root_a = tmp_path / "processed_a"
+    processed_root_b = tmp_path / "processed_b"
+    normalize.run(_cfg(raw_root, processed_root_a, ["TOA_AVIRIS_640nm"], []))
+    normalize.run(_cfg(raw_root, processed_root_b, ["TOA_AVIRIS_640nm"], []))
+
+    assert_trees_identical(processed_root_a / "selected", processed_root_b / "selected")
+
+
 def test_run_removes_stale_missing_scenes_json_when_no_longer_missing(tmp_path, tiny_geotiff_factory):
     """A prior run's missing_scenes.json shouldn't linger and misreport once
     the underlying data is fixed and re-run -- e.g. run() invoked directly
