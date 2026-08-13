@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v0.11.0 (2026-08-13)
+
+### Features
+
+- **training**: Add launch_profiles module for per-machine training CLI args
+  ([`e27b8b3`](https://github.com/douglas-martins/methane-detection/commit/e27b8b336e04979b0027d263e58c6dd5317095d9))
+
+- **training**: Add train_mac.sh launch script for M4 Pro MPS training
+  ([`81da3a6`](https://github.com/douglas-martins/methane-detection/commit/81da3a6a822cd9eeea6c2193a2eacb4a267bfde3))
+
+
 ## v0.10.0 (2026-08-12)
 
 ### Bug Fixes
