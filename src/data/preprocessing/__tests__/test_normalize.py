@@ -10,11 +10,10 @@ scenes whose values would fall outside their clip range once normalized.
 import json
 from types import SimpleNamespace
 
+import normalize
 import numpy as np
 import pandas as pd
 import pytest
-
-import normalize
 
 
 def _cfg(
@@ -99,7 +98,8 @@ def test_raises_on_nan_in_a_configured_band(tmp_path, tiny_geotiff_factory):
 
 
 def test_flags_scene_exceeding_band_normalization_clip_range(tmp_path, tiny_geotiff_factory):
-    """A band exceeding its BAND_NORMALIZATION clip range is flagged but still copied, not rejected."""
+    """A band exceeding its BAND_NORMALIZATION clip range is flagged but still copied,
+    not rejected."""
     scene = tmp_path / "raw" / "scene1"
     # TOA_AVIRIS_640nm: offset=0, factor=60, clip=(0, 2) -> normalized 200/60=3.33 > 2
     over_range_band = np.array([[200.0, 1.0]], dtype="float32")
@@ -212,40 +212,6 @@ def test_run_rejects_unsafe_scene_id_before_writing_to_selected_root(tmp_path):
         normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
 
 
-@pytest.mark.parametrize(
-    "scene_id",
-    [
-        "",
-        "/etc/passwd",
-        "/",
-        "foo/bar",
-        "../../etc/passwd",
-        "..",
-        "a/../b",
-    ],
-)
-def test_find_scene_folder_rejects_unsafe_scene_ids(tmp_path, scene_id):
-    """scene_id comes straight from the manifest CSV and is joined into raw_root paths --
-    absolute, multi-component, or traversal values must never reach path construction."""
-    raw_root = tmp_path / "raw"
-    raw_root.mkdir()
-
-    with pytest.raises(ValueError, match="[Ss]cene id"):
-        normalize.find_scene_folder(raw_root, scene_id)
-
-
-def test_run_rejects_unsafe_scene_id_before_writing_to_selected_root(tmp_path):
-    """A malicious/malformed manifest id must be rejected before selected_root/scene_id
-    is ever constructed, not just before the raw_root lookup."""
-    raw_root = tmp_path / "raw"
-    raw_root.mkdir()
-    _write_manifest_csvs(raw_root, train_ids=["../../etc/passwd"])
-    processed_root = tmp_path / "processed"
-
-    with pytest.raises(ValueError, match="[Ss]cene id"):
-        normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
-
-
 def test_run_writes_range_check_json_only_for_flagged_scenes(tmp_path, tiny_geotiff_factory):
     """End-to-end: run() writes range_check.json listing only the scenes/bands that were flagged."""
     raw_root = tmp_path / "raw"
@@ -282,7 +248,8 @@ def test_run_discovers_scenes_from_nested_subfolders(tmp_path, tiny_geotiff_fact
 
 
 def test_run_logs_missing_scenes_instead_of_crashing(tmp_path, tiny_geotiff_factory):
-    """A manifest id with no matching folder anywhere is logged to missing_scenes.json, not fatal."""
+    """A manifest id with no matching folder anywhere is logged to missing_scenes.json,
+    not fatal."""
     raw_root = tmp_path / "raw"
     tiny_geotiff_factory(
         raw_root / "scene_present" / "TOA_AVIRIS_640nm.tif", np.array([[1.0]], dtype="float32")
@@ -316,7 +283,9 @@ def test_run_produces_byte_identical_output_across_two_runs(
     assert_trees_identical(processed_root_a / "selected", processed_root_b / "selected")
 
 
-def test_run_removes_stale_missing_scenes_json_when_no_longer_missing(tmp_path, tiny_geotiff_factory):
+def test_run_removes_stale_missing_scenes_json_when_no_longer_missing(
+    tmp_path, tiny_geotiff_factory
+):
     """A prior run's missing_scenes.json shouldn't linger and misreport once
     the underlying data is fixed and re-run -- e.g. run() invoked directly
     (not via `dvc repro`, which clears stage outputs itself)."""
