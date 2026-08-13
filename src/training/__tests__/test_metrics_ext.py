@@ -3,10 +3,9 @@ math, no I/O). f1score_background is new; compute_all wraps STARCOP's own
 unmodified metrics.METRICS_CONFUSION_MATRIX list plus it.
 """
 
+import metrics_ext
 import pytest
 import torch
-
-import metrics_ext
 from _vendor_starcop_training import starcop_metrics
 
 
@@ -24,8 +23,10 @@ class TestF1ScoreBackground:
 
         background_precision = 90 / 95
         background_recall = 90 / 100
-        expected = 2 * (background_precision * background_recall) / (
-            background_precision + background_recall
+        expected = (
+            2
+            * (background_precision * background_recall)
+            / (background_precision + background_recall)
         )
         assert result == pytest.approx(expected, rel=1e-6)
 
@@ -58,6 +59,4 @@ class TestComputeAll:
 
         result = metrics_ext.compute_all(cm)
 
-        assert result["f1score_background"] == pytest.approx(
-            metrics_ext.f1score_background(cm)
-        )
+        assert result["f1score_background"] == pytest.approx(metrics_ext.f1score_background(cm))

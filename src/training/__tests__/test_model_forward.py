@@ -11,9 +11,8 @@ tensor; no mocking. encoder_weights is None for this project's real config
 """
 
 import torch
-from omegaconf import OmegaConf
-
 from _vendor_starcop_training import get_model
+from omegaconf import OmegaConf
 
 _VENDOR_CONFIG = "vendor/starcop/scripts/configs/config.yaml"
 

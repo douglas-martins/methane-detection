@@ -5,9 +5,8 @@ on top of STARCOP's Hydra-derived settings and validates the required
 """
 
 import pytest
-from omegaconf import OmegaConf
-
 import settings_overlay
+from omegaconf import OmegaConf
 
 VALID_MACHINES = ("desktop", "macbook", "colab")
 
@@ -16,7 +15,9 @@ class TestMergeOverlay:
     def test_overlay_defaults_survive_when_not_overridden(self, tmp_path):
         overlay_path = tmp_path / "overlay.yaml"
         overlay_path.write_text("machine: ???\ndataset:\n  augmentations:\n    rotation_p: 0.5\n")
-        hydra_settings = OmegaConf.create({"machine": "desktop", "dataset": {"input_products": ["mag1c"]}})
+        hydra_settings = OmegaConf.create(
+            {"machine": "desktop", "dataset": {"input_products": ["mag1c"]}}
+        )
 
         merged = settings_overlay.merge_overlay(hydra_settings, overlay_path)
 

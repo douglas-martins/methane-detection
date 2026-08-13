@@ -101,7 +101,8 @@ def test_flattens_nested_folder_matching_zip_stem(tmp_path, fake_zip_factory, mo
 
 
 def test_no_flatten_when_no_nested_folder_present(tmp_path, fake_zip_factory, monkeypatch):
-    """A zip without a top-level folder matching its own stem is left as-is (no flattening applied)."""
+    """A zip without a top-level folder matching its own stem is left as-is
+    (no flattening applied)."""
     zip_path = tmp_path / "checkpoint.zip"
     fake_zip_factory(zip_path, {"model.pt": b"weights"})
     monkeypatch.setattr(download_mini_dataset.gdown, "download", Mock())

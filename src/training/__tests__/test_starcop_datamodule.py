@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pandas as pd
 import rasterio.windows
-
 import starcop_datamodule as sdm
 
 

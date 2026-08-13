@@ -10,13 +10,14 @@ leakage TASK-1.2 calls out.
 from types import SimpleNamespace
 
 import pandas as pd
-
 import split
 
 
 def _rows_for_scene(name: str, n_rows: int) -> list[dict]:
     """Build n_rows synthetic window rows for one scene, all sharing the same `name`."""
-    return [{"id": f"{name}_w{i}", "name": name, "folder": f"/orig/{name}_w{i}"} for i in range(n_rows)]
+    return [
+        {"id": f"{name}_w{i}", "name": name, "folder": f"/orig/{name}_w{i}"} for i in range(n_rows)
+    ]
 
 
 def _train_dataframe(scene_names: list[str], rows_per_scene: int = 2) -> pd.DataFrame:
@@ -70,7 +71,8 @@ def test_val_fraction_approximates_configured_value_at_scene_level():
 
 
 def test_repoint_folder_only_changes_folder_column(tmp_path):
-    """repoint_folder() rewrites `folder` to selected_root/<id> and leaves every other column alone."""
+    """repoint_folder() rewrites `folder` to selected_root/<id> and leaves every other
+    column alone."""
     dataframe = pd.DataFrame(
         {"id": ["ang1_w0", "ang1_w1"], "name": ["ang1", "ang1"], "folder": ["/orig/a", "/orig/b"]}
     )
@@ -86,7 +88,8 @@ def test_repoint_folder_only_changes_folder_column(tmp_path):
 
 
 def test_run_writes_train_val_test_csvs_with_no_scene_leakage(tmp_path):
-    """End-to-end: run() writes train/val/test.csv, preserves test membership, and avoids scene leakage."""
+    """End-to-end: run() writes train/val/test.csv, preserves test membership, and
+    avoids scene leakage."""
     raw_root = tmp_path / "raw"
     raw_root.mkdir(parents=True)
     train_scenes = [f"scene{i}" for i in range(8)]

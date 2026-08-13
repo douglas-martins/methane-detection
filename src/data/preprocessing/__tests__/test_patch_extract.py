@@ -20,7 +20,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
-
 import patch_extract
 
 PATCH_SIZE = [128, 128]
@@ -117,12 +116,18 @@ def test_has_plume_threshold_is_actually_configurable(tmp_path, tiny_geotiff_fac
     dataframe = pd.DataFrame([_scene_row("scene1", scene_folder)])
 
     lenient = patch_extract.patch_scenes(
-        dataframe, patch_size=PATCH_SIZE, overlap=OVERLAP,
-        output_products=["labelbinary"], has_plume_threshold=0.001,
+        dataframe,
+        patch_size=PATCH_SIZE,
+        overlap=OVERLAP,
+        output_products=["labelbinary"],
+        has_plume_threshold=0.001,
     )
     strict = patch_extract.patch_scenes(
-        dataframe, patch_size=PATCH_SIZE, overlap=OVERLAP,
-        output_products=["labelbinary"], has_plume_threshold=0.5,
+        dataframe,
+        patch_size=PATCH_SIZE,
+        overlap=OVERLAP,
+        output_products=["labelbinary"],
+        has_plume_threshold=0.5,
     )
 
     assert bool(_first_patch(lenient)["has_plume"]) is True
@@ -140,7 +145,9 @@ def test_run_passes_configured_num_workers_to_patch_scenes(tmp_path, monkeypatch
 
     captured_num_workers = []
 
-    def fake_patch_scenes(dataframe, patch_size, overlap, output_products, has_plume_threshold, num_workers=1):
+    def fake_patch_scenes(
+        dataframe, patch_size, overlap, output_products, has_plume_threshold, num_workers=1
+    ):
         """Stand in for patch_scenes(): record num_workers instead of actually tiling."""
         captured_num_workers.append(num_workers)
         return pd.DataFrame(columns=["window"])
@@ -179,7 +186,10 @@ def test_run_produces_byte_identical_patches_across_two_runs(
         return SimpleNamespace(
             paths=SimpleNamespace(processed_root=str(processed_root)),
             patch=SimpleNamespace(
-                size=PATCH_SIZE, overlap=OVERLAP, has_plume_threshold=DEFAULT_THRESHOLD, num_workers=1
+                size=PATCH_SIZE,
+                overlap=OVERLAP,
+                has_plume_threshold=DEFAULT_THRESHOLD,
+                num_workers=1,
             ),
             dataset_cfg=SimpleNamespace(output_products=["labelbinary"]),
         )

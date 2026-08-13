@@ -9,13 +9,11 @@ over mocks throughout.
 """
 
 import subprocess
-import sys
 from pathlib import Path
 
+import dvc_dataset_version as dvcv
 import pytest
 import yaml
-
-import dvc_dataset_version as dvcv
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_DVC_BINARY = REPO_ROOT / ".venv" / "bin" / "dvc"

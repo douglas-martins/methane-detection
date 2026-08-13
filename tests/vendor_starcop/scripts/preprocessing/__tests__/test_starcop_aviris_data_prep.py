@@ -21,7 +21,9 @@ import pytest
 # tests/vendor_starcop/scripts/preprocessing/__tests__/test_x.py
 #   parents[0]=__tests__ [1]=preprocessing [2]=scripts [3]=vendor_starcop [4]=tests [5]=repo root
 REPO_ROOT = Path(__file__).resolve().parents[5]
-MODULE_PATH = REPO_ROOT / "vendor" / "starcop" / "scripts" / "preprocessing" / "starcop_aviris_data_prep.py"
+MODULE_PATH = (
+    REPO_ROOT / "vendor" / "starcop" / "scripts" / "preprocessing" / "starcop_aviris_data_prep.py"
+)
 
 AVIRIS_ID_PATTERN = re.compile(r"^ang\d{8}t\d{6}$")
 
@@ -31,7 +33,9 @@ def module(starcop_module_loader):
     return starcop_module_loader(MODULE_PATH, "starcop_aviris_data_prep_test_target")
 
 
-def _write_complete_product_folder(folder: Path, bands_sensor: dict, n_wavelengths: int = 3) -> None:
+def _write_complete_product_folder(
+    folder: Path, bands_sensor: dict, n_wavelengths: int = 3
+) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "mag1c.tif").write_bytes(b"x")
     (folder / "albedo.tif").write_bytes(b"x")
@@ -44,7 +48,9 @@ def _write_complete_product_folder(folder: Path, bands_sensor: dict, n_wavelengt
             (folder / f"{sensor}_{band}.tif").write_bytes(b"x")
 
 
-def test_skips_all_processing_when_every_product_already_exists(tmp_path, module, mock_process_aviris):
+def test_skips_all_processing_when_every_product_already_exists(
+    tmp_path, module, mock_process_aviris
+):
     name = "ang20191005t221554"
     folder_dest = tmp_path / name
     _write_complete_product_folder(folder_dest, module.process_aviris.BANDS_SENSOR)

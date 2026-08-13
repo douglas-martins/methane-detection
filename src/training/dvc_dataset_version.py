@@ -26,8 +26,7 @@ def get_dataset_version(dataset_name: str, dvc_lock_path: Path) -> str:
     stages = (lock or {}).get("stages", {})
     if stage_key not in stages:
         raise ValueError(
-            f"Stage {stage_key!r} not found in {dvc_lock_path}. "
-            f"Available stages: {sorted(stages)}"
+            f"Stage {stage_key!r} not found in {dvc_lock_path}. Available stages: {sorted(stages)}"
         )
 
     outs = stages[stage_key].get("outs") or []
@@ -37,9 +36,7 @@ def get_dataset_version(dataset_name: str, dvc_lock_path: Path) -> str:
     return outs[0]["md5"]
 
 
-def is_dataset_dirty(
-    dataset_name: str, repo_root: Path, dvc_binary: Optional[Path] = None
-) -> bool:
+def is_dataset_dirty(dataset_name: str, repo_root: Path, dvc_binary: Optional[Path] = None) -> bool:
     """Returns True if patch_extract@dataset_name has drifted from dvc.lock."""
     if dvc_binary is None:
         dvc_binary = Path(repo_root) / ".venv" / "bin" / "dvc"

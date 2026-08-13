@@ -32,7 +32,6 @@ from typing import Union
 import kornia.augmentation as K
 import pandas as pd
 import rasterio.windows
-
 from _vendor_starcop_training import Permian2019DataModule, STARCOPDataset, feature_extration
 
 
@@ -56,9 +55,7 @@ def _load_dataframe(path: Union[str, Path], repo_root: Union[str, Path]) -> pd.D
         ),
         axis=1,
     )
-    df["folder"] = df["folder"].apply(
-        lambda p: p if os.path.isabs(p) else str(repo_root / p)
-    )
+    df["folder"] = df["folder"].apply(lambda p: p if os.path.isabs(p) else str(repo_root / p))
     return df.set_index("id")
 
 
@@ -88,7 +85,9 @@ class ProcessedDatasetDataModule(Permian2019DataModule):
             extra_types = []
             weight_loss_list = []
 
-        model_output_type = "mask" if self.settings.model.model_mode == "segmentation_output" else "input"
+        model_output_type = (
+            "mask" if self.settings.model.model_mode == "segmentation_output" else "input"
+        )
 
         self.train_augmentations = K.AugmentationSequential(
             K.RandomRotation(p=0.5, degrees=90),
@@ -171,7 +170,8 @@ class ProcessedDatasetDataModule(Permian2019DataModule):
         )
 
         if "rgb_aviris" in self.products_plot and not all(
-            b in self.input_products for b in ["TOA_AVIRIS_640nm", "TOA_AVIRIS_550nm", "TOA_AVIRIS_460nm"]
+            b in self.input_products
+            for b in ["TOA_AVIRIS_640nm", "TOA_AVIRIS_550nm", "TOA_AVIRIS_460nm"]
         ):
             self.train_dataset_plot.add_rgb_aviris = True
             self.test_dataset_plot.add_rgb_aviris = True

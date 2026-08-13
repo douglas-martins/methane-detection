@@ -46,9 +46,7 @@ def build_launch_args(
     duplicating the flag -- Hydra errors on a key passed twice.
     """
     if machine not in _MACHINE_DEFAULTS:
-        raise ValueError(
-            f"machine={machine!r} is not one of {tuple(_MACHINE_DEFAULTS)}."
-        )
+        raise ValueError(f"machine={machine!r} is not one of {tuple(_MACHINE_DEFAULTS)}.")
 
     merged = {**_MACHINE_DEFAULTS[machine], **(overrides or {})}
     return [f"+machine={machine}", f"+dataset_name={dataset_name}"] + [

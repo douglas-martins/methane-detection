@@ -3,10 +3,9 @@
 import csv
 from types import SimpleNamespace
 
+import coordinates
 import numpy as np
 import pytest
-
-import coordinates
 
 
 def test_scene_centroid_latlon_matches_raster_bounds_centroid(tmp_path, tiny_geotiff_factory):
@@ -22,7 +21,8 @@ def test_scene_centroid_latlon_matches_raster_bounds_centroid(tmp_path, tiny_geo
 
 
 def test_scene_centroid_scales_with_raster_size(tmp_path, tiny_geotiff_factory):
-    """A different raster shape moves the centroid accordingly -- not hardcoded to the 4x4 case above."""
+    """A different raster shape moves the centroid accordingly -- not hardcoded to the
+    4x4 case above."""
     band_path = tiny_geotiff_factory(tmp_path / "bandA.tif", np.zeros((10, 6), dtype="float32"))
 
     lat, lon = coordinates.scene_centroid_latlon(band_path)

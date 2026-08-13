@@ -23,7 +23,8 @@ def test_starcop_mini_config_resolves_expected_values():
 
 
 def test_starcop_raw_config_resolves_expected_values():
-    """`dataset=starcop_raw` pulls in raw's CSV names, raw_root, and its bumped num_workers override."""
+    """`dataset=starcop_raw` pulls in raw's CSV names, raw_root, and its bumped
+    num_workers override."""
     with initialize_config_dir(config_dir=CONFIG_DIR, version_base=None):
         cfg = compose(config_name="data", overrides=["dataset=starcop_raw"])
     assert cfg.dataset == "starcop_raw"

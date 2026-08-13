@@ -1,10 +1,9 @@
 """Tests for src/training/mlflow_utils.py -- pure functions, no MLflow SDK
 calls, no live server needed (Test Size: Small)."""
 
+import mlflow_utils
 import pytest
 from omegaconf import OmegaConf
-
-import mlflow_utils
 
 
 class TestRequireMlflowTrackingEnv:
@@ -73,9 +72,7 @@ class TestFlattenHydraParams:
         assert flat["model.optimizer"] == "adam"
 
     def test_stringifies_list_valued_params(self):
-        settings = OmegaConf.create(
-            {"dataset": {"input_products": ["mag1c", "TOA_AVIRIS_640nm"]}}
-        )
+        settings = OmegaConf.create({"dataset": {"input_products": ["mag1c", "TOA_AVIRIS_640nm"]}})
 
         flat = mlflow_utils.flatten_hydra_params(settings)
 
