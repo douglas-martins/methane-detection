@@ -35,6 +35,20 @@ _MODEL_MODE_CLASS_NAMES = {
     "regression_output": "ModelModuleRegression",
 }
 
+# Pinned sha256 of each variant's final_checkpoint_model.ckpt, recorded from
+# the exact files downloaded, loaded, and verified working (2026-08-12) --
+# see HfApi().model_info(_HF_REPO, files_metadata=True)'s per-file
+# BlobLfsInfo.sha256. load_model() below must deserialize this file with
+# torch.load(weights_only=False) (the checkpoint's hyper_parameters is a real
+# OmegaConf DictConfig, which weights_only=True's restricted unpickler
+# rejects), so this digest check -- not HTTPS/revision-pinning alone -- is
+# what actually stops an unreviewed/compromised upstream file from being
+# unpickled. A legitimate upstream update requires updating this table too.
+_EXPECTED_CHECKPOINT_SHA256 = {
+    "mag1c_only": "2d4391d5b05f90c411fd459db5bbe4e88650e5ff30ec2eb10d36c66ed0a43137",
+    "mag1c_rgb": "96e274be943f64e028faded3bac3d1ee325ee7a79d6de2ee7f5deeaea1ef188d",
+}
+
 
 def variant_subfolder(variant: str) -> str:
     """Returns the `models/<subfolder>/` path segment `variant` lives under
@@ -44,7 +58,7 @@ def variant_subfolder(variant: str) -> str:
         return _VARIANT_SUBFOLDERS[variant]
     except KeyError:
         raise ValueError(
-            f"unknown variant {variant!r}; expected one of {sorted(_VARIANT_SUBFOLDERS)}"
+            f"unknown_variant {variant!r}; expected one of {sorted(_VARIANT_SUBFOLDERS)}"
         ) from None
 
 
@@ -69,22 +83,51 @@ def model_class_for_mode(model_mode: str):
     return getattr(vendor, class_name)
 
 
+def verify_checkpoint_digest(variant: str, checkpoint_path: Path) -> None:
+    """Raises ValueError if checkpoint_path's sha256 doesn't match
+    _EXPECTED_CHECKPOINT_SHA256[variant]."""
+    import hashlib
+
+    with open(checkpoint_path, "rb") as f:
+        actual = hashlib.file_digest(f, "sha256").hexdigest()
+
+    expected = _EXPECTED_CHECKPOINT_SHA256[variant]
+    if actual != expected:
+        raise ValueError(
+            f"checkpoint digest mismatch for variant {variant!r}: expected sha256 "
+            f"{expected}, got {actual}. Refusing to unpickle a checkpoint that "
+            "doesn't match the pinned, reviewed digest."
+        )
+
+
 def download_checkpoint(variant: str, dest_dir: Path) -> tuple[Path, Path, str]:
     """Downloads config.yaml + checkpoint for `variant` from _HF_REPO into
-    dest_dir. Returns (checkpoint_path, config_path, resolved commit sha of
-    _HF_REPO's main branch)."""
+    dest_dir, both pinned to the same resolved commit sha so they can't drift
+    apart if _HF_REPO's main branch is updated between the two downloads.
+    Verifies the checkpoint's digest against _EXPECTED_CHECKPOINT_SHA256
+    before returning (see verify_checkpoint_digest). Returns (checkpoint_path,
+    config_path, resolved commit sha)."""
     from huggingface_hub import HfApi, hf_hub_download
 
     subfolder = variant_subfolder(variant)
+    revision = HfApi().model_info(_HF_REPO).sha
     checkpoint_path = Path(
         hf_hub_download(
-            _HF_REPO, f"models/{subfolder}/final_checkpoint_model.ckpt", local_dir=str(dest_dir)
+            _HF_REPO,
+            f"models/{subfolder}/final_checkpoint_model.ckpt",
+            revision=revision,
+            local_dir=str(dest_dir),
         )
     )
+    verify_checkpoint_digest(variant, checkpoint_path)
     config_path = Path(
-        hf_hub_download(_HF_REPO, f"models/{subfolder}/config.yaml", local_dir=str(dest_dir))
+        hf_hub_download(
+            _HF_REPO,
+            f"models/{subfolder}/config.yaml",
+            revision=revision,
+            local_dir=str(dest_dir),
+        )
     )
-    revision = HfApi().model_info(_HF_REPO).sha
     return checkpoint_path, config_path, revision
 
 
@@ -92,7 +135,12 @@ def load_model(checkpoint_path: Path):
     """Reconstructs the STARCOP LightningModule saved at `checkpoint_path`,
     returning (model, settings). `settings` is the OmegaConf DictConfig
     ModelModule/ModelModuleRegression.__init__ received via
-    save_hyperparameters() at training time."""
+    save_hyperparameters() at training time.
+
+    weights_only=False is required -- the checkpoint's hyper_parameters is a
+    real OmegaConf DictConfig, not just tensors, and weights_only=True's
+    restricted unpickler rejects it. Only call this on a path that already
+    passed verify_checkpoint_digest (download_checkpoint always does)."""
     import torch
 
     raw = torch.load(str(checkpoint_path), map_location="cpu", weights_only=False)
