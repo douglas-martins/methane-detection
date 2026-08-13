@@ -5,6 +5,7 @@ on:
     paths: &test-paths
       - "src/data/**"
       - "src/training/**"
+      - "src/registry/**"
       - "configs/training/**"
       - "vendor/starcop/**"
       - "tests/vendor_starcop/**"
