@@ -49,6 +49,16 @@ _EXPECTED_CHECKPOINT_SHA256 = {
     "mag1c_rgb": "96e274be943f64e028faded3bac3d1ee325ee7a79d6de2ee7f5deeaea1ef188d",
 }
 
+# Full commit sha of _HF_REPO, reviewed and pinned rather than resolved live
+# via HfApi().model_info() -- the same commit both files above (and both
+# _EXPECTED_CHECKPOINT_SHA256 entries) were downloaded and verified against
+# (2026-08-12). A live lookup would follow main to whatever it currently
+# points at, which the digest check alone doesn't fully cover: config.yaml
+# has no digest pin, and a live lookup is one more untrusted response in the
+# path before verify_checkpoint_digest ever runs. Bumping this is a
+# deliberate, reviewed code change, same as updating the digest table above.
+_PINNED_REVISION = "b5fd9c0d1028321ab2d6791623e16e910fd45289"
+
 
 def variant_subfolder(variant: str) -> str:
     """Returns the `models/<subfolder>/` path segment `variant` lives under
@@ -101,16 +111,17 @@ def verify_checkpoint_digest(variant: str, checkpoint_path: Path) -> None:
 
 
 def download_checkpoint(variant: str, dest_dir: Path) -> tuple[Path, Path, str]:
-    """Downloads config.yaml + checkpoint for `variant` from _HF_REPO into
-    dest_dir, both pinned to the same resolved commit sha so they can't drift
-    apart if _HF_REPO's main branch is updated between the two downloads.
-    Verifies the checkpoint's digest against _EXPECTED_CHECKPOINT_SHA256
-    before returning (see verify_checkpoint_digest). Returns (checkpoint_path,
-    config_path, resolved commit sha)."""
-    from huggingface_hub import HfApi, hf_hub_download
+    """Downloads config.yaml + checkpoint for `variant` from _HF_REPO at
+    _PINNED_REVISION into dest_dir -- a fixed, reviewed commit rather than a
+    live lookup of main, so both files always come from the exact same,
+    already-reviewed commit. Verifies the checkpoint's digest against
+    _EXPECTED_CHECKPOINT_SHA256 before returning (see
+    verify_checkpoint_digest). Returns (checkpoint_path, config_path,
+    _PINNED_REVISION)."""
+    from huggingface_hub import hf_hub_download
 
     subfolder = variant_subfolder(variant)
-    revision = HfApi().model_info(_HF_REPO).sha
+    revision = _PINNED_REVISION
     checkpoint_path = Path(
         hf_hub_download(
             _HF_REPO,

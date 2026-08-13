@@ -68,11 +68,11 @@ class TestVerifyCheckpointDigest:
 
 class TestDownloadCheckpoint:
     """Mocked at the huggingface_hub boundary (network, slow, non-deterministic
-    upstream state) -- proves download_checkpoint's own orchestration (resolve
-    one revision, pass it to both downloads, verify the checkpoint's digest)
+    upstream state) -- proves download_checkpoint's own orchestration (pass
+    the pinned revision to both downloads, verify the checkpoint's digest)
     rather than huggingface_hub itself."""
 
-    def test_checkpoint_and_config_are_downloaded_at_the_same_resolved_revision(
+    def test_checkpoint_and_config_are_downloaded_at_the_pinned_revision(
         self, monkeypatch, tmp_path
     ):
         import hashlib
@@ -95,20 +95,12 @@ class TestDownloadCheckpoint:
             path.write_bytes(checkpoint_bytes if filename.endswith(".ckpt") else b"config: true")
             return str(path)
 
-        class FakeModelInfo:
-            sha = "deadbeef"
-
-        class FakeHfApi:
-            def model_info(self, repo_id):
-                return FakeModelInfo()
-
         monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_hf_hub_download)
-        monkeypatch.setattr(huggingface_hub, "HfApi", FakeHfApi)
 
         checkpoint_path, config_path, revision = hf_baseline_import.download_checkpoint(
             "mag1c_only", tmp_path
         )
 
-        assert revision == "deadbeef"
+        assert revision == hf_baseline_import._PINNED_REVISION
         assert len(calls) == 2
-        assert all(call["revision"] == "deadbeef" for call in calls)
+        assert all(call["revision"] == hf_baseline_import._PINNED_REVISION for call in calls)
