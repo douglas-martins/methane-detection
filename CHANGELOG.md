@@ -2,6 +2,31 @@
 
 <!-- version list -->
 
+## v0.13.0 (2026-08-15)
+
+### Bug Fixes
+
+- **serving**: Load registered models via their recorded artifact path
+  ([`dfe5fc8`](https://github.com/douglas-martins/methane-detection/commit/dfe5fc8c45f22f4a3d340197b02718ca96dfac45))
+
+- **serving**: Reject ambiguous or unsafe-dtype arrays in assemble_input_tensor
+  ([`e63fb94`](https://github.com/douglas-martins/methane-detection/commit/e63fb9495e6505b0a05bd7c060688324e2db38d9))
+
+- **serving**: Reject complex-dtype arrays in assemble_input_tensor
+  ([`62fdb60`](https://github.com/douglas-martins/methane-detection/commit/62fdb606a745d0f7315d69a973ace5a66f792dd5))
+
+- **serving**: Reject non-array .npy uploads (e.g. .npz archives) with a 400
+  ([`9418bda`](https://github.com/douglas-martins/methane-detection/commit/9418bdab9d2403223a5b54c5abe651fa5befe61f))
+
+### Features
+
+- **registry**: Add resolve_stage_version to look up the model version at a given stage
+  ([`e80aa73`](https://github.com/douglas-martins/methane-detection/commit/e80aa73bd13aa1a25edb3b5ce4c86418eb277c0f))
+
+- **serving**: Add BentoML inference API for the STARCOP segmentation model
+  ([`45e3292`](https://github.com/douglas-martins/methane-detection/commit/45e3292a07bbe5d226818198c00cb40ef8dce3e2))
+
+
 ## v0.12.0 (2026-08-13)
 
 ### Bug Fixes
