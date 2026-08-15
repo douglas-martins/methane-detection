@@ -28,9 +28,15 @@ before Coolify will run it. Break the cycle once, by hand:
 docker login ghcr.io -u <your-github-username>  # PAT with write:packages, if not already logged in
 bentoml build
 bentoml containerize methane_detection_service:latest \
-  -t ghcr.io/douglas-martins/methane-detection:bootstrap
+  -t ghcr.io/douglas-martins/methane-detection:bootstrap \
+  --opt platform=linux/amd64
 docker push ghcr.io/douglas-martins/methane-detection:bootstrap
 ```
+
+**`--opt platform=linux/amd64` is required if you're building on Apple Silicon** (or any
+non-amd64 host) — `bentoml containerize`/`docker buildx` otherwise defaults to the host's
+own architecture, producing an image the VPS (`linux/amd64`) can't pull at all (`no
+matching manifest for linux/amd64 in the manifest list entries`).
 
 Set `IMAGE_TAG=bootstrap` in Coolify's env vars for the first import (see below), then
 switch it to `latest` once TASK-4.3's `cd.yml` is publishing real tags.
