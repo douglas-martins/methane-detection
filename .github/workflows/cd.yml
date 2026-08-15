@@ -57,19 +57,25 @@ jobs:
         # fix in src/data/preprocessing/) would be a wasted ~10GB build and
         # an unnecessary production redeploy. workflow_dispatch is always
         # explicit intent, so it always deploys regardless of this check.
+        # $GITHUB_REF_NAME (default env var), not ${{ github.ref_name }}
+        # interpolated into the script -- GitHub substitutes context
+        # expressions as literal text before the shell ever sees the script,
+        # bypassing normal quoting, so any github.* value gets passed through
+        # an env var instead per GitHub's own script-injection hardening
+        # guidance.
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Manual dispatch -- always deploying."
             exit 0
           fi
-          PREV_TAG=$(git describe --tags --abbrev=0 "${{ github.ref_name }}^" 2>/dev/null || echo "")
+          PREV_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || echo "")
           if [ -z "$PREV_TAG" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "No previous tag found -- deploying (first release)."
             exit 0
           fi
-          if git diff --quiet "$PREV_TAG" "${{ github.ref_name }}" -- \
+          if git diff --quiet "$PREV_TAG" "$GITHUB_REF_NAME" -- \
                src/serving/ bentofile.yaml requirements/serving.txt \
                deploy/bentoml/ src/registry/mlflow_registry.py vendor/starcop; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
