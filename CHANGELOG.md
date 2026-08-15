@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v0.16.0 (2026-08-15)
+
+### Bug Fixes
+
+- **deploy**: Compute detection rate as a fraction and guard against zero-traffic windows
+  ([`36d8caf`](https://github.com/douglas-martins/methane-detection/commit/36d8cafd479f2ff11e0a2346de83be9b113ece49))
+
+- **deploy**: Require GF_SECURITY_ADMIN_PASSWORD to be set
+  ([`e0676ac`](https://github.com/douglas-martins/methane-detection/commit/e0676aca6834d4f1f3b264751ec49140f7b4faa5))
+
+### Features
+
+- **deploy**: Add Prometheus + Grafana Coolify deployment
+  ([`ef72a91`](https://github.com/douglas-martins/methane-detection/commit/ef72a91a02f2e567b36e14c1215386048afae0f2))
+
+- **serving**: Add methane_prediction_total Prometheus counter
+  ([`60a24f6`](https://github.com/douglas-martins/methane-detection/commit/60a24f6dd8545ec3f190c5089562cc993ce4e37b))
+
+
 ## v0.15.0 (2026-08-15)
 
 ### Bug Fixes
