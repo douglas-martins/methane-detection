@@ -63,6 +63,19 @@ class MethaneDetectionService:
         except (OSError, ValueError) as exc:
             raise BadInput(f"could not read {file.name!r} as a .npy array: {exc}") from exc
 
+        if not isinstance(array, np.ndarray):
+            # np.load doesn't raise for a .npz archive (multiple named
+            # arrays, uploaded under a misleading .npy-looking request) --
+            # it returns an NpzFile with no .ndim/.shape/.dtype, which would
+            # otherwise reach predict_response and fail with an uncaught
+            # AttributeError (opaque 500) instead of a client-facing 400.
+            if isinstance(array, np.lib.npyio.NpzFile):
+                array.close()
+            raise BadInput(
+                f"{file.name!r} did not load as a single .npy array "
+                f"(got {type(array).__name__}); .npz archives are not supported"
+            )
+
         try:
             return inference.predict_response(self.model, array, self.num_channels)
         except ValueError as exc:
