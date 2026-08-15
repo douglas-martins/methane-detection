@@ -1,0 +1,26 @@
+services:
+  bentoml:
+    image: ghcr.io/douglas-martins/methane-detection:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      MLFLOW_TRACKING_USERNAME: ${MLFLOW_TRACKING_USERNAME}
+      MLFLOW_TRACKING_PASSWORD: ${MLFLOW_TRACKING_PASSWORD}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${B2_APPLICATION_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${B2_APPLICATION_KEY}
+      MODEL_NAME: ${MODEL_NAME:-starcop-baseline-mag1c-rgb}
+      MODEL_STAGE: ${MODEL_STAGE:-Staging}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/readyz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
