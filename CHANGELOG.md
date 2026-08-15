@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.14.2 (2026-08-15)
+
+### Bug Fixes
+
+- **deploy**: Use python3 instead of curl for the bentoml healthcheck
+  ([`82569f4`](https://github.com/douglas-martins/methane-detection/commit/82569f428841992bd66ac4c30f4ab9b7060fc6e1))
+
+
 ## v0.14.1 (2026-08-15)
 
 ### Bug Fixes
