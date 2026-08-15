@@ -142,7 +142,7 @@ jobs:
         # token alone identifies *what* to deploy, the header authorizes the
         # request (see TASK-5.2's step-by-step Coolify webhook guide).
         run: |
-          curl --fail --request GET "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
+          curl --fail --connect-timeout 10 --max-time 30 --request GET "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
             --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"
 
       - name: Wait for redeploy and smoke test
@@ -150,13 +150,19 @@ jobs:
         # Polls rather than checking once immediately -- the container needs
         # to be pulled, started, and load the model from MLflow/B2 before
         # /readyz goes green (observed ~10-60s locally depending on network,
-        # see TASK-5.2's validation notes).
+        # see TASK-5.2's validation notes). Deadline is tracked via $SECONDS
+        # (elapsed wall-clock time), not a fixed iteration count -- each curl
+        # call is bounded (--connect-timeout/--max-time) but still spends
+        # real time either way, and a fixed `seq 1 30` loop would silently
+        # let a slow-but-not-hanging server push well past the intended 5
+        # minutes before actually giving up.
         run: |
-          for i in $(seq 1 30); do
-            if curl --fail -sS https://api-methane-detection.ghostface.tech/readyz; then
+          DEADLINE=$((SECONDS + 300))
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            if curl --fail -sS --connect-timeout 10 --max-time 30 https://api-methane-detection.ghostface.tech/readyz; then
               echo ""
-              echo "API healthy after ${i} attempt(s)."
-              curl --fail -sS -X POST https://api-methane-detection.ghostface.tech/health
+              echo "API healthy after ${SECONDS}s."
+              curl --fail -sS --connect-timeout 10 --max-time 30 -X POST https://api-methane-detection.ghostface.tech/health
               exit 0
             fi
             sleep 10
