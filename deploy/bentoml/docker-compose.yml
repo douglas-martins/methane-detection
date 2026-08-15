@@ -15,7 +15,12 @@ services:
       MODEL_NAME: ${MODEL_NAME:-starcop-baseline-mag1c-rgb}
       MODEL_STAGE: ${MODEL_STAGE:-Staging}
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:3000/readyz"]
+      # python3, not curl -- the built Bento's base image (python:3.12-slim)
+      # never installs curl, so a curl-based healthcheck silently fails with
+      # "command not found" forever, permanently marking the container
+      # unhealthy at the Docker level even though the app itself is fine
+      # (Traefik then reports "no available server" despite clean app logs).
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/readyz')"]
       interval: 30s
       timeout: 5s
       retries: 3
