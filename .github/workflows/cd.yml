@@ -134,6 +134,7 @@ jobs:
 
       - name: Trigger Coolify redeploy
         if: steps.relevant.outputs.changed == 'true'
+        id: trigger
         # deploy/bentoml/docker-compose.yml has pull_policy: always, so this
         # redeploy is guaranteed to pick up the digest just pushed above
         # rather than reusing a stale cached :latest (the exact bug hit and
@@ -141,15 +142,62 @@ jobs:
         # log). COOLIFY_WEBHOOK_URL/COOLIFY_TOKEN are both required; the
         # token alone identifies *what* to deploy, the header authorizes the
         # request (see TASK-5.2's step-by-step Coolify webhook guide).
+        #
+        # Coolify's /api/v1/deploy response body is {"deployments": [{...,
+        # "deployment_uuid": "..."}]} (confirmed against coollabsio/coolify's
+        # own openapi.json) -- captured here so the next step can poll that
+        # specific deployment's actual status instead of just assuming the
+        # webhook call succeeding means the deploy itself succeeded.
         run: |
-          curl --fail --connect-timeout 10 --max-time 30 --request GET "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
-            --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"
+          RESPONSE=$(curl --fail --connect-timeout 10 --max-time 30 --request GET "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
+            --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
+          echo "$RESPONSE"
+          DEPLOYMENT_UUID=$(echo "$RESPONSE" | jq -r '.deployments[0].deployment_uuid // empty')
+          if [ -z "$DEPLOYMENT_UUID" ]; then
+            echo "::error::Coolify's response didn't include a deployment_uuid, can't poll deployment status: $RESPONSE"
+            exit 1
+          fi
+          echo "deployment_uuid=$DEPLOYMENT_UUID" >> "$GITHUB_OUTPUT"
+          # COOLIFY_WEBHOOK_URL is https://<coolify-host>/api/v1/deploy?uuid=...
+          # -- reuse its scheme+host rather than needing a whole extra secret
+          # just for the base URL.
+          echo "coolify_host=$(printf '%s' "${{ secrets.COOLIFY_WEBHOOK_URL }}" | sed -E 's#^(https?://[^/]+).*#\1#')" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Coolify deployment to finish
+        if: steps.relevant.outputs.changed == 'true'
+        # queued/in_progress/finished/failed/cancelled-by-user are the exact
+        # values Coolify's ApplicationDeploymentStatus enum uses (confirmed
+        # against coollabsio/coolify's source, not guessed) -- finished is
+        # the only success terminal state, failed/cancelled-by-user fail the
+        # job immediately rather than waiting out the full timeout on a
+        # deploy that's already known to be dead.
+        run: |
+          DEADLINE=$((SECONDS + 300))
+          STATUS_URL="${{ steps.trigger.outputs.coolify_host }}/api/v1/deployments/${{ steps.trigger.outputs.deployment_uuid }}"
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            STATUS=$(curl --fail -sS --connect-timeout 10 --max-time 30 "$STATUS_URL" \
+              --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" | jq -r '.status // empty')
+            case "$STATUS" in
+              finished)
+                echo "Coolify deployment finished after ${SECONDS}s."
+                exit 0
+                ;;
+              failed|cancelled-by-user)
+                echo "::error::Coolify deployment ended with status '$STATUS'."
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          echo "::error::Coolify deployment did not reach a terminal state within 5 minutes."
+          exit 1
 
       - name: Wait for redeploy and smoke test
         if: steps.relevant.outputs.changed == 'true'
-        # Polls rather than checking once immediately -- the container needs
-        # to be pulled, started, and load the model from MLflow/B2 before
-        # /readyz goes green (observed ~10-60s locally depending on network,
+        # Runs only after Coolify itself reports the deployment finished
+        # (previous step) -- still polls rather than checking once
+        # immediately, since "finished" doesn't guarantee the container has
+        # already loaded the model from MLflow/B2 (observed ~10-60s locally,
         # see TASK-5.2's validation notes). Deadline is tracked via $SECONDS
         # (elapsed wall-clock time), not a fixed iteration count -- each curl
         # call is bounded (--connect-timeout/--max-time) but still spends
