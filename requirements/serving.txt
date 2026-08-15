@@ -15,3 +15,17 @@ mlflow
 boto3
 numpy
 bentoml
+# Never imported by src/serving/ itself -- required because
+# mlflow.pytorch.load_model unpickles the checkpoint into a real
+# vendor/starcop/starcop/models/model_module.py ModelModule instance, which
+# imports wandb at module level (STARCOP's own training-era code, composition-
+# only, never edited -- see mlops-methane-detection-plan.md decision 0).
+# Masked during local `bentoml serve` validation because wandb is an
+# incidental root pyproject.toml (Environment B) dependency there; the
+# containerized Bento only installs from this file, so it wasn't caught until
+# the actual deployed image failed with "No module named 'wandb'".
+wandb
+# Same category as wandb above: starcop.utils (imported by model_module.py)
+# imports rasterio at module level, needed to reconstruct the pickled model
+# class, never called by src/serving/'s own inference path.
+rasterio
