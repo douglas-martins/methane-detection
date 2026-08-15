@@ -1,0 +1,22 @@
+# Reuses the user's existing Pushover account (already wired into Coolify's
+# own deploy notifications) as a native Grafana contact point -- decided
+# 2026-08-15 over standing up SMTP, which nothing in this project uses today.
+# $PUSHOVER_API_TOKEN/$PUSHOVER_USER_KEY are Grafana's OWN provisioning-file
+# env substitution (plain $VAR, confirmed against Grafana's file-provisioning
+# docs), resolved against the grafana container's environment at startup --
+# set via docker-compose.yml's `environment:` block, which is itself filled
+# from this directory's .env at Compose's own (separate) ${VAR} substitution
+# pass. Two different substitution layers, same two variable names.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: pushover
+    receivers:
+      - uid: pushover-methane-detection
+        type: pushover
+        settings:
+          apiToken: $PUSHOVER_API_TOKEN
+          userKey: $PUSHOVER_USER_KEY
+          priority: "0"
+        disableResolveMessage: false

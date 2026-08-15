@@ -1,0 +1,81 @@
+# TASK-6.1 step 4's detection-rate alert. NOT live-validated against a real
+# Grafana instance (none exists yet -- this is the first deploy) -- the
+# Query/Reduce/Threshold shape and the "-100" expression-datasource uid
+# follow Grafana's documented alerting schema, but this file should be
+# treated as a starting point to confirm/fix via the Grafana UI on first
+# import (Alerting -> Alert rules -> this rule -> Edit -> Save, which
+# re-validates and re-persists it) rather than assumed correct on faith.
+#
+# The 30-day baseline needs 30 days of real traffic before it's meaningful
+# -- per the plan's own audit, validate the WIRING (rule fires, Pushover
+# notification arrives) with a short-window/low-threshold override first,
+# then restore the real 1h/30d/2-stddev config below for production use.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: methane-detection-alerts
+    folder: Methane Detection
+    interval: 5m
+    rules:
+      - uid: methane-detection-rate-deviation
+        title: Methane detection rate deviates from 30-day baseline
+        condition: C
+        for: 15m
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            model:
+              refId: A
+              datasource: { type: prometheus, uid: prometheus }
+              expr: >-
+                abs(
+                  (sum(rate(methane_prediction_total{result="plume_detected"}[1h]))
+                   - avg_over_time(sum(rate(methane_prediction_total{result="plume_detected"}[1h]))[30d:1h]))
+                  /
+                  stddev_over_time(sum(rate(methane_prediction_total{result="plume_detected"}[1h]))[30d:1h])
+                )
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: "-100"
+            model:
+              type: threshold
+              expression: B
+              refId: C
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2]
+                  operator:
+                    type: and
+                  query:
+                    params: ["B"]
+                  reducer:
+                    type: last
+                  type: query
+        labels:
+          severity: warning
+        annotations:
+          summary: "Methane detection rate deviated more than 2 standard deviations from its 30-day baseline"
+          description: >-
+            The rolling 1h plume-detection rate has moved more than 2
+            standard deviations away from its 30-day rolling average. Could
+            indicate a genuine shift in incoming scene conditions, a model
+            regression, or an upstream data issue. See TASK-6.2 for per-band
+            spectral drift detection, a narrower diagnostic for the same
+            class of problem.
