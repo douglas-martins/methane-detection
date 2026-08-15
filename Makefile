@@ -7,8 +7,8 @@ ENV_B_PYTHON := .venv/bin/python
 ENV_B_GENBADGE := .venv/bin/genbadge
 ENV_B_INTERROGATE := .venv/bin/interrogate
 ENV_B_RUFF := .venv/bin/ruff
-ENV_B_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/registry/__tests__
-ENV_B_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/registry
+ENV_B_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/registry/__tests__ src/serving/__tests__
+ENV_B_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/registry --cov=src/serving
 
 BATS_IMAGE := bats/bats:latest
 SCRIPTS_TEST_PATHS := scripts/__tests__

@@ -1,0 +1,17 @@
+# Runtime dependencies for the BentoML inference service (src/serving/,
+# TASK-5.1). Environment B versions (torch>=2.5 stack) -- proven to load and
+# run a real Environment-A-trained STARCOP checkpoint via mlflow.pytorch,
+# see mlops-methane-detection-plan.md TASK-5.1's 2026-08-15 readiness audit
+# and its live-validation notes. Not vendor/starcop/requirements.txt's
+# pinned Environment-A (torch==1.13.1) versions -- those are for training,
+# not serving.
+torch>=2.5
+lightning>=2.3
+segmentation-models-pytorch
+torchmetrics
+kornia
+omegaconf
+mlflow
+boto3
+numpy
+bentoml
