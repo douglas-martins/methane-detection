@@ -6,3 +6,20 @@ reviews:
   # rule requiring 1 approving review (PR authors can't approve their own
   # PRs, so this is otherwise a manual "@coderabbitai approve" every time).
   request_changes_workflow: true
+
+  pre_merge_checks:
+    docstrings:
+      # This project's real docstring gate is `make docstring-coverage`
+      # (interrogate, configured in pyproject.toml's [tool.interrogate]),
+      # enforced in CI via environment-b-tests -- currently 100% at the
+      # same 80% threshold. pyproject.toml deliberately excludes
+      # */__tests__/*, vendor, and .venv, and ignores private/magic/nested
+      # functions (test names already read as the spec; see that file's
+      # comment). CodeRabbit's docstring check has no per-check path-filter
+      # equivalent (confirmed against CodeRabbit's docs -- only `mode` and
+      # `threshold` are supported), so it can't honor those exclusions and
+      # instead scores the whole unfiltered repo, which is why it reported
+      # ~19% against the same 80% threshold our own gate passes at 100%
+      # under. Turned off here rather than left as a permanently-misleading
+      # duplicate of a check this project already enforces correctly.
+      mode: "off"
