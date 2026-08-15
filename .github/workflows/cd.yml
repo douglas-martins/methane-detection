@@ -1,0 +1,225 @@
+name: CD
+
+# Deploys the BentoML inference service (src/serving/, TASK-5.1) to the VPS.
+# Deliberately does NOT re-run src/registry/promote_model.py -- promotion to
+# the Staging registry stage is a separate, already-existing step (done
+# manually today, TASK-7.2's retraining loop later); this workflow assumes
+# that already happened and just ships the current serving code + lets the
+# redeployed container pick up whatever model is currently at Staging (see
+# mlops-methane-detection-plan.md TASK-4.3's 2026-08-15 design-mismatch note
+# for why re-checking the gate here would be wrong, not just redundant).
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  # A second deploy racing the first would build/push two images and fire
+  # two overlapping Coolify redeploys -- serialize instead of cancelling, so
+  # a tag push during an in-flight manual dispatch (or vice versa) still runs
+  # to completion rather than silently dropping a deploy.
+  group: cd-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          # Full history + tags needed by the "determine whether relevant"
+          # step below (git describe / git diff against the previous tag) --
+          # the default shallow, tag-less checkout can't do either.
+          fetch-depth: 0
+          # Nothing in this workflow pushes/commits -- GITHUB_TOKEN is used
+          # explicitly later (docker/login-action) where it's actually
+          # needed, not left sitting in local git config for the rest of the
+          # job. Same pattern as tests.yml's checkout step.
+          persist-credentials: false
+
+      - name: Determine whether this release touches serving/deploy
+        id: relevant
+        # A tag push fires for EVERY semantic-release version bump (any
+        # feat/fix/perf commit anywhere in the repo, per this project's own
+        # pyproject.toml commit_parser_options), not just ones that changed
+        # anything under this workflow's actual concern -- rebuilding and
+        # redeploying the live API on a completely unrelated release (e.g. a
+        # fix in src/data/preprocessing/) would be a wasted ~10GB build and
+        # an unnecessary production redeploy. workflow_dispatch is always
+        # explicit intent, so it always deploys regardless of this check.
+        # $GITHUB_REF_NAME (default env var), not ${{ github.ref_name }}
+        # interpolated into the script -- GitHub substitutes context
+        # expressions as literal text before the shell ever sees the script,
+        # bypassing normal quoting, so any github.* value gets passed through
+        # an env var instead per GitHub's own script-injection hardening
+        # guidance.
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch -- always deploying."
+            exit 0
+          fi
+          PREV_TAG=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "No previous tag found -- deploying (first release)."
+            exit 0
+          fi
+          if git diff --quiet "$PREV_TAG" "$GITHUB_REF_NAME" -- \
+               src/serving/ bentofile.yaml requirements/serving.txt \
+               deploy/bentoml/ src/registry/mlflow_registry.py vendor/starcop; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No serving/deploy-relevant changes since $PREV_TAG -- skipping deploy."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Serving/deploy-relevant changes found since $PREV_TAG -- deploying."
+          fi
+
+      - name: Free up runner disk space
+        if: steps.relevant.outputs.changed == 'true'
+        # The built image bundles the full torch/CUDA stack (~10GB locally,
+        # see TASK-5.2's 2026-08-15 deployment log) -- GH-hosted runners only
+        # have ~14GB free by default, and uv sync's own package cache eats
+        # into that before the Docker build even starts. Remove large
+        # preinstalled toolchains this workflow never uses.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - name: Install uv
+        if: steps.relevant.outputs.changed == 'true'
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install Environment B dependencies
+        if: steps.relevant.outputs.changed == 'true'
+        # bentoml build imports src/serving/service.py to introspect its API
+        # schema (though it never instantiates the service class, so no live
+        # MLflow call happens here -- confirmed locally, see TASK-5.2's
+        # bootstrap notes) -- needs the full runtime stack importable,
+        # matching how this was validated locally via the same `uv sync`.
+        run: uv sync
+
+      - name: Set up Docker Buildx
+        if: steps.relevant.outputs.changed == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.relevant.outputs.changed == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Bento
+        if: steps.relevant.outputs.changed == 'true'
+        run: uv run bentoml build
+
+      - name: Containerize and push
+        if: steps.relevant.outputs.changed == 'true'
+        # --opt platform=linux/amd64 is explicit even though ubuntu-latest
+        # runners are already amd64 -- defense in depth after hitting "no
+        # matching manifest for linux/amd64" building this by hand on Apple
+        # Silicon (TASK-5.2's deployment log). `:latest` here is BentoML's
+        # own alias for "the most recently built Bento", not a Docker tag.
+        run: |
+          uv run bentoml containerize methane_detection_service:latest \
+            -t ghcr.io/${{ github.repository_owner }}/methane-detection:latest \
+            --opt platform=linux/amd64
+          docker push ghcr.io/${{ github.repository_owner }}/methane-detection:latest
+
+      - name: Trigger Coolify redeploy
+        if: steps.relevant.outputs.changed == 'true'
+        id: trigger
+        # deploy/bentoml/docker-compose.yml has pull_policy: always, so this
+        # redeploy is guaranteed to pick up the digest just pushed above
+        # rather than reusing a stale cached :latest (the exact bug hit and
+        # fixed manually during this task's bootstrap -- see the deployment
+        # log). COOLIFY_WEBHOOK_URL/COOLIFY_TOKEN are both required; the
+        # token alone identifies *what* to deploy, the header authorizes the
+        # request (see TASK-5.2's step-by-step Coolify webhook guide).
+        #
+        # Coolify's /api/v1/deploy response body is {"deployments": [{...,
+        # "deployment_uuid": "..."}]} (confirmed against coollabsio/coolify's
+        # own openapi.json) -- captured here so the next step can poll that
+        # specific deployment's actual status instead of just assuming the
+        # webhook call succeeding means the deploy itself succeeded.
+        run: |
+          RESPONSE=$(curl --fail --connect-timeout 10 --max-time 30 --request GET "${{ secrets.COOLIFY_WEBHOOK_URL }}" \
+            --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}")
+          echo "$RESPONSE"
+          DEPLOYMENT_UUID=$(echo "$RESPONSE" | jq -r '.deployments[0].deployment_uuid // empty')
+          if [ -z "$DEPLOYMENT_UUID" ]; then
+            echo "::error::Coolify's response didn't include a deployment_uuid, can't poll deployment status: $RESPONSE"
+            exit 1
+          fi
+          echo "deployment_uuid=$DEPLOYMENT_UUID" >> "$GITHUB_OUTPUT"
+          # COOLIFY_WEBHOOK_URL is https://<coolify-host>/api/v1/deploy?uuid=...
+          # -- reuse its scheme+host rather than needing a whole extra secret
+          # just for the base URL.
+          echo "coolify_host=$(printf '%s' "${{ secrets.COOLIFY_WEBHOOK_URL }}" | sed -E 's#^(https?://[^/]+).*#\1#')" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Coolify deployment to finish
+        if: steps.relevant.outputs.changed == 'true'
+        # queued/in_progress/finished/failed/cancelled-by-user are the exact
+        # values Coolify's ApplicationDeploymentStatus enum uses (confirmed
+        # against coollabsio/coolify's source, not guessed) -- finished is
+        # the only success terminal state, failed/cancelled-by-user fail the
+        # job immediately rather than waiting out the full timeout on a
+        # deploy that's already known to be dead.
+        run: |
+          DEADLINE=$((SECONDS + 300))
+          STATUS_URL="${{ steps.trigger.outputs.coolify_host }}/api/v1/deployments/${{ steps.trigger.outputs.deployment_uuid }}"
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            STATUS=$(curl --fail -sS --connect-timeout 10 --max-time 30 "$STATUS_URL" \
+              --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" | jq -r '.status // empty')
+            case "$STATUS" in
+              finished)
+                echo "Coolify deployment finished after ${SECONDS}s."
+                exit 0
+                ;;
+              failed|cancelled-by-user)
+                echo "::error::Coolify deployment ended with status '$STATUS'."
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          echo "::error::Coolify deployment did not reach a terminal state within 5 minutes."
+          exit 1
+
+      - name: Wait for redeploy and smoke test
+        if: steps.relevant.outputs.changed == 'true'
+        # Runs only after Coolify itself reports the deployment finished
+        # (previous step) -- still polls rather than checking once
+        # immediately, since "finished" doesn't guarantee the container has
+        # already loaded the model from MLflow/B2 (observed ~10-60s locally,
+        # see TASK-5.2's validation notes). Deadline is tracked via $SECONDS
+        # (elapsed wall-clock time), not a fixed iteration count -- each curl
+        # call is bounded (--connect-timeout/--max-time) but still spends
+        # real time either way, and a fixed `seq 1 30` loop would silently
+        # let a slow-but-not-hanging server push well past the intended 5
+        # minutes before actually giving up.
+        run: |
+          DEADLINE=$((SECONDS + 300))
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            if curl --fail -sS --connect-timeout 10 --max-time 30 https://api-methane-detection.ghostface.tech/readyz; then
+              echo ""
+              echo "API healthy after ${SECONDS}s."
+              curl --fail -sS --connect-timeout 10 --max-time 30 -X POST https://api-methane-detection.ghostface.tech/health
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::API did not become healthy within 5 minutes of triggering the redeploy."
+          exit 1
