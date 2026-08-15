@@ -81,6 +81,16 @@ def run_inference(model, x: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
     )
 
 
+def has_plume(mask) -> bool:
+    """True if any pixel in a binary segmentation mask is a positive (plume)
+    prediction. Accepts either a numpy array or a plain nested list (e.g.
+    predict_response's JSON-ready "mask" field) -- backs TASK-6.1's
+    methane_prediction_total Prometheus counter in service.py, which labels
+    each /predict response by predicted class.
+    """
+    return bool(np.any(np.asarray(mask)))
+
+
 def predict_response(model, array: np.ndarray, expected_channels: int) -> dict:
     """Full assemble -> infer -> shape-as-JSON pipeline behind POST
     /predict's response body. Pulled out of service.py (BentoML SDK glue,
