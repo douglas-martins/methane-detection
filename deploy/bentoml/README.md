@@ -14,6 +14,9 @@ established pattern (TASK-2.1). Full task spec and rationale:
   "Bootstrapping" below).
 - Backblaze B2 application key with read access to the same bucket
   `deploy/mlflow/`'s MLflow server uses for artifacts (`mlflow-artifacts/` prefix).
+- Docker logged in to `ghcr.io` with a token scoped to `write:packages` — only needed
+  for the one-off bootstrap push below (`cd.yml`, once it exists, authenticates itself
+  via `GITHUB_TOKEN`).
 
 ## Bootstrapping (first import only)
 
@@ -22,6 +25,7 @@ GitHub secrets before it can call them — but this resource needs a real image 
 before Coolify will run it. Break the cycle once, by hand:
 
 ```bash
+docker login ghcr.io -u <your-github-username>  # PAT with write:packages, if not already logged in
 bentoml build
 bentoml containerize methane_detection_service:latest \
   -t ghcr.io/douglas-martins/methane-detection:bootstrap
@@ -73,10 +77,10 @@ is in the plan's TASK-5.2 section — summary:
 ## Validation
 
 ```bash
-curl https://api-methane-detection.ghostface.tech/readyz
+curl --fail -sS https://api-methane-detection.ghostface.tech/readyz
 # -> 200
 
-curl -X POST https://api-methane-detection.ghostface.tech/health
+curl --fail -sS -X POST https://api-methane-detection.ghostface.tech/health
 # -> {"status": "ok", "model_name": "...", "model_version": "...", ...}
 ```
 

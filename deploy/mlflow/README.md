@@ -39,7 +39,7 @@ Settings → user menu in the UI, or `POST /api/2.0/mlflow/users/update-password
 ## Validation
 
 ```bash
-curl -u admin:<password> https://mlflow.ghostface.tech/api/2.0/mlflow/experiments/search
+curl --fail -sS -u admin:<password> https://mlflow.ghostface.tech/api/2.0/mlflow/experiments/search
 # -> 200 with a JSON experiment list (or empty list on a fresh server)
 ```
 
