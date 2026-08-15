@@ -63,17 +63,31 @@ plan's audit first.
 
 `grafana/provisioning/alerting/rules.yml`'s detection-rate-deviation rule was **not**
 live-validated against a real Grafana instance (none existed until this task's own
-deploy). On first import:
+deploy). It's file-provisioned, so it's read-only from the Grafana UI by design —
+editing it there does nothing durable (Grafana reverts UI/API edits to a
+file-provisioned rule on the next reload or restart). **Always edit `rules.yml`
+itself**, then apply the change one of two ways:
 
-1. Open the rule in **Alerting → Alert rules**, confirm it loaded without a schema
-   error, and re-**Save** it once from the UI (Grafana re-validates and re-persists on
-   save, which is a cheap sanity check even without touching the config).
+- **Reload without a restart**: `POST /api/admin/provisioning/alerting/reload`
+  against the Grafana instance, Basic Auth with the admin account (requires Grafana
+  server-admin permissions). Fastest way to pick up a `rules.yml` change.
+- **Redeploy**: push the change and redeploy the Coolify resource — provisioning
+  files are re-applied on every container start regardless, so this always works too,
+  just slower.
+
+On first import:
+
+1. Confirm the rule loaded without a schema error: **Alerting → Alert rules** should
+   show "Methane detection rate deviates from 30-day baseline" in the "Methane
+   Detection" folder (a `file`-provisioned rule shows a small lock/provisioned icon —
+   that's expected, not a fault).
 2. The real rule needs 30 days of live traffic before its baseline means anything.
-   Validate the *wiring* now instead: temporarily lower the threshold (edit the
-   Threshold step's `params: [2]` to something a burst of test traffic will clearly
-   cross) or shorten the windows, save, send the 10+ synthetic `/predict` requests from
-   the Validation section below, confirm a Pushover notification actually arrives, then
-   put the real `2`/`1h`/`30d` values back.
+   Validate the *wiring* now instead: temporarily lower the threshold in `rules.yml`
+   (edit the Threshold step's `params: [2]` to something a burst of test traffic will
+   clearly cross) or shorten the windows, apply via reload or redeploy as above, send
+   the 10+ synthetic `/predict` requests from the Validation section below, confirm a
+   Pushover notification actually arrives, then restore the real `2`/`1h`/`30d` values
+   in `rules.yml` and apply again.
 
 ## Validation
 
