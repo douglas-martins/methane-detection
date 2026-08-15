@@ -21,6 +21,7 @@ dependencies = [
     "pytest-cov",
     "bentoml",
     "prefect",
+    "boto3",
 ]
 
 [dependency-groups]

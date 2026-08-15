@@ -1,0 +1,33 @@
+# BentoML build config for the methane-detection inference service
+# (TASK-5.1). Build context is the project root (not src/serving/) so the
+# service can bundle vendor/starcop's real source -- needed at unpickle
+# time by mlflow.pytorch.load_model, see
+# src/serving/_vendor_starcop_serving.py's docstring -- alongside
+# src/registry/mlflow_registry.py, which model_loader.py imports across
+# packages.
+#
+# NOT yet validated with a real `bentoml build`/`bentoml containerize` run
+# in this session (no Docker daemon available) -- the serving logic itself
+# (model_loader.py, inference.py, service.py) IS validated end to end via a
+# real `bentoml serve` run against the live MLflow server, see TASK-5.1's
+# 2026-08-15 readiness-audit follow-up in mlops-methane-detection-plan.md.
+# A `bentoml build` dry run against this file is the next concrete step
+# before TASK-5.2 can containerize and deploy it.
+service: "src.serving.service:MethaneDetectionService"
+
+labels:
+  owner: douglas-martins
+  project: methane-detection
+
+include:
+  - "src/serving/*.py"
+  - "src/registry/mlflow_registry.py"
+  - "vendor/starcop/starcop/**/*.py"
+
+python:
+  requirements_txt: "requirements/serving.txt"
+
+docker:
+  env:
+    MODEL_NAME: "starcop-baseline-mag1c-rgb"
+    MODEL_STAGE: "Staging"
