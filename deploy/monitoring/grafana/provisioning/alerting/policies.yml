@@ -1,0 +1,10 @@
+# Routes every alert to the Pushover contact point by default -- without
+# this, Grafana's root policy falls back to its built-in
+# "grafana-default-email" receiver, which silently no-ops here since no SMTP
+# is configured anywhere in this project.
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: pushover
+    group_by: ["alertname"]

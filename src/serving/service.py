@@ -5,7 +5,12 @@ Loads a model from the MLflow registry at startup (MODEL_NAME/MODEL_STAGE
 env vars, defaulting to the real starcop-baseline-mag1c-rgb Staging model --
 see mlops-methane-detection-plan.md TASK-5.1's 2026-08-15 readiness audit)
 and exposes POST /predict, GET /health. GET /metrics is BentoML's own
-built-in Prometheus endpoint, not hand-rolled here.
+built-in Prometheus endpoint, not hand-rolled here -- it already covers
+request count, latency, and error rate (TASK-6.1's readiness audit traced
+this directly against bentoml's own instrumentation code). The one metric
+it can't provide -- which class /predict actually returned -- is added
+below as a small custom counter, for TASK-6.1's "prediction class
+distribution over time" dashboard panel and its detection-rate alert.
 
 This class itself is thin BentoML SDK glue -- framework decorators, env var
 reads, exception-to-HTTP-status translation -- exercised by a real
@@ -37,6 +42,35 @@ import model_loader  # noqa: E402
 
 DEFAULT_MODEL_NAME = "starcop-baseline-mag1c-rgb"
 DEFAULT_MODEL_STAGE = "Staging"
+
+_prediction_counter = None
+
+
+def _get_prediction_counter():
+    """Lazily creates the methane_prediction_total Counter on first use.
+
+    Deliberately NOT created at module import time, and deliberately using
+    prometheus_client directly rather than the deprecated bentoml.metrics
+    shim: bentoml.metrics's own docstring warns that BentoML's worker
+    processes set PROMETHEUS_MULTIPROC_DIR *after* this module is first
+    imported, so a Counter() constructed eagerly at import time can end up
+    registered against a single-process registry that the /metrics
+    MultiProcessCollector never reads -- silently invisible on the real
+    endpoint despite working in-process. Deferring construction to first
+    call (from inside predict(), i.e. after BentoML's own startup) avoids
+    that ordering hazard the same way bentoml.metrics's lazy __getattr__
+    does, without triggering its deprecation warning.
+    """
+    global _prediction_counter
+    if _prediction_counter is None:
+        import prometheus_client
+
+        _prediction_counter = prometheus_client.Counter(
+            "methane_prediction_total",
+            "Count of /predict responses, labeled by predicted class",
+            labelnames=["result"],
+        )
+    return _prediction_counter
 
 
 @bentoml.service(resources={"cpu": "2"}, traffic={"timeout": 30})
@@ -84,9 +118,13 @@ class MethaneDetectionService:
             )
 
         try:
-            return inference.predict_response(self.model, array, self.num_channels)
+            result = inference.predict_response(self.model, array, self.num_channels)
         except ValueError as exc:
             raise BadInput(str(exc)) from exc
+
+        label = "plume_detected" if inference.has_plume(result["mask"]) else "no_plume"
+        _get_prediction_counter().labels(result=label).inc()
+        return result
 
     @bentoml.api(route="/health")
     def health(self) -> dict:

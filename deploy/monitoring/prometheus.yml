@@ -1,0 +1,20 @@
+# TASK-6.1 scrape config. Targets the inference API's already-live, public
+# /metrics endpoint (https://api-methane-detection.ghostface.tech/metrics)
+# rather than an internal Coolify network path -- Coolify isolates each
+# Docker Compose resource on its own network by default, so reaching the
+# bentoml resource internally would need "Connect to Predefined Network"
+# enabled on both resources plus a UUID-suffixed hostname hardcoded here.
+# Decision (2026-08-15, user): scrape the public domain instead -- zero new
+# Coolify network config, at the accepted cost that /metrics is
+# unauthenticated and therefore publicly readable. See
+# mlops-methane-detection-plan.md TASK-6.1 for the full tradeoff.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: methane-detection-api
+    scheme: https
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api-methane-detection.ghostface.tech"]

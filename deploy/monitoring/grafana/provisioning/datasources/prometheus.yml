@@ -1,0 +1,19 @@
+# Auto-provisions the Prometheus datasource -- no manual "Add data source"
+# click in the Grafana UI. `url` uses the plain Compose service name
+# ("prometheus"), not a UUID-suffixed hostname: both services live in this
+# SAME docker-compose.yml (one Coolify resource), so they already share the
+# resource's default Docker network -- the cross-RESOURCE isolation TASK-6.1's
+# audit found only applies between separate Coolify resources (this compose
+# file vs. the bentoml one), not between services within one compose file.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s

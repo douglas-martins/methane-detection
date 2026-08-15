@@ -200,3 +200,36 @@ class TestPredictResponse:
 
         with pytest.raises(ValueError, match="4"):
             inference.predict_response(model, array, expected_channels=4)
+
+
+class TestHasPlume:
+    """has_plume backs TASK-6.1's methane_prediction_total Prometheus
+    counter (src/serving/service.py) -- BentoML's own built-in metrics have
+    no visibility into what a response actually predicted, only request
+    count/latency/status code, so this is the signal that turns a /predict
+    response into a "plume_detected" vs "no_plume" label.
+    """
+
+    def test_true_when_any_pixel_is_positive(self):
+        mask = np.array([[0, 0], [0, 1]])
+
+        assert inference.has_plume(mask) is True
+
+    def test_false_when_all_pixels_are_zero(self):
+        mask = np.zeros((4, 4), dtype=int)
+
+        assert inference.has_plume(mask) is False
+
+    def test_accepts_a_plain_nested_list_not_just_a_numpy_array(self):
+        # service.py calls this on predict_response's JSON-ready "mask"
+        # field (a plain list of lists), not the raw numpy array -- must not
+        # require np.ndarray specifically.
+        assert inference.has_plume([[0, 0], [1, 0]]) is True
+        assert inference.has_plume([[0, 0], [0, 0]]) is False
+
+    def test_returns_a_plain_python_bool_not_a_numpy_bool(self):
+        mask = np.array([[1, 1]])
+
+        result = inference.has_plume(mask)
+
+        assert type(result) is bool
