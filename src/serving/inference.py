@@ -31,6 +31,13 @@ def assemble_input_tensor(array: np.ndarray, expected_channels: int) -> torch.Te
     if not np.issubdtype(array.dtype, np.number):
         raise ValueError(f"array has non-numeric dtype {array.dtype!r}; expected a numeric array")
 
+    if np.issubdtype(array.dtype, np.complexfloating):
+        # complex is a subtype of np.number, so the check above alone lets
+        # it through -- but .astype(float32) below doesn't raise for a
+        # complex array, it silently discards the imaginary part (only a
+        # ComplexWarning), which would corrupt input data without error.
+        raise ValueError(f"array has complex dtype {array.dtype!r}; expected a real-valued array")
+
     first_matches = array.shape[0] == expected_channels
     last_matches = array.shape[-1] == expected_channels
 

@@ -84,6 +84,17 @@ class TestAssembleInputTensor:
 
         assert tensor.dtype == torch.float32
 
+    def test_raises_on_complex_dtype_instead_of_silently_discarding_the_imaginary_part(self):
+        # complex64/complex128 pass np.issubdtype(..., np.number) (complex
+        # IS numeric) but .astype(float32) on a complex array doesn't raise
+        # -- it silently drops the imaginary component (only a
+        # ComplexWarning, not an exception), which would corrupt input data
+        # without any visible error.
+        array = np.full((8, 8, 4), 1 + 2j, dtype=np.complex64)
+
+        with pytest.raises(ValueError, match="complex"):
+            inference.assemble_input_tensor(array, expected_channels=4)
+
     def test_raises_when_both_first_and_last_axis_match_expected_channels(self):
         # (4, 8, 4) with expected_channels=4: shape[0] == shape[-1] == 4, so
         # channel-last vs. channel-first can't be distinguished -- silently
