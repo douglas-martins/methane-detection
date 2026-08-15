@@ -20,15 +20,29 @@ def assemble_input_tensor(array: np.ndarray, expected_channels: int) -> torch.Te
 
     Accepts either channel-last (H, W, C) or already channel-first
     (C, H, W) arrays -- whichever axis matches `expected_channels` is
-    treated as the channel axis. Raises ValueError if the array isn't 3D or
-    neither axis matches.
+    treated as the channel axis. Raises ValueError if the array isn't 3D,
+    if neither axis matches, or if both the first and last axis match
+    (ambiguous -- e.g. a square-ish patch where H or W happens to equal the
+    channel count -- silently guessing risks transposing H and W).
     """
     if array.ndim != 3:
         raise ValueError(f"expected a 3D array (H, W, C) or (C, H, W), got shape {array.shape}")
 
-    if array.shape[-1] == expected_channels:
+    if not np.issubdtype(array.dtype, np.number):
+        raise ValueError(f"array has non-numeric dtype {array.dtype!r}; expected a numeric array")
+
+    first_matches = array.shape[0] == expected_channels
+    last_matches = array.shape[-1] == expected_channels
+
+    if first_matches and last_matches:
+        raise ValueError(
+            f"array shape {array.shape} is ambiguous: both the first and last axis "
+            f"match the model's expected {expected_channels} channels, so channel-last "
+            "vs. channel-first can't be determined"
+        )
+    elif last_matches:
         chw = np.transpose(array, (2, 0, 1))
-    elif array.shape[0] == expected_channels:
+    elif first_matches:
         chw = array
     else:
         raise ValueError(
@@ -36,7 +50,11 @@ def assemble_input_tensor(array: np.ndarray, expected_channels: int) -> torch.Te
             f"expected {expected_channels} channels"
         )
 
-    return torch.from_numpy(np.ascontiguousarray(chw)).float().unsqueeze(0)
+    # .astype(float32) happens on the numpy side, before torch.from_numpy --
+    # numpy can downcast any numeric dtype (including e.g. np.longdouble,
+    # which torch.from_numpy rejects directly despite being numeric) to a
+    # dtype torch.from_numpy is guaranteed to accept.
+    return torch.from_numpy(np.ascontiguousarray(chw).astype(np.float32)).unsqueeze(0)
 
 
 def run_inference(model, x: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:

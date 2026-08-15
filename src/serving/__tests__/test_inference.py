@@ -57,6 +57,42 @@ class TestAssembleInputTensor:
         with pytest.raises(ValueError, match="3D|shape"):
             inference.assemble_input_tensor(array, expected_channels=4)
 
+    def test_raises_on_string_dtype_instead_of_letting_torch_raise_typeerror(self):
+        # torch.from_numpy raises a raw TypeError (not ValueError) for
+        # non-numeric dtypes -- service.py only catches ValueError to
+        # translate into an HTTP 400, so an uncaught TypeError here would
+        # surface as an opaque 500 instead of a client error.
+        array = np.full((8, 8, 4), "x", dtype="<U1")
+
+        with pytest.raises(ValueError, match="dtype"):
+            inference.assemble_input_tensor(array, expected_channels=4)
+
+    def test_raises_on_structured_dtype(self):
+        array = np.zeros((8, 8, 4), dtype=[("a", "f4")])
+
+        with pytest.raises(ValueError, match="dtype"):
+            inference.assemble_input_tensor(array, expected_channels=4)
+
+    def test_converts_longdouble_to_float32_instead_of_letting_torch_raise(self):
+        # np.longdouble passes np.issubdtype(..., np.number) but
+        # torch.from_numpy still rejects it directly -- a numpy-side
+        # .astype(float32) before tensor creation sidesteps this, rather
+        # than a naive "is it numeric" dtype check that would still crash.
+        array = np.ones((8, 8, 4), dtype=np.longdouble)
+
+        tensor = inference.assemble_input_tensor(array, expected_channels=4)
+
+        assert tensor.dtype == torch.float32
+
+    def test_raises_when_both_first_and_last_axis_match_expected_channels(self):
+        # (4, 8, 4) with expected_channels=4: shape[0] == shape[-1] == 4, so
+        # channel-last vs. channel-first can't be distinguished -- silently
+        # picking one (as the old if/elif did) risks transposing H and W.
+        array = np.zeros((4, 8, 4), dtype=np.float32)
+
+        with pytest.raises(ValueError, match="ambiguous"):
+            inference.assemble_input_tensor(array, expected_channels=4)
+
 
 class _FixedLogitsModel(nn.Module):
     """A real (not mocked) minimal module returning a pre-set logits tensor,
