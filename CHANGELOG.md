@@ -2,6 +2,31 @@
 
 <!-- version list -->
 
+## v0.15.0 (2026-08-15)
+
+### Bug Fixes
+
+- **cd**: Bound curl timeouts and track elapsed time in the smoke-test loop
+  ([`00ce88f`](https://github.com/douglas-martins/methane-detection/commit/00ce88ffc2724befe877b63b952adfce40073a9b))
+
+- **cd**: Poll Coolify's own deployment status instead of trusting the webhook call alone
+  ([`f455f3b`](https://github.com/douglas-martins/methane-detection/commit/f455f3b6ee1e605169e5d8f76d75395991a50d4a))
+
+- **cd**: Set persist-credentials: false on checkout
+  ([`caccbaa`](https://github.com/douglas-martins/methane-detection/commit/caccbaaa3c8478a4c3148cc2941d80b8e69c8977))
+
+- **cd**: Skip deploy when a release tag has no serving/deploy changes
+  ([`0cec0ef`](https://github.com/douglas-martins/methane-detection/commit/0cec0ef5b2f7c6812bd3bf26d12ccc9431d593bf))
+
+- **cd**: Use GITHUB_REF_NAME instead of interpolating github.ref_name
+  ([`dcfc8cf`](https://github.com/douglas-martins/methane-detection/commit/dcfc8cf0d08a67b7fcfba6ae64d50332d0080a94))
+
+### Features
+
+- **cd**: Add CD workflow to build, push, and redeploy the inference API
+  ([`6a370a6`](https://github.com/douglas-martins/methane-detection/commit/6a370a6e4e4cd42f51bc91b2be64e4efaf1605ad))
+
+
 ## v0.14.2 (2026-08-15)
 
 ### Bug Fixes
