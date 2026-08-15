@@ -41,6 +41,11 @@ jobs:
           # step below (git describe / git diff against the previous tag) --
           # the default shallow, tag-less checkout can't do either.
           fetch-depth: 0
+          # Nothing in this workflow pushes/commits -- GITHUB_TOKEN is used
+          # explicitly later (docker/login-action) where it's actually
+          # needed, not left sitting in local git config for the rest of the
+          # job. Same pattern as tests.yml's checkout step.
+          persist-credentials: false
 
       - name: Determine whether this release touches serving/deploy
         id: relevant
