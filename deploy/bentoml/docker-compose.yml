@@ -1,6 +1,7 @@
 services:
   bentoml:
     image: ghcr.io/douglas-martins/methane-detection:${IMAGE_TAG:-latest}
+    pull_policy: always
     restart: unless-stopped
     expose:
       - "3000"
