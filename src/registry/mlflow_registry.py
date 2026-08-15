@@ -45,6 +45,26 @@ def fetch_metric_history(client: MlflowClient, run_id: str, key: str) -> List[fl
     return [metric.value for metric in sorted(history, key=lambda metric: metric.step)]
 
 
+def resolve_stage_version(client: MlflowClient, model_name: str, stage: str) -> ModelVersion:
+    """Returns the model version currently at `stage` for `model_name`.
+
+    Raises ValueError if `model_name` has no registered model at all, or has
+    no version currently at `stage`. `get_latest_versions` returns at most
+    one version per stage (the highest version number at that stage), so no
+    separate "more than one" ambiguity to resolve here.
+    """
+    try:
+        versions = client.get_latest_versions(model_name, stages=[stage])
+    except MlflowException as exc:
+        if exc.error_code == "RESOURCE_DOES_NOT_EXIST":
+            raise ValueError(f"no registered model named {model_name!r}") from exc
+        raise
+
+    if not versions:
+        raise ValueError(f"no version of {model_name!r} is currently at stage {stage!r}")
+    return versions[0]
+
+
 def register_and_promote(
     client: MlflowClient,
     run_id: str,
