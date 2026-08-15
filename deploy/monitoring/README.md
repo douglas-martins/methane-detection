@@ -18,9 +18,12 @@ TASK-6.1](../../mlops-methane-detection-plan.md).
 - `docker-compose.yml` — `prometheus` (35-day retention — see its own comment for why)
   + `grafana` (provisioning-file-driven, no manual UI clicks needed for datasource,
   dashboards, or the Pushover contact point).
-- `prometheus.yml` — scrapes `https://api-methane-detection.ghostface.tech/metrics`
+- `prometheus/prometheus.yml` — scrapes `https://api-methane-detection.ghostface.tech/metrics`
   over the public internet, not an internal Coolify network. See its own header comment
   and the plan's TASK-6.1 decision for the tradeoff (no auth on that endpoint today).
+  Lives in its own `prometheus/` subdirectory so it can be bind-mounted as a directory
+  rather than a single file — see "A real Coolify bug hit on first deploy" below for why
+  that matters.
 - `grafana/provisioning/datasources/prometheus.yml` — auto-registers the Prometheus
   datasource (`uid: prometheus`), pointing at the `prometheus` service by its plain
   Compose service name (same compose file, same default network — no UUID-suffixed
@@ -44,6 +47,34 @@ TASK-6.1](../../mlops-methane-detection-plan.md).
    (provisioned, not manually added) → **Alerting → Contact points** should already
    show "pushover" → **Dashboards → Methane Detection** should already show "Methane
    Detection — Inference API".
+
+## A real Coolify bug hit on first deploy
+
+First import failed with:
+
+```text
+error mounting ".../prometheus.yml" to rootfs at "/etc/prometheus/prometheus.yml":
+... not a directory: Are you trying to mount a directory onto a file (or vice-versa)?
+```
+
+Root cause, confirmed against Coolify's own GitHub issues, not guessed: Coolify has a
+currently-open bug where a bind-mount **file** source that hasn't been staged onto the
+host yet gets silently auto-created as an empty **directory** instead of the real file
+([coollabsio/coolify#6056](https://github.com/coollabsio/coolify/issues/6056),
+[#4468](https://github.com/coollabsio/coolify/issues/4468),
+[#3375](https://github.com/coollabsio/coolify/issues/3375)). The documented workaround
+(`is_directory: false` in the long volume syntax) is itself reported broken/ignored on
+affected versions. Directory-to-directory bind mounts are the reliably working case —
+confirmed here two ways: Grafana's `./grafana/provisioning:/etc/grafana/provisioning:ro`
+(already a directory mount) never hit this, and moving `prometheus.yml` into its own
+`prometheus/` subdirectory + mounting that directory (`./prometheus:/etc/prometheus:ro`)
+fixed it, verified both locally (`docker compose up`, confirmed Prometheus's
+`/api/v1/status/config` reflects the real scrape config, not an empty default) and via a
+real Coolify redeploy.
+
+**If you ever add another config file to this compose file**, give it its own
+subdirectory and bind-mount the directory, not a single file — don't repeat the file-mount
+mistake.
 6. **Prometheus's own UI** (not public — reach it via `docker compose exec` or a
    temporary port-forward, since it's `expose`-only): **Status → Targets** should show
    the `methane-detection-api` job as `UP`.

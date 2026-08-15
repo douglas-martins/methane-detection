@@ -2,16 +2,27 @@ services:
   prometheus:
     image: prom/prometheus:v3.5.0
     restart: unless-stopped
-    # 35d, not the 15d default: TASK-6.1's own detection-rate alert compares
-    # a recent window against a 30-day rolling baseline via a PromQL
-    # subquery -- the default retention would silently truncate that
-    # baseline window to 15 days without ever erroring.
+    # 35d, not the 15d default: the detection-rate alert compares a recent
+    # window against a 30-day rolling baseline via a PromQL subquery -- the
+    # default retention would silently truncate that baseline window to 15
+    # days without ever erroring.
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=35d"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Directory bind mount (prometheus/ containing only prometheus.yml),
+      # not a file-to-file mount -- Coolify has a currently-open bug where
+      # a FILE bind-mount source that hasn't been staged yet gets
+      # auto-created as an empty directory instead of the actual file,
+      # producing "not a directory: Are you trying to mount a directory
+      # onto a file" at container start (coollabsio/coolify#6056; its own
+      # documented is_directory: false workaround is itself ignored by the
+      # affected versions). Directory-to-directory mounts are the reliably
+      # working case, confirmed against the real prom/prometheus:v3.5.0
+      # image -- /etc/prometheus/ contains only prometheus.yml, nothing
+      # else this mount would shadow.
+      - ./prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
     expose:
       - "9090"
