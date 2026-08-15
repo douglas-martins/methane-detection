@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.14.0 (2026-08-15)
+
+### Bug Fixes
+
+- **registry**: Pin mlflow.pytorch.log_model serialization_format to pickle
+  ([`de0713b`](https://github.com/douglas-martins/methane-detection/commit/de0713bade099a834d00ce5619c38640ad76dd8a))
+
+### Features
+
+- **deploy**: Add BentoML Coolify docker-compose stack
+  ([`3c93359`](https://github.com/douglas-martins/methane-detection/commit/3c93359c3a076939675945ab72a4ba1232831f74))
+
+
 ## v0.13.0 (2026-08-15)
 
 ### Bug Fixes
