@@ -207,7 +207,10 @@ def import_variant(variant: str, stage: str | None) -> None:
             # Logged via the pytorch flavor too (MLmodel metadata), same as
             # src/training/train.py, so registered versions are loadable via
             # mlflow.pyfunc.load_model -- the raw checkpoint alone isn't.
-            mlflow.pytorch.log_model(model, artifact_path="model")
+            # serialization_format="pickle": mlflow's default ("pt2", torch.export
+            # tracing) requires an input_example, which this checkpoint-import path
+            # doesn't have.
+            mlflow.pytorch.log_model(model, artifact_path="model", serialization_format="pickle")
 
         log.info("Logged %s as MLflow run %s", variant, run.info.run_id)
 
