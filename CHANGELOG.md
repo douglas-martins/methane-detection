@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.16.1 (2026-08-15)
+
+### Bug Fixes
+
+- **deploy**: Mount Prometheus config as a directory, not a file
+  ([`6447053`](https://github.com/douglas-martins/methane-detection/commit/64470531a11e5c74ca9d789b67ac5f6da0ba4789))
+
+
 ## v0.16.0 (2026-08-15)
 
 ### Bug Fixes
