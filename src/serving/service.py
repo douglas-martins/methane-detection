@@ -41,7 +41,14 @@ DEFAULT_MODEL_STAGE = "Staging"
 
 @bentoml.service(resources={"cpu": "2"}, traffic={"timeout": 30})
 class MethaneDetectionService:
+    """BentoML service exposing the STARCOP segmentation model over HTTP.
+
+    See module docstring for the full design (routes, model-loading, and
+    the thin-glue-vs-tested-logic split with inference.py).
+    """
+
     def __init__(self) -> None:
+        """Loads the configured MLflow model/stage once at service startup."""
         tracking_uri = os.environ["MLFLOW_TRACKING_URI"]
         self.model_name = os.environ.get("MODEL_NAME", DEFAULT_MODEL_NAME)
         self.model_stage = os.environ.get("MODEL_STAGE", DEFAULT_MODEL_STAGE)
@@ -83,6 +90,7 @@ class MethaneDetectionService:
 
     @bentoml.api(route="/health")
     def health(self) -> dict:
+        """Returns loaded-model identity, process uptime, and inference device."""
         return {
             "status": "ok",
             "model_name": self.model_name,
