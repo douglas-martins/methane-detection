@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v0.14.1 (2026-08-15)
+
+### Bug Fixes
+
+- **deploy**: Force a fresh pull on every bentoml redeploy
+  ([`fcb4f63`](https://github.com/douglas-martins/methane-detection/commit/fcb4f63c7258356c2d9508bc8070fae59cae307b))
+
+- **serving**: Add wandb and rasterio to serving requirements
+  ([`73647a5`](https://github.com/douglas-martins/methane-detection/commit/73647a5078df13154272793daded6a5c65934c5b))
+
+
 ## v0.14.0 (2026-08-15)
 
 ### Bug Fixes
