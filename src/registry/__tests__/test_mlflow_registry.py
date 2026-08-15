@@ -11,6 +11,7 @@ the only realistic option and what the real tracking server itself uses.
 
 import mlflow_registry
 import pytest
+from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
 
 
@@ -107,6 +108,23 @@ class TestResolveStageVersion:
     def test_raises_when_the_registered_model_does_not_exist_at_all(self, client):
         with pytest.raises(ValueError, match="does-not-exist"):
             mlflow_registry.resolve_stage_version(client, "does-not-exist", "Staging")
+
+    def test_propagates_other_mlflow_exceptions_unchanged(self, client, tmp_path):
+        # The model exists, but the stage name is invalid -- a real MLflow
+        # error distinct from "model doesn't exist" (error_code
+        # INVALID_PARAMETER_VALUE, not RESOURCE_DOES_NOT_EXIST). Confirms
+        # the bare `raise` re-raises anything that isn't specifically a
+        # missing-model error, rather than swallowing or misclassifying it.
+        run = self._run_with_model_artifact(client, tmp_path)
+        mlflow_registry.register_and_promote(
+            client, run_id=run.info.run_id, model_name="starcop-baseline-mag1c-rgb", stage="Staging"
+        )
+
+        with pytest.raises(MlflowException) as exc_info:
+            mlflow_registry.resolve_stage_version(
+                client, "starcop-baseline-mag1c-rgb", "NotARealStage"
+            )
+        assert exc_info.value.error_code == "INVALID_PARAMETER_VALUE"
 
     def test_returns_the_latest_version_when_a_stage_has_more_than_one(self, client, tmp_path):
         run_a = self._run_with_model_artifact(client, tmp_path, name="a.txt")
