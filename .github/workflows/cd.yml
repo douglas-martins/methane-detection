@@ -37,8 +37,45 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+          # Full history + tags needed by the "determine whether relevant"
+          # step below (git describe / git diff against the previous tag) --
+          # the default shallow, tag-less checkout can't do either.
+          fetch-depth: 0
+
+      - name: Determine whether this release touches serving/deploy
+        id: relevant
+        # A tag push fires for EVERY semantic-release version bump (any
+        # feat/fix/perf commit anywhere in the repo, per this project's own
+        # pyproject.toml commit_parser_options), not just ones that changed
+        # anything under this workflow's actual concern -- rebuilding and
+        # redeploying the live API on a completely unrelated release (e.g. a
+        # fix in src/data/preprocessing/) would be a wasted ~10GB build and
+        # an unnecessary production redeploy. workflow_dispatch is always
+        # explicit intent, so it always deploys regardless of this check.
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch -- always deploying."
+            exit 0
+          fi
+          PREV_TAG=$(git describe --tags --abbrev=0 "${{ github.ref_name }}^" 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "No previous tag found -- deploying (first release)."
+            exit 0
+          fi
+          if git diff --quiet "$PREV_TAG" "${{ github.ref_name }}" -- \
+               src/serving/ bentofile.yaml requirements/serving.txt \
+               deploy/bentoml/ src/registry/mlflow_registry.py vendor/starcop; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No serving/deploy-relevant changes since $PREV_TAG -- skipping deploy."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Serving/deploy-relevant changes found since $PREV_TAG -- deploying."
+          fi
 
       - name: Free up runner disk space
+        if: steps.relevant.outputs.changed == 'true'
         # The built image bundles the full torch/CUDA stack (~10GB locally,
         # see TASK-5.2's 2026-08-15 deployment log) -- GH-hosted runners only
         # have ~14GB free by default, and uv sync's own package cache eats
@@ -49,9 +86,11 @@ jobs:
           df -h /
 
       - name: Install uv
+        if: steps.relevant.outputs.changed == 'true'
         uses: astral-sh/setup-uv@v3
 
       - name: Install Environment B dependencies
+        if: steps.relevant.outputs.changed == 'true'
         # bentoml build imports src/serving/service.py to introspect its API
         # schema (though it never instantiates the service class, so no live
         # MLflow call happens here -- confirmed locally, see TASK-5.2's
@@ -60,9 +99,11 @@ jobs:
         run: uv sync
 
       - name: Set up Docker Buildx
+        if: steps.relevant.outputs.changed == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: steps.relevant.outputs.changed == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -70,9 +111,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Bento
+        if: steps.relevant.outputs.changed == 'true'
         run: uv run bentoml build
 
       - name: Containerize and push
+        if: steps.relevant.outputs.changed == 'true'
         # --opt platform=linux/amd64 is explicit even though ubuntu-latest
         # runners are already amd64 -- defense in depth after hitting "no
         # matching manifest for linux/amd64" building this by hand on Apple
@@ -85,6 +128,7 @@ jobs:
           docker push ghcr.io/${{ github.repository_owner }}/methane-detection:latest
 
       - name: Trigger Coolify redeploy
+        if: steps.relevant.outputs.changed == 'true'
         # deploy/bentoml/docker-compose.yml has pull_policy: always, so this
         # redeploy is guaranteed to pick up the digest just pushed above
         # rather than reusing a stale cached :latest (the exact bug hit and
@@ -97,6 +141,7 @@ jobs:
             --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"
 
       - name: Wait for redeploy and smoke test
+        if: steps.relevant.outputs.changed == 'true'
         # Polls rather than checking once immediately -- the container needs
         # to be pulled, started, and load the model from MLflow/B2 before
         # /readyz goes green (observed ~10-60s locally depending on network,
