@@ -2,9 +2,12 @@
 # Grafana instance (none exists yet -- this is the first deploy) -- the
 # Query/Reduce/Threshold shape and the "-100" expression-datasource uid
 # follow Grafana's documented alerting schema, but this file should be
-# treated as a starting point to confirm/fix via the Grafana UI on first
-# import (Alerting -> Alert rules -> this rule -> Edit -> Save, which
-# re-validates and re-persists it) rather than assumed correct on faith.
+# treated as a starting point to confirm/fix on first import. Do NOT
+# "fix" it via the Grafana UI: file-provisioned resources are read-only
+# there by design (Grafana's own docs: UI/API edits to a file-provisioned
+# rule are silently reverted on the next provisioning reload or restart).
+# Edit THIS file instead, then reload/redeploy per README.md's "Alert
+# rule -- validate before trusting" section.
 #
 # The 30-day baseline needs 30 days of real traffic before it's meaningful
 # -- per the plan's own audit, validate the WIRING (rule fires, Pushover
@@ -33,13 +36,39 @@ groups:
             model:
               refId: A
               datasource: { type: prometheus, uid: prometheus }
+              # Tracks the plume-detected FRACTION of predictions
+              # (plume_detected / total), not raw plume_detected throughput --
+              # throughput alone conflates traffic-volume changes with an
+              # actual shift in what the model is detecting, so a plain
+              # request-volume spike (same underlying detection ratio) would
+              # false-positive this alert. The `> 0` filter on the
+              # denominator drops zero-traffic instants entirely (no
+              # sample), rather than letting a 0/0 division produce a NaN
+              # that would otherwise poison avg_over_time/stddev_over_time
+              # for the rest of the 30-day window it falls inside.
               expr: >-
                 abs(
-                  (sum(rate(methane_prediction_total{result="plume_detected"}[1h]))
-                   - avg_over_time(sum(rate(methane_prediction_total{result="plume_detected"}[1h]))[30d:1h]))
+                  (
+                    sum(rate(methane_prediction_total{result="plume_detected"}[1h]))
+                    /
+                    (sum(rate(methane_prediction_total{result=~"plume_detected|no_plume"}[1h])) > 0)
+                  )
+                  - avg_over_time(
+                      (
+                        sum(rate(methane_prediction_total{result="plume_detected"}[1h]))
+                        /
+                        (sum(rate(methane_prediction_total{result=~"plume_detected|no_plume"}[1h])) > 0)
+                      )[30d:1h]
+                    )
+                  )
                   /
-                  stddev_over_time(sum(rate(methane_prediction_total{result="plume_detected"}[1h]))[30d:1h])
-                )
+                  stddev_over_time(
+                    (
+                      sum(rate(methane_prediction_total{result="plume_detected"}[1h]))
+                      /
+                      (sum(rate(methane_prediction_total{result=~"plume_detected|no_plume"}[1h])) > 0)
+                    )[30d:1h]
+                  )
               instant: true
               range: false
               intervalMs: 1000
