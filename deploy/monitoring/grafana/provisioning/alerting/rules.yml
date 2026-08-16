@@ -108,3 +108,68 @@ groups:
             regression, or an upstream data issue. See TASK-6.2 for per-band
             spectral drift detection, a narrower diagnostic for the same
             class of problem.
+
+      - uid: methane-band-input-drift
+        title: Input band distribution has drifted from training baseline
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Alerting
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              refId: A
+              datasource: { type: prometheus, uid: prometheus }
+              # methane_band_kl_divergence is already the KL-divergence
+              # result of comparing each band's rolling per-request mean
+              # against its training baseline (computed in Python --
+              # src/serving/drift.py -- not here), one series per band
+              # label. No aggregation needed: Grafana evaluates this
+              # rule's condition once per label set, so a single band
+              # breaching the threshold fires its own alert instance
+              # carrying that band's label, without flagging the others.
+              expr: methane_band_kl_divergence
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: "-100"
+            model:
+              type: threshold
+              expression: B
+              refId: C
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.5]
+                  operator:
+                    type: and
+                  query:
+                    params: ["B"]
+                  reducer:
+                    type: last
+                  type: query
+        labels:
+          severity: warning
+        annotations:
+          summary: "Input band {{ $labels.band }} has drifted from its training baseline"
+          description: >-
+            The rolling per-request mean of the "{{ $labels.band }}" input
+            channel has moved more than the configured KL-divergence
+            threshold (0.5) away from its docs/dataset_report.md training
+            baseline. Could indicate a genuine shift in incoming scene
+            conditions (sensor calibration, geography, acquisition
+            conditions) or a client-side data-formatting bug uploading
+            malformed/rescaled arrays.
