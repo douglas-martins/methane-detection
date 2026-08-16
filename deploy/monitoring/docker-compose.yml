@@ -1,6 +1,16 @@
 services:
   prometheus:
-    image: prom/prometheus:v3.5.0
+    # Built, not a plain `image:` + bind mount -- Coolify's `volumes:` bind
+    # mounts do not sync files from the git checkout (confirmed against
+    # Coolify's own docs: a bind-mount source is either an empty
+    # `is_directory: true` placeholder or a literal inline `content:` block
+    # written into the compose YAML, never a copy of the referenced repo
+    # file). A directory-mount attempt confirmed this live: the mount
+    # itself succeeded but arrived empty, and Prometheus crash-looped with
+    # "open /etc/prometheus/prometheus.yml: no such file or directory".
+    # prometheus/Dockerfile COPYs the real file in at build time instead --
+    # one source of truth, no bind-mount/persistent-storage gap to hit.
+    build: ./prometheus
     restart: unless-stopped
     # 35d, not the 15d default: the detection-rate alert compares a recent
     # window against a 30-day rolling baseline via a PromQL subquery -- the
@@ -11,18 +21,6 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=35d"
     volumes:
-      # Directory bind mount (prometheus/ containing only prometheus.yml),
-      # not a file-to-file mount -- Coolify has a currently-open bug where
-      # a FILE bind-mount source that hasn't been staged yet gets
-      # auto-created as an empty directory instead of the actual file,
-      # producing "not a directory: Are you trying to mount a directory
-      # onto a file" at container start (coollabsio/coolify#6056; its own
-      # documented is_directory: false workaround is itself ignored by the
-      # affected versions). Directory-to-directory mounts are the reliably
-      # working case, confirmed against the real prom/prometheus:v3.5.0
-      # image -- /etc/prometheus/ contains only prometheus.yml, nothing
-      # else this mount would shadow.
-      - ./prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
     expose:
       - "9090"
@@ -39,7 +37,10 @@ services:
           memory: 512M
 
   grafana:
-    image: grafana/grafana:11.6.0
+    # Built, not a plain `image:` + bind mount -- same reasoning as
+    # prometheus's build above. grafana/Dockerfile COPYs the whole
+    # provisioning/ tree in at build time.
+    build: ./grafana
     restart: unless-stopped
     depends_on:
       prometheus:
@@ -59,7 +60,6 @@ services:
       PUSHOVER_USER_KEY: ${PUSHOVER_USER_KEY}
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
       interval: 30s
