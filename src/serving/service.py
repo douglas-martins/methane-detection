@@ -177,11 +177,27 @@ class MethaneDetectionService:
             if baseline is None:
                 continue
             with self._band_lock:
-                rolling = drift.update_rolling_stats(self._band_windows[band_name], value)
+                window = self._band_windows[band_name]
+                rolling = drift.update_rolling_stats(window, value)
                 divergence = drift.kl_divergence_gaussian(
                     rolling.mean, rolling.std, baseline.mean, baseline.std
                 )
-            _get_band_drift_gauge().labels(band=band_name).set(divergence)
+                has_enough_samples = len(window) >= _DRIFT_WINDOW_SIZE
+            if has_enough_samples:
+                # Below the full window size, sigma_p is estimated from too
+                # few samples to be trustworthy -- with 1-2 samples it's
+                # often clamped to _MIN_SIGMA entirely (drift.py), producing
+                # a large divergence that reflects sample scarcity, not
+                # real drift. Leaving the gauge unset until the window
+                # fills (rather than publishing a misleading early value)
+                # means the series simply doesn't exist on /metrics yet,
+                # which the alert rule's noDataState: NoData already
+                # handles as "nothing to evaluate", not a false positive.
+                # Trade-off: the alert is blind for the first
+                # _DRIFT_WINDOW_SIZE requests after every redeploy, since
+                # the rolling windows reset then too (see __init__'s
+                # comment).
+                _get_band_drift_gauge().labels(band=band_name).set(divergence)
 
         return result
 
