@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.16.2 (2026-08-16)
+
+### Bug Fixes
+
+- **deploy**: Bake monitoring config into images instead of bind-mounting it
+  ([`abc2060`](https://github.com/douglas-martins/methane-detection/commit/abc206005478c706e7d8fafbab075ac050df4103))
+
+
 ## v0.16.1 (2026-08-15)
 
 ### Bug Fixes
