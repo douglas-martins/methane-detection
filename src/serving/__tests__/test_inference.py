@@ -202,6 +202,54 @@ class TestPredictResponse:
             inference.predict_response(model, array, expected_channels=4)
 
 
+class TestPerBandMeans:
+    """per_band_means backs TASK-6.2's rolling drift-detection window
+    (src/serving/service.py) -- each request contributes one mean-per-band
+    value, later aggregated across the last N requests by
+    drift.update_rolling_stats. Reuses assemble_input_tensor's
+    channel-axis detection, so values are on the same raw (non-normalized)
+    scale docs/dataset_report.md's baseline stats report.
+    """
+
+    def test_returns_one_mean_per_channel_in_channel_order(self):
+        array = np.zeros((3, 3, 2), dtype=np.float32)
+        array[:, :, 0] = 10.0
+        array[:, :, 1] = 20.0
+
+        means = inference.per_band_means(array, expected_channels=2)
+
+        assert means == [10.0, 20.0]
+
+    def test_averages_over_the_spatial_dimensions_only(self):
+        array = np.array([[[1.0], [3.0]], [[5.0], [7.0]]], dtype=np.float32)
+
+        means = inference.per_band_means(array, expected_channels=1)
+
+        assert means == [4.0]
+
+    def test_works_on_a_channel_first_array_too(self):
+        array = np.zeros((2, 3, 3), dtype=np.float32)
+        array[0, :, :] = 10.0
+        array[1, :, :] = 20.0
+
+        means = inference.per_band_means(array, expected_channels=2)
+
+        assert means == [10.0, 20.0]
+
+    def test_propagates_the_channel_mismatch_error_from_assemble_input_tensor(self):
+        array = np.zeros((2, 2, 3), dtype=np.float32)
+
+        with pytest.raises(ValueError, match="4"):
+            inference.per_band_means(array, expected_channels=4)
+
+    def test_returns_plain_python_floats_not_numpy_or_tensor_scalars(self):
+        array = np.zeros((2, 2, 1), dtype=np.float32)
+
+        means = inference.per_band_means(array, expected_channels=1)
+
+        assert isinstance(means[0], float)
+
+
 class TestHasPlume:
     """has_plume backs TASK-6.1's methane_prediction_total Prometheus
     counter (src/serving/service.py) -- BentoML's own built-in metrics have

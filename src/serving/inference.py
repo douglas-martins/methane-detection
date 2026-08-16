@@ -81,6 +81,21 @@ def run_inference(model, x: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
     )
 
 
+def per_band_means(array: np.ndarray, expected_channels: int) -> list:
+    """Per-channel spatial mean of a raw uploaded scene, in the model's own
+    channel order. Backs TASK-6.2's rolling drift-detection window: each
+    request contributes one mean-per-band value here.
+
+    Reuses assemble_input_tensor's channel-axis detection/validation, so
+    this raises the same ValueError it does on a channel-count mismatch,
+    and returns values on the exact same raw (non-normalized) scale
+    run_inference/predict_response use -- assemble_input_tensor only
+    transposes/casts dtype, normalization happens inside model.forward.
+    """
+    x = assemble_input_tensor(array, expected_channels)
+    return x.squeeze(0).mean(dim=(1, 2)).tolist()
+
+
 def has_plume(mask) -> bool:
     """True if any pixel in a binary segmentation mask is a positive (plume)
     prediction. Accepts either a numpy array or a plain nested list (e.g.
