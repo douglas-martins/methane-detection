@@ -83,7 +83,7 @@ mount from the files actually committed in this directory.
 **Actual fix**: stop bind-mounting config from the repo entirely. `prometheus/Dockerfile`
 and `grafana/Dockerfile` `COPY` the real files into their respective images at build
 time — one source of truth, no bind-mount/persistent-storage gap to fall into. Verified
-locally end to end (`docker compose build && up`): Prometheus's `/api/v1/status/config`
+locally end to end (`docker compose build && docker compose up`): Prometheus's `/api/v1/status/config`
 reflects the real scrape config, and Grafana's API confirms the datasource, dashboard,
 Pushover contact point, and alert rule are all present — not empty defaults.
 
