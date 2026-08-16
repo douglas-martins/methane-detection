@@ -2,6 +2,28 @@
 
 <!-- version list -->
 
+## v0.17.0 (2026-08-16)
+
+### Bug Fixes
+
+- **serving**: Don't publish the drift gauge until the window is full
+  ([`43bd29a`](https://github.com/douglas-martins/methane-detection/commit/43bd29a7f6910f65b048e7ec7baa361dcda9e90a))
+
+- **serving**: Protect per-band drift state with a lock
+  ([`56e1374`](https://github.com/douglas-martins/methane-detection/commit/56e13748c68ec993672ff659ef0efa221c98478b))
+
+- **serving**: Recompute the drift baseline from per-patch means, not pixels
+  ([`bd96ab5`](https://github.com/douglas-martins/methane-detection/commit/bd96ab54b90fccb352fbf6fe2e3920e18febcff1))
+
+### Features
+
+- **deploy**: Add Grafana alert rule for input band drift
+  ([`4e72796`](https://github.com/douglas-martins/methane-detection/commit/4e727966c2a6f30c9ec856e725f4907ca4759d84))
+
+- **serving**: Add per-band input drift detection
+  ([`f501cc6`](https://github.com/douglas-martins/methane-detection/commit/f501cc6aed35ab3dc5ee9204701087ce12940a14))
+
+
 ## v0.16.2 (2026-08-16)
 
 ### Bug Fixes
