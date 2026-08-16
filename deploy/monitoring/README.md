@@ -15,24 +15,27 @@ TASK-6.1](../../mlops-methane-detection-plan.md).
 
 ## What's checked into this directory
 
-- `docker-compose.yml` — `prometheus` (35-day retention — see its own comment for why)
-  + `grafana` (provisioning-file-driven, no manual UI clicks needed for datasource,
-  dashboards, or the Pushover contact point).
-- `prometheus/prometheus.yml` — scrapes `https://api-methane-detection.ghostface.tech/metrics`
-  over the public internet, not an internal Coolify network. See its own header comment
-  and the plan's TASK-6.1 decision for the tradeoff (no auth on that endpoint today).
-  Lives in its own `prometheus/` subdirectory so it can be bind-mounted as a directory
-  rather than a single file — see "A real Coolify bug hit on first deploy" below for why
-  that matters.
-- `grafana/provisioning/datasources/prometheus.yml` — auto-registers the Prometheus
-  datasource (`uid: prometheus`), pointing at the `prometheus` service by its plain
-  Compose service name (same compose file, same default network — no UUID-suffixed
-  hostname needed here, unlike cross-resource scraping).
-- `grafana/provisioning/dashboards/` — one dashboard (`json/inference-api.json`, 4
-  panels: request count, latency p50/p95/p99, prediction class distribution, error
-  rate), auto-loaded into a "Methane Detection" folder.
-- `grafana/provisioning/alerting/` — the Pushover contact point, a default routing
-  policy, and the detection-rate-deviation alert rule (step 4).
+- `docker-compose.yml` — `prometheus` (built from `prometheus/Dockerfile`, 35-day
+  retention — see its own comment for why) + `grafana` (built from
+  `grafana/Dockerfile`, provisioning-file-driven, no manual UI clicks needed for
+  datasource, dashboards, or the Pushover contact point).
+- `prometheus/{Dockerfile,prometheus.yml}` — scrapes
+  `https://api-methane-detection.ghostface.tech/metrics` over the public internet, not
+  an internal Coolify network. See `prometheus.yml`'s own header comment and the plan's
+  TASK-6.1 decision for the tradeoff (no auth on that endpoint today). The Dockerfile
+  bakes `prometheus.yml` into the image at build time rather than bind-mounting it —
+  see "A real Coolify deployment bug, and its actual fix" below for why.
+- `grafana/{Dockerfile,provisioning/}` — same build-time-COPY approach for the whole
+  provisioning tree:
+  - `provisioning/datasources/prometheus.yml` — auto-registers the Prometheus
+    datasource (`uid: prometheus`), pointing at the `prometheus` service by its plain
+    Compose service name (same compose file, same default network — no UUID-suffixed
+    hostname needed here, unlike cross-resource scraping).
+  - `provisioning/dashboards/` — one dashboard (`json/inference-api.json`, 4 panels:
+    request count, latency p50/p95/p99, prediction class distribution, error rate),
+    auto-loaded into a "Methane Detection" folder.
+  - `provisioning/alerting/` — the Pushover contact point, a default routing policy,
+    and the detection-rate-deviation alert rule (step 4).
 
 ## Import steps
 
@@ -47,37 +50,46 @@ TASK-6.1](../../mlops-methane-detection-plan.md).
    (provisioned, not manually added) → **Alerting → Contact points** should already
    show "pushover" → **Dashboards → Methane Detection** should already show "Methane
    Detection — Inference API".
+6. **Prometheus's own UI** (not public — reach it via `docker compose exec` or a
+   temporary port-forward, since it's `expose`-only): **Status → Targets** should show
+   the `methane-detection-api` job as `UP`.
 
-## A real Coolify bug hit on first deploy
+## A real Coolify deployment bug, and its actual fix
 
-First import failed with:
+First import failed at the mount step:
 
 ```text
 error mounting ".../prometheus.yml" to rootfs at "/etc/prometheus/prometheus.yml":
 ... not a directory: Are you trying to mount a directory onto a file (or vice-versa)?
 ```
 
-Root cause, confirmed against Coolify's own GitHub issues, not guessed: Coolify has a
-currently-open bug where a bind-mount **file** source that hasn't been staged onto the
-host yet gets silently auto-created as an empty **directory** instead of the real file
+That looked like Coolify's known file-vs-directory bind-mount bug
 ([coollabsio/coolify#6056](https://github.com/coollabsio/coolify/issues/6056),
 [#4468](https://github.com/coollabsio/coolify/issues/4468),
-[#3375](https://github.com/coollabsio/coolify/issues/3375)). The documented workaround
-(`is_directory: false` in the long volume syntax) is itself reported broken/ignored on
-affected versions. Directory-to-directory bind mounts are the reliably working case —
-confirmed here two ways: Grafana's `./grafana/provisioning:/etc/grafana/provisioning:ro`
-(already a directory mount) never hit this, and moving `prometheus.yml` into its own
-`prometheus/` subdirectory + mounting that directory (`./prometheus:/etc/prometheus:ro`)
-fixed it, verified both locally (`docker compose up`, confirmed Prometheus's
-`/api/v1/status/config` reflects the real scrape config, not an empty default) and via a
-real Coolify redeploy.
+[#3375](https://github.com/coollabsio/coolify/issues/3375)) — a bind-mount **file**
+source that hasn't been staged gets auto-created as an empty **directory**. Moving
+`prometheus.yml` into its own subdirectory and mounting the directory instead
+(`./prometheus:/etc/prometheus:ro`) cleared that exact error.
 
-**If you ever add another config file to this compose file**, give it its own
-subdirectory and bind-mount the directory, not a single file — don't repeat the file-mount
-mistake.
-6. **Prometheus's own UI** (not public — reach it via `docker compose exec` or a
-   temporary port-forward, since it's `expose`-only): **Status → Targets** should show
-   the `methane-detection-api` job as `UP`.
+**But the real deploy then failed differently**: the container started, but Prometheus
+crash-looped with `open /etc/prometheus/prometheus.yml: no such file or directory` —
+the mount succeeded, but arrived **empty**. Checked against Coolify's own docs (Docker
+Compose Build Packs, Persistent Storage): Coolify's `volumes:` bind mounts **never sync
+files from the git checkout at all** — a `source: ./path` entry is either an empty
+`is_directory: true` placeholder or a literal inline `content:` block written directly
+into the compose YAML. There was never a mechanism that would have populated either
+mount from the files actually committed in this directory.
+
+**Actual fix**: stop bind-mounting config from the repo entirely. `prometheus/Dockerfile`
+and `grafana/Dockerfile` `COPY` the real files into their respective images at build
+time — one source of truth, no bind-mount/persistent-storage gap to fall into. Verified
+locally end to end (`docker compose build && up`): Prometheus's `/api/v1/status/config`
+reflects the real scrape config, and Grafana's API confirms the datasource, dashboard,
+Pushover contact point, and alert rule are all present — not empty defaults.
+
+**If you ever add another config file here**, bake it into the relevant service's image
+via `COPY` in its Dockerfile — don't reach for a bind mount, Coolify won't populate it
+from the repo.
 
 ## A real code prerequisite, not just infra
 
