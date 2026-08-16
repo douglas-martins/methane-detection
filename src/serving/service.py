@@ -26,6 +26,7 @@ TASK-2.3's promotion_criteria.py).
 
 import os
 import sys
+import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -122,8 +123,18 @@ class MethaneDetectionService:
         # and per-process (resets on redeploy, would fragment across
         # replicas if this service is ever horizontally scaled -- not a
         # concern today, single instance, no autoscaling configured).
+        # BentoML dispatches this class's sync @bentoml.api methods via
+        # Starlette's run_in_threadpool (confirmed in bentoml's own
+        # http_app.py), so concurrent /predict requests genuinely run on
+        # separate threads against this same instance -- _band_lock
+        # serializes access to _band_windows so a concurrent deque append
+        # can't interleave with another thread's iteration over it (which
+        # raises "deque mutated during iteration", uncaught by predict()'s
+        # existing except clause) and so each band's rolling mean/std is
+        # read as a consistent snapshot, not a torn one.
         self.band_names = band_baseline.band_names_for_model(self.model_name, self.num_channels)
         self._band_windows = {name: deque(maxlen=_DRIFT_WINDOW_SIZE) for name in self.band_names}
+        self._band_lock = threading.Lock()
 
     @bentoml.api(route="/predict")
     def predict(self, file: Path) -> dict:
@@ -165,10 +176,11 @@ class MethaneDetectionService:
             baseline = band_baseline.baseline_for_band(band_name)
             if baseline is None:
                 continue
-            rolling = drift.update_rolling_stats(self._band_windows[band_name], value)
-            divergence = drift.kl_divergence_gaussian(
-                rolling.mean, rolling.std, baseline.mean, baseline.std
-            )
+            with self._band_lock:
+                rolling = drift.update_rolling_stats(self._band_windows[band_name], value)
+                divergence = drift.kl_divergence_gaussian(
+                    rolling.mean, rolling.std, baseline.mean, baseline.std
+                )
             _get_band_drift_gauge().labels(band=band_name).set(divergence)
 
         return result
