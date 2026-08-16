@@ -1,12 +1,10 @@
 """Per-band training-distribution baseline statistics for input drift
 detection (TASK-6.2).
 
-Checked-in constants, sourced from docs/dataset_report.md section 5
-(starcop_raw, train-split patches) -- not parsed from the markdown at
-runtime. starcop_raw is used as the baseline rather than starcop_mini:
-mini is curated toward plume-heavy scenes (~87:1 imbalance vs. raw's
-~314:1), so using it as "normal" would bias drift detection toward
-flagging genuinely typical, plume-sparse traffic as anomalous.
+starcop_raw is used as the baseline rather than starcop_mini: mini is
+curated toward plume-heavy scenes (~87:1 imbalance vs. raw's ~314:1), so
+using it as "normal" would bias drift detection toward flagging
+genuinely typical, plume-sparse traffic as anomalous.
 
 ModelModule only exposes a channel *count* at runtime
 (vendor/starcop/starcop/models/model_module.py's __init__ stores
@@ -35,12 +33,23 @@ MODEL_BAND_NAMES = {
     "starcop-baseline-mag1c-only": ["mag1c"],
 }
 
-# docs/dataset_report.md section 5, starcop_raw table.
+# Mean/std OF PER-PATCH SPATIAL MEANS across starcop_raw's 141,219 train
+# patches (data/processed/starcop_raw/patches/train_tiled_128_128.csv),
+# recomputed 2026-08-16 -- deliberately NOT docs/dataset_report.md section
+# 5's numbers, which pool every individual pixel (~2.3B values) rather
+# than aggregating per patch first. drift.py's rolling window aggregates
+# one spatial mean per request, the same statistic patch-level here, not
+# raw pixels -- comparing it against a pixel-level std would be a mismatched
+# comparison (pixel-level std is inflated by within-patch spatial variation
+# that per-patch means average away, e.g. mag1c's std drops ~8x once
+# aggregated per patch first: 310.13 -> 37.72 -- mag1c is a plume-concentration
+# index, so most of its pixel-level variance comes from sharp within-scene
+# spikes near actual plumes, not from typical patch-to-patch variation).
 _STARCOP_RAW_BASELINE = {
-    "mag1c": BandStats(mean=36.22, std=310.13),
-    "TOA_AVIRIS_640nm": BandStats(mean=28.82, std=15.27),
-    "TOA_AVIRIS_550nm": BandStats(mean=26.83, std=14.15),
-    "TOA_AVIRIS_460nm": BandStats(mean=24.76, std=12.87),
+    "mag1c": BandStats(mean=34.40, std=37.72),
+    "TOA_AVIRIS_640nm": BandStats(mean=27.85, std=6.28),
+    "TOA_AVIRIS_550nm": BandStats(mean=25.93, std=6.22),
+    "TOA_AVIRIS_460nm": BandStats(mean=23.95, std=5.89),
 }
 
 

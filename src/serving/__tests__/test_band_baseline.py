@@ -38,8 +38,8 @@ class TestBaselineForBand:
     def test_returns_stats_for_a_known_band(self):
         stats = band_baseline.baseline_for_band("mag1c")
 
-        assert stats.mean == 36.22
-        assert stats.std == 310.13
+        assert stats.mean == 34.40
+        assert stats.std == 37.72
 
     def test_returns_none_for_an_unknown_band(self):
         assert band_baseline.baseline_for_band("band_0") is None
