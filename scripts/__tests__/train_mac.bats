@@ -73,7 +73,7 @@ setup() {
 
   assert_success
   run cat "${STUB_CAPTURE_DIR}/env"
-  assert_output --partial "MLFLOW_TRACKING_URI=https://mlflow.ghostface.tech"
+  assert_output --partial "MLFLOW_TRACKING_URI=https://methane-detection-mlflow.ghostface.tech"
   refute_output --partial "wrong-url.example.com"
 }
 

@@ -37,7 +37,7 @@ set +a
 # Public, non-secret -- hardcoded here rather than left to .env.mlflow so
 # this script doesn't silently depend on a value living in a git-ignored
 # file that could omit or drift from it.
-export MLFLOW_TRACKING_URI="https://mlflow.ghostface.tech"
+export MLFLOW_TRACKING_URI="https://methane-detection-mlflow.ghostface.tech"
 
 # torch.unique has no MPS kernel in torch 1.13.1 (TASK-3.2 attempt 2) --
 # needed on every run, not just once per venv.
