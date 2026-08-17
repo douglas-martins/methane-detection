@@ -59,7 +59,7 @@ after the first import, do one of:
 2. In Coolify: **New Resource → Docker Compose**, point it at this repo's
    `deploy/bentoml/docker-compose.yml`, set the env vars from your `.env`.
 3. Assign a subdomain with TLS, e.g. `api-methane-detection.ghostface.tech` (Coolify's
-   automatic Let's Encrypt) — kept distinct from the shorter `mlflow.ghostface.tech`
+   automatic Let's Encrypt) — kept distinct from the shorter `methane-detection-mlflow.ghostface.tech`
    since this subdomain names the project, not just the tool, to stay legible once
    other Coolify-hosted services exist on the same VPS.
 4. Deploy. Confirm the container becomes healthy (`/readyz` healthcheck, see
