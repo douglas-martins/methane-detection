@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "scripts/**"
+      - "Makefile"
       - ".github/workflows/scripts-tests.yml"
 
 permissions:
