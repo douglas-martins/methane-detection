@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v0.18.0 (2026-08-17)
+
+### Bug Fixes
+
+- **deploy**: Enable CSRF protection and restrict CORS on the Prefect server
+  ([`c3fb0dc`](https://github.com/douglas-martins/methane-detection/commit/c3fb0dc7f7058513e1773a892f1377683422d778))
+
+- **training**: Point train_mac.sh at the real methane-detection-mlflow VPS domain
+  ([`69f0e60`](https://github.com/douglas-martins/methane-detection/commit/69f0e607c7c798bf1f1d303942b9d9db9ea6450a))
+
+### Features
+
+- **deploy**: Add Prefect orchestration server deployment and Mac worker
+  ([`5433138`](https://github.com/douglas-martins/methane-detection/commit/54331380524c35f5ef6d0c8695c5121ff1ff395a))
+
+
 ## v0.17.0 (2026-08-16)
 
 ### Bug Fixes
