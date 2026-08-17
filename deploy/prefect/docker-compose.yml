@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - prefect-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  prefect:
+    # Pinned to the exact prefect version already locked in this repo's
+    # root uv.lock (Environment B) so the server and every client
+    # (CLI, workers, flow runs) speak the same API version.
+    image: prefecthq/prefect:3.7.7-python3.12
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "4200"
+    environment:
+      # asyncpg, not psycopg2 -- Prefect's server uses async SQLAlchemy
+      # and only understands the postgresql+asyncpg:// driver prefix.
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Default is 127.0.0.1 -- must listen on all interfaces to be
+      # reachable at all from outside the container.
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      # The browser-side UI's own API base URL. Left at its
+      # http://127.0.0.1:4200/api default, the UI (correctly loaded over
+      # the public domain) would try to call back into the container's
+      # own loopback and fail -- same class of bug TASK-2.1 hit with
+      # MLflow before MLFLOW_SERVER_ALLOWED_HOSTS was set.
+      PREFECT_UI_API_URL: https://${PREFECT_DOMAIN}/api
+      # Native Prefect auth (D-10/readiness-review point 7 follow-up):
+      # a shared "username:password"-shaped string, checked verbatim
+      # against the decoded HTTP Basic Auth header on every API request
+      # except /api/health and /api/ready. The UI's own JS also reads
+      # this (via PREFECT_UI_API_URL's settings response) and prompts
+      # for Basic Auth automatically when it's set -- no Traefik/Coolify
+      # proxy-level auth needed, unlike what an earlier pass of this plan
+      # assumed before this setting was found in the installed 3.7.7
+      # server source (prefect/server/api/server.py's token_validation).
+      PREFECT_SERVER_API_AUTH_STRING: ${PREFECT_API_AUTH_STRING}
+    command: ["prefect", "server", "start", "--host", "0.0.0.0"]
+    healthcheck:
+      # /api/health is explicitly exempted from the auth check above, so
+      # this works unauthenticated regardless of PREFECT_API_AUTH_STRING.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+
+volumes:
+  prefect-postgres-data:

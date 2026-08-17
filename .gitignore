@@ -165,6 +165,7 @@ activemq-data/
 # Environments
 .env
 .env.mlflow
+.env.prefect
 .envrc
 .venv
 env/
@@ -174,6 +175,12 @@ venv/
 # .hydra/ config snapshots, logs) and any local MLflow fallback store; the
 # real record of a run is the MLflow server, not these local files.
 /experiments/
+
+# scripts/com.methane-detection.prefect-worker.plist's launchd-supervised
+# log output (TASK-7.1/D-10) -- Prefect's own server keeps the real flow
+# run history, this is just local stdout/stderr for debugging the worker
+# process itself.
+/logs/
 mlflow.db
 # MLflow's default artifact-store fallback (relative to cwd) when using a
 # sqlite/db tracking backend without an explicit --default-artifact-root --

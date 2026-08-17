@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd user-agent template that supervises scripts/prefect_worker_mac.sh
+  (TASK-7.1's D-10 decision -- native worker on the Mac, no SSH). Not
+  installed automatically; see deploy/prefect/README.md's "Mac worker"
+  section for the one-time setup that substitutes __REPO_ROOT__ below with
+  a real absolute path and copies this into ~/Library/LaunchAgents/.
+
+  KeepAlive+RunAtLoad means launchd restarts the worker if it crashes and
+  starts it again on every login, so it survives reboots/logouts without
+  a terminal session staying open -- the tradeoff D-10 accepted in
+  exchange for not opening inbound SSH/Tailscale access to this machine.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.methane-detection.prefect-worker</string>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO_ROOT__</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO_ROOT__/scripts/prefect_worker_mac.sh</string>
+    <string>mac-mps</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__REPO_ROOT__/logs/prefect-worker.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__REPO_ROOT__/logs/prefect-worker.err.log</string>
+</dict>
+</plist>
