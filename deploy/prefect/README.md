@@ -70,6 +70,17 @@ value set as `PREFECT_API_AUTH_STRING` (client-side setting name, distinct
 from the server's `PREFECT_SERVER_API_AUTH_STRING`) alongside
 `PREFECT_API_URL=https://<PREFECT_DOMAIN>/api`.
 
+Two more settings harden this beyond the auth string alone, both defense
+in depth rather than the primary gate: `PREFECT_SERVER_CSRF_PROTECTION_ENABLED=true`
+requires a `Prefect-Csrf-Token` header (fetched from `GET /csrf-token`,
+itself auth-protected) on every `POST`/`PUT`/`PATCH`/`DELETE` — real
+clients (workers, CLI, flow runs) handle this transparently via
+`PREFECT_CLIENT_CSRF_SUPPORT_ENABLED` (on by default), it only affects
+hand-rolled requests like a raw curl `POST`. `PREFECT_SERVER_CORS_ALLOWED_ORIGINS=https://${PREFECT_DOMAIN}`
+replaces the image's wide-open `*` default, so a browser tab on some
+unrelated origin can't script cross-origin requests against this server
+using a visitor's already-authenticated session.
+
 ## Mac worker (D-10)
 
 Per TASK-7.1's D-10 decision, the Mac reaches this server as a **native
@@ -121,13 +132,15 @@ curl --fail -sS https://methane-detection-prefect.ghostface.tech/api/health
 # -> true
 
 # Any real API call requires auth:
-curl -sS -o /dev/null -w '%{http_code}\n' https://methane-detection-prefect.ghostface.tech/api/flows/count
+curl -sS -o /dev/null -w '%{http_code}\n' https://methane-detection-prefect.ghostface.tech/api/admin/version
 # -> 401
 
-curl --fail -sS -X POST -u '<your-PREFECT_API_AUTH_STRING-value>' \
-  https://methane-detection-prefect.ghostface.tech/api/flows/count
-# -> 200, a JSON integer
+curl --fail -sS -u '<your-PREFECT_API_AUTH_STRING-value>' \
+  https://methane-detection-prefect.ghostface.tech/api/admin/version
+# -> 200, e.g. "3.7.7"
 ```
+
+A plain `GET` is used above rather than a `POST` on purpose: `PREFECT_SERVER_CSRF_PROTECTION_ENABLED` (see docker-compose.yml) only guards `POST`/`PUT`/`PATCH`/`DELETE` — a raw `curl -X POST` with just Basic Auth and no `Prefect-Csrf-Token` header now correctly gets `403 Missing CSRF token`, since it isn't going through the real Prefect client library (which fetches and attaches that token automatically via `PREFECT_CLIENT_CSRF_SUPPORT_ENABLED`, on by default). The Mac/desktop workers and `prefect` CLI are unaffected — this only trips up hand-rolled `POST` requests like a manual curl smoke test.
 
 - UI loads at `https://methane-detection-prefect.ghostface.tech`, browser
   prompts for Basic Auth, logging in with the `PREFECT_API_AUTH_STRING`
@@ -157,6 +170,17 @@ after — same approach `deploy/monitoring/README.md` used):
 - `GET /ui-settings` → `{"api_url": "https://methane-detection-prefect.ghostface.tech/api", ..., "auth": "BASIC", ...}`,
   confirming both `PREFECT_UI_API_URL` and the auth gate are wired
   correctly from the UI's own perspective, not just the raw API's.
+- `prefect config view --show-defaults` run inside the container confirmed
+  `PREFECT_SERVER_CSRF_PROTECTION_ENABLED='true' (from env)` and
+  `PREFECT_SERVER_CORS_ALLOWED_ORIGINS='https://methane-detection-prefect.ghostface.tech' (from env)`
+  actually took effect (not just accepted by the compose schema).
+- With CSRF protection on: `GET /api/admin/version` (authenticated) → `200`;
+  a raw `POST /api/flows/count` with Basic Auth but no CSRF headers → `403
+  Missing CSRF token` (expected — see the Validation section above); fetching
+  a token first (`GET /api/csrf-token?client=...`, itself Basic-Auth
+  protected) and replaying the `POST` with `Prefect-Csrf-Token`/
+  `Prefect-Csrf-Client` headers → `200`, confirming the mechanism itself
+  works end to end, not just that it blocks unauthenticated requests.
 
 Not yet done (needs the real VPS/Coolify and a real Mac worker, out of
 reach from this local validation): the actual Coolify import, DNS/TLS for

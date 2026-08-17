@@ -53,6 +53,13 @@ services:
       # assumed before this setting was found in the installed 3.7.7
       # server source (prefect/server/api/server.py's token_validation).
       PREFECT_SERVER_API_AUTH_STRING: ${PREFECT_API_AUTH_STRING}
+      # Defense in depth alongside the auth string above: CSRF protection
+      # for state-changing requests, and restricting CORS to this
+      # resource's own domain instead of the wide-open "*" default (any
+      # origin could otherwise script cross-origin requests against an
+      # authenticated browser session).
+      PREFECT_SERVER_CSRF_PROTECTION_ENABLED: "true"
+      PREFECT_SERVER_CORS_ALLOWED_ORIGINS: https://${PREFECT_DOMAIN}
     command: ["prefect", "server", "start", "--host", "0.0.0.0"]
     healthcheck:
       # /api/health is explicitly exempted from the auth check above, so
