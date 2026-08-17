@@ -13,6 +13,15 @@ load '/usr/lib/bats/bats-support/load'
 load '/usr/lib/bats/bats-assert/load'
 
 setup() {
+  # Guard against a PREFECT_API_AUTH_STRING already exported in the
+  # invoking shell (e.g. a developer who sourced .env.prefect for real
+  # manual use, per deploy/prefect/README.md, running bats in that same
+  # session) -- the script's `source "$ENV_FILE"` only sets vars the file
+  # itself defines, it can't unset an inherited one, so the missing-auth
+  # tests below would silently see a non-empty value and falsely pass
+  # through the pre-flight check.
+  unset PREFECT_API_AUTH_STRING
+
   REPO_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
   SCRIPT="${REPO_ROOT}/scripts/prefect_worker_mac.sh"
   FIXTURES="${BATS_TEST_DIRNAME}/fixtures"
