@@ -43,7 +43,7 @@ TASK-6.1](../../mlops-methane-detection-plan.md).
 2. In Coolify: **New Resource → Docker Compose**, point it at this repo's
    `deploy/monitoring/docker-compose.yml`, set the env vars from your `.env`.
 3. Assign a subdomain with TLS to the **grafana** service only, e.g.
-   `grafana.ghostface.tech` — set the same value as `GRAFANA_DOMAIN`. Prometheus has no
+   `methane-detection-grafana.ghostface.tech` — set the same value as `GRAFANA_DOMAIN`. Prometheus has no
    public domain (`expose: ["9090"]`, internal-only).
 4. Deploy. Confirm both `prometheus` and `grafana` report healthy in the Coolify UI.
 5. Grafana UI → **Connections → Data sources** should already show "Prometheus"
@@ -135,14 +135,14 @@ On first import:
 ## Validation
 
 ```bash
-curl --fail -sS https://grafana.ghostface.tech/api/health
+curl --fail -sS https://methane-detection-grafana.ghostface.tech/api/health
 # -> 200
 
 # Prometheus scraping the live API:
 curl -s https://api-methane-detection.ghostface.tech/metrics | grep methane_prediction_total
 ```
 
-- Grafana UI loads at `https://grafana.ghostface.tech`, login with the admin account
+- Grafana UI loads at `https://methane-detection-grafana.ghostface.tech`, login with the admin account
   works, and the "Methane Detection — Inference API" dashboard renders (may be mostly
   empty until real `/predict` traffic exists).
 - Sending 10 real `/predict` requests against the live API produces a visible spike in

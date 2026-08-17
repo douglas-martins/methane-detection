@@ -4,7 +4,7 @@
 
 `src/training/train.py` (Environment A, `vendor/starcop/.venv`) logs
 every training run to the MLflow server deployed in TASK-2.1
-(`https://mlflow.ghostface.tech`).
+(`https://methane-detection-mlflow.ghostface.tech`).
 
 ### Install
 
@@ -34,7 +34,7 @@ per-machine launch scripts from TASK-3.3 once they exist) before running
 
 | Variable | Purpose |
 |---|---|
-| `MLFLOW_TRACKING_URI` | `https://mlflow.ghostface.tech` |
+| `MLFLOW_TRACKING_URI` | `https://methane-detection-mlflow.ghostface.tech` |
 | `MLFLOW_TRACKING_USERNAME` | MLflow basic-auth username (the server requires auth — see TASK-2.1) |
 | `MLFLOW_TRACKING_PASSWORD` | MLflow basic-auth password |
 
