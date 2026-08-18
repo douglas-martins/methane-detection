@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v0.19.0 (2026-08-18)
+
+### Bug Fixes
+
+- **deploy**: Fail fast when PREFECT_DOMAIN is unset
+  ([`02f9ebf`](https://github.com/douglas-martins/methane-detection/commit/02f9ebf187f612ac8adbbe1ac50f90fe73def485))
+
+- **flows**: Notify on failure before re-raising in retraining cycle
+  ([`e243ca0`](https://github.com/douglas-martins/methane-detection/commit/e243ca09e355e5ad3b978d0ae27ccf0808794419))
+
+### Features
+
+- **flows**: Add retraining prefect flow
+  ([`2e96635`](https://github.com/douglas-martins/methane-detection/commit/2e96635ce8615f356b5d4b5d71ceeb77abc893ee))
+
+
 ## v0.18.1 (2026-08-18)
 
 ### Bug Fixes
