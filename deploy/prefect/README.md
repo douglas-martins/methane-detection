@@ -33,11 +33,27 @@ TASK-7.1](../../mlops-methane-detection-plan.md).
 2. In Coolify: **New Resource → Docker Compose**, point it at this repo's
    `deploy/prefect/docker-compose.yml`, set the env vars from your `.env`.
 3. Assign a subdomain with TLS, e.g. `methane-detection-prefect.ghostface.tech`
-   (Coolify's automatic Let's Encrypt), and set that same value as
-   `PREFECT_DOMAIN` in the env vars.
+   (Coolify's automatic Let's Encrypt), **and separately set that same
+   value as `PREFECT_DOMAIN` in the env vars** — Coolify's Domains field
+   and this resource's environment variables are not the same thing, and
+   Coolify does not populate one from the other. Skipping this step used
+   to fail silently (see below); `docker-compose.yml` now refuses to
+   start at all with a clear error if `PREFECT_DOMAIN` is missing.
 4. Deploy. Confirm both `postgres` (healthcheck: `pg_isready`) and `prefect`
    (healthcheck: `GET /api/health`) containers report healthy in the
    Coolify UI.
+
+**If the dashboard shows "Can't connect to Server API at `https:///api`"**
+(note the missing hostname): `PREFECT_DOMAIN` isn't actually set in this
+resource's env vars, even if a domain is assigned in Coolify's Domains
+field for TLS routing — those are two separate settings (step 3 above).
+Hit for real on the first live import. `docker-compose.yml`'s `:?` guard
+on `PREFECT_DOMAIN` now makes this fail the deploy outright instead of
+starting a "healthy" container with a broken UI, but if you're on an
+older image tag from before that guard existed: set `PREFECT_DOMAIN` in
+Coolify's env vars, then **Redeploy — not just Restart**, since env var
+changes only take effect on a full redeploy (same gotcha
+`deploy/monitoring/README.md` already documents).
 
 ## Auth
 
@@ -123,6 +139,76 @@ The same pattern is meant to generalize to a future `desktop-rtx5070`
 worker on the Windows/NVIDIA machine once TASK-3.1/D-06/D-07 unblock —
 nothing in this resource's compose file, auth setup, or the worker script
 itself is Mac-specific (the work-pool name is a plain CLI argument).
+
+## TASK-7.2 setup — retraining flow prerequisites
+
+`flows/retrain.py` (D-04: cron trigger, weekly) and its `prefect.yaml`
+deployment definition are checked in, but three things need manual,
+one-time setup outside this repo before the deployment can run for real.
+The deployment's `schedules[0].active` is `false` in `prefect.yaml` on
+purpose — leave it that way until you've done a manual
+`prefect deployment run 'retrain/retrain-weekly'` and watched it succeed.
+
+1. **Google service account for unattended `dvc pull`** (D-01's
+   unattended-pull decision — see `mlops-methane-detection-plan.md`):
+   - GCP Console → same project as the existing DVC OAuth client → **IAM &
+     Admin → Service Accounts → Create Service Account**. No project roles
+     needed — Drive access is granted by sharing the folder, not IAM.
+   - **Keys → Add Key → Create new key → JSON**, download it, and place it
+     somewhere durable on the Mac (not inside the repo — e.g.
+     `~/.config/methane-detection/gdrive-service-account.json`).
+   - Open Google Drive, find the folder DVC's `gdrive://` remote points at
+     (`.dvc/config`'s `url` field has the folder ID), **Share** it with the
+     service account's email (looks like
+     `<name>@<project-id>.iam.gserviceaccount.com`) as at least Viewer.
+   - Point DVC at it locally:
+
+     ```bash
+     dvc remote modify --local gdrive gdrive_use_service_account true
+     dvc remote modify --local gdrive gdrive_service_account_json_file_path \
+       ~/.config/methane-detection/gdrive-service-account.json
+     dvc pull  # should now run with no browser prompt at all
+     ```
+
+     This writes to `.dvc/config.local` (already git-ignored, same file the
+     interactive OAuth client's `gdrive_client_id`/`gdrive_client_secret`
+     live in today).
+
+2. **GitHub PAT for the CD trigger** (readiness review point 15 — `cd.yml`'s
+   own file-diff guard means `workflow_dispatch` is the only trigger that
+   actually redeploys on a retraining run):
+   - GitHub → Settings → Developer settings → **Fine-grained tokens** →
+     Generate new token, scoped to this repo only, **Actions: Read and
+     write** permission.
+   - Add it to `.env.prefect` (git-ignored, repo root — the same file
+     `scripts/prefect_worker_mac.sh` already sources):
+
+     ```text
+     GITHUB_ACTIONS_PAT=<the token>
+     ```
+
+3. **Pushover credentials for the notify step** (readiness review point 17
+   — reuses the same account already wired for Grafana alerts and Coolify
+   deploys, see `deploy/monitoring/.env.example`): add the same
+   `PUSHOVER_API_TOKEN`/`PUSHOVER_USER_KEY` values to `.env.prefect`.
+
+`.env.prefect` should now have four lines: `PREFECT_API_AUTH_STRING`
+(already there per the Mac worker setup above), `GITHUB_ACTIONS_PAT`,
+`PUSHOVER_API_TOKEN`, `PUSHOVER_USER_KEY`. Since `prefect_worker_mac.sh`
+sources this file with `set -a` before starting the worker, every flow run
+subprocess the worker spawns inherits all four automatically — no separate
+secrets mechanism needed. The flow also needs `MLFLOW_TRACKING_URI`
+already required by `scripts/train_mac.sh`/`.env.mlflow`.
+
+**Deploy and validate manually before trusting the schedule:**
+
+```bash
+.venv/bin/prefect deploy --all          # registers retrain-weekly, inactive
+.venv/bin/prefect deployment run 'retrain/retrain-weekly'
+```
+
+Watch it run to `Completed` in the UI. Once you're satisfied, flip the
+schedule on with `prefect deployment schedule resume 'retrain/retrain-weekly'`.
 
 ## Validation
 

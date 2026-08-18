@@ -11,6 +11,10 @@ from typing import Dict
 
 from omegaconf import DictConfig, OmegaConf
 
+RUN_ID_MARKER_FILENAME = "mlflow_run_id.txt"
+
+RUN_ID_MARKER_FILENAME = "mlflow_run_id.txt"
+
 REQUIRED_TRACKING_ENV_VARS = (
     "MLFLOW_TRACKING_URI",
     "MLFLOW_TRACKING_USERNAME",
@@ -44,6 +48,20 @@ def build_run_tags(
         "machine": machine,
         "sensor": sensor,
     }
+
+
+def write_run_id_marker(experiment_path: str, run_id: str) -> str:
+    """Writes `run_id` to a file under `experiment_path` and returns a
+    stdout-sentinel line an external subprocess caller can scan for.
+
+    train.py's own stdout/train.log is dominated by third-party INFO spam
+    (botocore, Lightning progress bars), so callers should look for this
+    exact "MLFLOW_RUN_ID=..." line rather than parsing logging output.
+    """
+    marker_path = os.path.join(experiment_path, RUN_ID_MARKER_FILENAME)
+    with open(marker_path, "w") as f:
+        f.write(run_id)
+    return f"MLFLOW_RUN_ID={run_id}"
 
 
 def flatten_hydra_params(settings: DictConfig) -> Dict[str, str]:

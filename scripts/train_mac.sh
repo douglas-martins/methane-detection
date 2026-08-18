@@ -43,6 +43,16 @@ export MLFLOW_TRACKING_URI="https://methane-detection-mlflow.ghostface.tech"
 # needed on every run, not just once per venv.
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
+# D-09: WandbLogger tries an interactive `wandb.login()` prompt when no
+# WANDB_API_KEY is configured, which hangs/fails outright with no TTY (e.g.
+# an unattended Prefect flow run) -- `wandb.errors.UsageError: api_key not
+# configured (no-tty)`. Default to disabled in that case; an explicit
+# WANDB_MODE (e.g. offline) or a real WANDB_API_KEY both take precedence.
+# MLflow logging is unaffected either way.
+if [ -z "${WANDB_API_KEY:-}" ]; then
+  export WANDB_MODE="${WANDB_MODE:-disabled}"
+fi
+
 REQUIRED_VARS=$("$PYTHON_BIN" -c "
 import sys
 sys.path.insert(0, 'src/training')

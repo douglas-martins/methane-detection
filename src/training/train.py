@@ -327,6 +327,7 @@ def train(hydra_settings: DictConfig) -> None:
                 "run_validation (train data) failed -- skipping, see TASK-2.2 note", exc_info=True
             )
 
+    print(mlflow_utils.write_run_id_marker(experiment_path, run.info.run_id))
     log.info(f"Finished: results saved to {experiment_path}")
 
 

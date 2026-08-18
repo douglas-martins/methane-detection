@@ -1,0 +1,33 @@
+# TASK-7.2: deployment definition for the retraining flow (flows/retrain.py).
+#
+# D-04 decided the trigger is a weekly cron schedule (drift-based trigger
+# deferred as a follow-up -- see mlops-methane-detection-plan.md's Phase 7
+# section). The schedule below is deliberately deployed INACTIVE
+# (active: false) -- flip it on only after a manual
+# `prefect deployment run 'retrain/retrain-weekly'` has been validated
+# against the real mac-mps worker at least once, since this flow calls
+# real training, real MLflow promotion, and a real production CD trigger.
+#
+# Deploy with (Environment B):
+#   .venv/bin/prefect deploy --all
+#
+# Prerequisites this flow's run environment needs (see
+# deploy/prefect/README.md's "TASK-7.2 setup" section for exact steps):
+#   - .dvc/config.local configured with the Google service-account
+#     credentials (D-01's unattended-pull decision)
+#   - GITHUB_ACTIONS_PAT, PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN, and the
+#     existing MLFLOW_TRACKING_* vars available in the mac-mps worker's
+#     environment (.env.prefect, sourced by scripts/prefect_worker_mac.sh)
+
+name: methane-detection
+prefect-version: 3.7.7
+
+deployments:
+  - name: retrain-weekly
+    entrypoint: flows/retrain.py:retrain_flow
+    work_pool:
+      name: mac-mps
+    schedules:
+      - cron: "0 3 * * 1"
+        timezone: "UTC"
+        active: false
