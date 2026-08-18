@@ -39,8 +39,7 @@ RUN_ID_SENTINEL_PREFIX = "MLFLOW_RUN_ID="
 GITHUB_OWNER = "douglas-martins"
 GITHUB_REPO = "methane-detection"
 CD_DISPATCH_URL = (
-    f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
-    "/actions/workflows/cd.yml/dispatches"
+    f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/cd.yml/dispatches"
 )
 PUSHOVER_MESSAGES_URL = "https://api.pushover.net/1/messages.json"
 
@@ -77,9 +76,7 @@ def run_training(repo_root: Path, cmd_runner: Callable = subprocess.run) -> str:
     result = cmd_runner([train_script], cwd=repo_root, capture_output=True, text=True)
     if result.returncode != 0:
         stderr_tail = "\n".join(result.stderr.splitlines()[-40:])
-        raise RuntimeError(
-            f"training failed with exit code {result.returncode}\n{stderr_tail}"
-        )
+        raise RuntimeError(f"training failed with exit code {result.returncode}\n{stderr_tail}")
     return parse_run_id(result.stdout)
 
 
