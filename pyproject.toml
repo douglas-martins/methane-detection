@@ -81,6 +81,12 @@ omit = [
     "*/scripts/preprocessing/process_data_jpl_4corners.py",
     "*/scripts/preprocessing/simulate_S2_from_aviris.py",
     "*/scripts/preprocessing/stats_mag1c.py",
+    # A @hydra.main CLI entrypoint requiring a full ML pipeline run to
+    # exercise -- can't run in a fast unit-test suite. Its actual logic
+    # is delegated to already-tested helper modules (mlflow_utils.py,
+    # settings_overlay.py, launch_profiles.py, etc.); this file itself
+    # has always been 0% covered, not a regression from any one change.
+    "*/training/train.py",
 ]
 
 [tool.semantic_release]
