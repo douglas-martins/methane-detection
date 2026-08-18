@@ -34,6 +34,7 @@ services:
       MLFLOW_ADMIN_USERNAME: ${MLFLOW_ADMIN_USERNAME}
       MLFLOW_ADMIN_PASSWORD: ${MLFLOW_ADMIN_PASSWORD}
       MLFLOW_SERVER_ALLOWED_HOSTS: ${MLFLOW_DOMAIN}
+      MLFLOW_SERVER_CORS_ALLOWED_ORIGINS: https://${MLFLOW_DOMAIN}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -57,7 +58,6 @@ services:
         cat > /tmp/basic_auth.ini <<CONF
         [mlflow]
         default_permission = READ
-        grant_default_workspace_access = true
         database_uri = postgresql://$$POSTGRES_USER:$$POSTGRES_PASSWORD@postgres:5432/$$POSTGRES_DB
         admin_username = $$MLFLOW_ADMIN_USERNAME
         admin_password = $$MLFLOW_ADMIN_PASSWORD
