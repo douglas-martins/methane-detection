@@ -124,6 +124,76 @@ worker on the Windows/NVIDIA machine once TASK-3.1/D-06/D-07 unblock —
 nothing in this resource's compose file, auth setup, or the worker script
 itself is Mac-specific (the work-pool name is a plain CLI argument).
 
+## TASK-7.2 setup — retraining flow prerequisites
+
+`flows/retrain.py` (D-04: cron trigger, weekly) and its `prefect.yaml`
+deployment definition are checked in, but three things need manual,
+one-time setup outside this repo before the deployment can run for real.
+The deployment's `schedules[0].active` is `false` in `prefect.yaml` on
+purpose — leave it that way until you've done a manual
+`prefect deployment run 'retrain/retrain-weekly'` and watched it succeed.
+
+1. **Google service account for unattended `dvc pull`** (D-01's
+   unattended-pull decision — see `mlops-methane-detection-plan.md`):
+   - GCP Console → same project as the existing DVC OAuth client → **IAM &
+     Admin → Service Accounts → Create Service Account**. No project roles
+     needed — Drive access is granted by sharing the folder, not IAM.
+   - **Keys → Add Key → Create new key → JSON**, download it, and place it
+     somewhere durable on the Mac (not inside the repo — e.g.
+     `~/.config/methane-detection/gdrive-service-account.json`).
+   - Open Google Drive, find the folder DVC's `gdrive://` remote points at
+     (`.dvc/config`'s `url` field has the folder ID), **Share** it with the
+     service account's email (looks like
+     `<name>@<project-id>.iam.gserviceaccount.com`) as at least Viewer.
+   - Point DVC at it locally:
+
+     ```bash
+     dvc remote modify --local gdrive gdrive_use_service_account true
+     dvc remote modify --local gdrive gdrive_service_account_json_file_path \
+       ~/.config/methane-detection/gdrive-service-account.json
+     dvc pull  # should now run with no browser prompt at all
+     ```
+
+     This writes to `.dvc/config.local` (already git-ignored, same file the
+     interactive OAuth client's `gdrive_client_id`/`gdrive_client_secret`
+     live in today).
+
+2. **GitHub PAT for the CD trigger** (readiness review point 15 — `cd.yml`'s
+   own file-diff guard means `workflow_dispatch` is the only trigger that
+   actually redeploys on a retraining run):
+   - GitHub → Settings → Developer settings → **Fine-grained tokens** →
+     Generate new token, scoped to this repo only, **Actions: Read and
+     write** permission.
+   - Add it to `.env.prefect` (git-ignored, repo root — the same file
+     `scripts/prefect_worker_mac.sh` already sources):
+
+     ```text
+     GITHUB_ACTIONS_PAT=<the token>
+     ```
+
+3. **Pushover credentials for the notify step** (readiness review point 17
+   — reuses the same account already wired for Grafana alerts and Coolify
+   deploys, see `deploy/monitoring/.env.example`): add the same
+   `PUSHOVER_API_TOKEN`/`PUSHOVER_USER_KEY` values to `.env.prefect`.
+
+`.env.prefect` should now have four lines: `PREFECT_API_AUTH_STRING`
+(already there per the Mac worker setup above), `GITHUB_ACTIONS_PAT`,
+`PUSHOVER_API_TOKEN`, `PUSHOVER_USER_KEY`. Since `prefect_worker_mac.sh`
+sources this file with `set -a` before starting the worker, every flow run
+subprocess the worker spawns inherits all four automatically — no separate
+secrets mechanism needed. The flow also needs `MLFLOW_TRACKING_URI`
+already required by `scripts/train_mac.sh`/`.env.mlflow`.
+
+**Deploy and validate manually before trusting the schedule:**
+
+```bash
+.venv/bin/prefect deploy --all          # registers retrain-weekly, inactive
+.venv/bin/prefect deployment run 'retrain/retrain-weekly'
+```
+
+Watch it run to `Completed` in the UI. Once you're satisfied, flip the
+schedule on with `prefect deployment schedule resume 'retrain/retrain-weekly'`.
+
 ## Validation
 
 ```bash

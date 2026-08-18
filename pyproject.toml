@@ -22,6 +22,7 @@ dependencies = [
     "bentoml",
     "prefect",
     "boto3",
+    "requests",
 ]
 
 [dependency-groups]
@@ -36,7 +37,7 @@ dev = [
 package = false
 
 [tool.pytest.ini_options]
-testpaths = ["src", "tests"]
+testpaths = ["src", "tests", "flows"]
 python_files = ["test_*.py"]
 
 [tool.ruff]

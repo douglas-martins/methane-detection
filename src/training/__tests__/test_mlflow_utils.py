@@ -84,3 +84,24 @@ class TestFlattenHydraParams:
         flat = mlflow_utils.flatten_hydra_params(settings)
 
         assert flat == {"seed": "42"}
+
+
+class TestWriteRunIdMarker:
+    def test_writes_run_id_to_marker_file_under_experiment_path(self, tmp_path):
+        mlflow_utils.write_run_id_marker(str(tmp_path), "abc123")
+
+        marker_path = tmp_path / mlflow_utils.RUN_ID_MARKER_FILENAME
+        assert marker_path.read_text() == "abc123"
+
+    def test_returns_stdout_sentinel_line(self, tmp_path):
+        sentinel = mlflow_utils.write_run_id_marker(str(tmp_path), "abc123")
+
+        assert sentinel == "MLFLOW_RUN_ID=abc123"
+
+    def test_overwrites_existing_marker_file(self, tmp_path):
+        marker_path = tmp_path / mlflow_utils.RUN_ID_MARKER_FILENAME
+        marker_path.write_text("stale-run-id")
+
+        mlflow_utils.write_run_id_marker(str(tmp_path), "fresh-run-id")
+
+        assert marker_path.read_text() == "fresh-run-id"

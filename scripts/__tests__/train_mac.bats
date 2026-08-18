@@ -100,3 +100,36 @@ setup() {
   run head -n 1 "${STUB_CAPTURE_DIR}/argv"
   assert_output "src/training/train.py"
 }
+
+@test "defaults WANDB_MODE=disabled when WANDB_API_KEY is not set" {
+  unset WANDB_API_KEY WANDB_MODE || true
+
+  run "$SCRIPT"
+
+  assert_success
+  run cat "${STUB_CAPTURE_DIR}/env"
+  assert_output --partial "WANDB_MODE=disabled"
+}
+
+@test "does not force WANDB_MODE when WANDB_API_KEY is set" {
+  unset WANDB_MODE || true
+  export WANDB_API_KEY="fake-key"
+
+  run "$SCRIPT"
+
+  assert_success
+  run cat "${STUB_CAPTURE_DIR}/env"
+  assert_output --partial "WANDB_MODE="
+  refute_output --partial "WANDB_MODE=disabled"
+}
+
+@test "respects an explicitly set WANDB_MODE even without WANDB_API_KEY" {
+  unset WANDB_API_KEY || true
+  export WANDB_MODE="offline"
+
+  run "$SCRIPT"
+
+  assert_success
+  run cat "${STUB_CAPTURE_DIR}/env"
+  assert_output --partial "WANDB_MODE=offline"
+}
