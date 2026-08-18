@@ -36,6 +36,25 @@ the same Postgres database — not Coolify/Traefik proxy-level auth. `MLFLOW_ADM
 re-read on subsequent restarts. **Rotate the admin password after first deploy** —
 Settings → user menu in the UI, or `POST /api/2.0/mlflow/users/update-password`.
 
+**`MLFLOW_SERVER_CORS_ALLOWED_ORIGINS` is required** — found the hard way 2026-08-17:
+without it, the UI's own browser-originated `POST` calls (e.g. `runs/search`, used by every
+Runs/Models list view) get rejected outright with a literal `403 Forbidden` body reading
+"Cross-origin request blocked" — even for the true `is_admin` account, and even though the
+request is genuinely same-origin. Root cause, confirmed by reading `v3.15.1`'s installed
+`mlflow/server/security.py`/`security_utils.py` directly: MLflow's `block_cross_origin_state_changes`
+security middleware rejects any state-changing request (`POST`/`PUT`/`PATCH`/`DELETE`) that
+carries a non-empty `Origin` header unless that origin is explicitly allow-listed via
+`MLFLOW_SERVER_CORS_ALLOWED_ORIGINS` — with it unset, the allow-list is empty and *every*
+such request is blocked, regardless of auth/RBAC/`is_admin` status entirely (this check runs
+in a separate `before_request` hook, ahead of and independent from the auth plugin). `curl`
+never reproduces this, since curl doesn't send an `Origin` header by default — only a real
+browser XHR/fetch call does. Same fix shape as `deploy/prefect/docker-compose.yml`'s
+`PREFECT_SERVER_CORS_ALLOWED_ORIGINS`: set to the full origin (scheme + host), i.e.
+`https://${MLFLOW_DOMAIN}`, not just the bare hostname `MLFLOW_SERVER_ALLOWED_HOSTS` uses.
+(A red herring ruled out along the way: MLflow's newer "workspaces" RBAC layer and its
+`grant_default_workspace_access` setting — confirmed via the live `/api/3.0/mlflow/server-info`
+endpoint that `workspaces_enabled: false` on this deployment, so that setting was never in play.)
+
 ## Validation
 
 ```bash
