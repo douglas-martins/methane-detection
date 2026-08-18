@@ -120,6 +120,10 @@ def notify(
     response.raise_for_status()
 
 
+def build_failure_message(step: str, error: Exception) -> str:
+    return f"Retraining flow failed at step '{step}': {error}"
+
+
 def build_notification_message(outcome) -> str:
     if outcome.stage is None:
         reasons = "; ".join(outcome.decision.reasons)
@@ -150,11 +154,23 @@ def run_retraining_cycle(
     versions of each fn so Prefect's UI still shows per-step run history
     in production.
     """
-    pull_fn(repo_root)
-    run_id = train_fn(repo_root)
-    outcome = promote_fn(tracking_uri, run_id, MODEL_NAME)
-    if outcome.stage is not None:
-        trigger_cd_fn(github_token)
+    current_step = "pull_dataset"
+    try:
+        pull_fn(repo_root)
+
+        current_step = "run_training"
+        run_id = train_fn(repo_root)
+
+        current_step = "promote"
+        outcome = promote_fn(tracking_uri, run_id, MODEL_NAME)
+
+        if outcome.stage is not None:
+            current_step = "trigger_cd"
+            trigger_cd_fn(github_token)
+    except Exception as exc:
+        notify_fn(pushover_user_key, pushover_api_token, build_failure_message(current_step, exc))
+        raise
+
     notify_fn(pushover_user_key, pushover_api_token, build_notification_message(outcome))
     return outcome
 
