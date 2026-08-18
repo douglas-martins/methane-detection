@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v0.18.1 (2026-08-18)
+
+### Bug Fixes
+
+- **deploy**: Allow mlflow ui cors origin for state-changing requests
+  ([`105b1f4`](https://github.com/douglas-martins/methane-detection/commit/105b1f4265c32eda62ce20e61bf7b38c955fc931))
+
+- **deploy**: Grant default workspace access in mlflow auth config
+  ([`3b6b09b`](https://github.com/douglas-martins/methane-detection/commit/3b6b09ba0908c81b11d25c05d9b9cefa1006a920))
+
+
 ## v0.18.0 (2026-08-17)
 
 ### Bug Fixes
