@@ -36,6 +36,20 @@ the same Postgres database — not Coolify/Traefik proxy-level auth. `MLFLOW_ADM
 re-read on subsequent restarts. **Rotate the admin password after first deploy** —
 Settings → user menu in the UI, or `POST /api/2.0/mlflow/users/update-password`.
 
+**`grant_default_workspace_access = true` is required** (`basic_auth.ini`, set in this
+compose file's `command`) — found the hard way 2026-08-17: `v3.15.1` ships a newer
+"workspaces" RBAC layer on top of the older single-tier `default_permission` setting.
+Every experiment now belongs to a workspace (`"default"` unless configured otherwise),
+and per [MLflow's own docs](https://mlflow.org/docs/latest/self-hosting/security/basic-http-auth/#configuration):
+*"if `false`, the `default` workspace ignores `default_permission` and new users need
+explicit workspace ACLs; if `true`, the `default` workspace inherits `default_permission`
+for all users (pre-workspaces behavior)."* Without it, reads like `runs/search` return a
+bare `403 Forbidden` in the UI (surfaced misleadingly as "Request error / INTERNAL_ERROR",
+and sometimes as a browser-side "Cross-origin request blocked" since the error response
+lacks CORS headers on its failure path) — even for the true `is_admin` account, since the
+workspace ACL check is a separate layer from the `is_admin` bypass. This isn't a session or
+CORS problem; it just looks like one.
+
 ## Validation
 
 ```bash

@@ -57,6 +57,7 @@ services:
         cat > /tmp/basic_auth.ini <<CONF
         [mlflow]
         default_permission = READ
+        grant_default_workspace_access = true
         database_uri = postgresql://$$POSTGRES_USER:$$POSTGRES_PASSWORD@postgres:5432/$$POSTGRES_DB
         admin_username = $$MLFLOW_ADMIN_USERNAME
         admin_password = $$MLFLOW_ADMIN_PASSWORD
