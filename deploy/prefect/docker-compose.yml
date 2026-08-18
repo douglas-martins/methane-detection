@@ -41,8 +41,17 @@ services:
       # http://127.0.0.1:4200/api default, the UI (correctly loaded over
       # the public domain) would try to call back into the container's
       # own loopback and fail -- same class of bug TASK-2.1 hit with
-      # MLflow before MLFLOW_SERVER_ALLOWED_HOSTS was set.
-      PREFECT_UI_API_URL: https://${PREFECT_DOMAIN}/api
+      # MLflow before MLFLOW_SERVER_ALLOWED_HOSTS was set. The `:?` guard
+      # is load-bearing, not decorative: an unset/blank PREFECT_DOMAIN
+      # silently resolves this to "https:///api" (no host between the
+      # slashes) -- the container still starts and /api/health still
+      # passes, so Coolify shows it healthy while the UI is actually
+      # broken ("Can't connect to Server API at https:///api"). Hit for
+      # real on first Coolify import: the subdomain was assigned in
+      # Coolify's Domains field but PREFECT_DOMAIN was never separately
+      # set as an env var -- the two are not the same thing, Coolify
+      # doesn't populate one from the other. Fail fast here instead.
+      PREFECT_UI_API_URL: https://${PREFECT_DOMAIN:?PREFECT_DOMAIN must be set to the same subdomain assigned in Coolify's Domains field -- see .env.example}/api
       # Native Prefect auth (D-10/readiness-review point 7 follow-up):
       # a shared "username:password"-shaped string, checked verbatim
       # against the decoded HTTP Basic Auth header on every API request
@@ -59,7 +68,10 @@ services:
       # origin could otherwise script cross-origin requests against an
       # authenticated browser session).
       PREFECT_SERVER_CSRF_PROTECTION_ENABLED: "true"
-      PREFECT_SERVER_CORS_ALLOWED_ORIGINS: https://${PREFECT_DOMAIN}
+      # Same PREFECT_DOMAIN, same :? guard as PREFECT_UI_API_URL above --
+      # Compose evaluates each ${...} occurrence independently, so both
+      # need it, not just the first.
+      PREFECT_SERVER_CORS_ALLOWED_ORIGINS: https://${PREFECT_DOMAIN:?PREFECT_DOMAIN must be set to the same subdomain assigned in Coolify's Domains field -- see .env.example}
     command: ["prefect", "server", "start", "--host", "0.0.0.0"]
     healthcheck:
       # /api/health is explicitly exempted from the auth check above, so

@@ -33,11 +33,27 @@ TASK-7.1](../../mlops-methane-detection-plan.md).
 2. In Coolify: **New Resource → Docker Compose**, point it at this repo's
    `deploy/prefect/docker-compose.yml`, set the env vars from your `.env`.
 3. Assign a subdomain with TLS, e.g. `methane-detection-prefect.ghostface.tech`
-   (Coolify's automatic Let's Encrypt), and set that same value as
-   `PREFECT_DOMAIN` in the env vars.
+   (Coolify's automatic Let's Encrypt), **and separately set that same
+   value as `PREFECT_DOMAIN` in the env vars** — Coolify's Domains field
+   and this resource's environment variables are not the same thing, and
+   Coolify does not populate one from the other. Skipping this step used
+   to fail silently (see below); `docker-compose.yml` now refuses to
+   start at all with a clear error if `PREFECT_DOMAIN` is missing.
 4. Deploy. Confirm both `postgres` (healthcheck: `pg_isready`) and `prefect`
    (healthcheck: `GET /api/health`) containers report healthy in the
    Coolify UI.
+
+**If the dashboard shows "Can't connect to Server API at `https:///api`"**
+(note the missing hostname): `PREFECT_DOMAIN` isn't actually set in this
+resource's env vars, even if a domain is assigned in Coolify's Domains
+field for TLS routing — those are two separate settings (step 3 above).
+Hit for real on the first live import. `docker-compose.yml`'s `:?` guard
+on `PREFECT_DOMAIN` now makes this fail the deploy outright instead of
+starting a "healthy" container with a broken UI, but if you're on an
+older image tag from before that guard existed: set `PREFECT_DOMAIN` in
+Coolify's env vars, then **Redeploy — not just Restart**, since env var
+changes only take effect on a full redeploy (same gotcha
+`deploy/monitoring/README.md` already documents).
 
 ## Auth
 
