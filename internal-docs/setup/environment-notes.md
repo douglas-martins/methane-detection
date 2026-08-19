@@ -76,14 +76,20 @@ bucket server-side).
 - **Distribution**: export the resulting Key ID/Key under boto3's expected
   `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` names in each training
   machine's `.env.mlflow` (git-ignored, never committed).
-- **Rotation**: this key is copied out to every training machine (laptops,
-  and eventually unattended Prefect workers) — rotate it on a regular
-  cadence, and immediately if any machine holding it is decommissioned,
-  lost, or suspected compromised.
-- **Revocation**: B2 dashboard → Application Keys → delete the key — takes
-  effect immediately. Update `.env.mlflow` on every machine still using it
-  first, or client uploads start failing with a 403
-  `botocore.exceptions.ClientError`.
+- **Rotation** (routine, no known exposure): this key is copied out to every
+  training machine (laptops, and eventually unattended Prefect workers) —
+  rotate it on a regular cadence. Provision the replacement key and update
+  `.env.mlflow` on every machine still using it *before* revoking the old
+  key, so client uploads don't fail with a 403
+  `botocore.exceptions.ClientError` in the gap.
+- **Revocation after loss or compromise**: if a machine holding this key is
+  decommissioned, lost, or suspected compromised, delete the key
+  immediately (B2 dashboard → Application Keys → delete the key — takes
+  effect immediately) — don't wait to update `.env.mlflow` on other
+  machines first, since the exposure risk outweighs the resulting 403
+  `botocore.exceptions.ClientError` on trusted machines. Provision a
+  replacement key and restore `.env.mlflow` on the trusted machines
+  afterward.
 
 ## Environment A — Apple MPS training (TASK-3.2)
 
