@@ -15,6 +15,7 @@ on:
       - "CHANGELOG.md"
       - "pyproject.toml"
       - "uv.lock"
+      - "Makefile"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -34,12 +35,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Never pushes anything (only uploads a Pages artifact) -- no
+          # reason for third-party PyPI installs (uv sync) or mkdocs
+          # plugin code (make docs-build) to have git credentials
+          # available. Same rationale as tests.yml's checkout step.
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
 
       - name: Install docs dependencies
-        run: uv sync --group docs
+        run: uv sync --locked --group docs
 
       - name: Build site
         run: make docs-build
