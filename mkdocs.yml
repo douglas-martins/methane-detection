@@ -1,0 +1,56 @@
+site_name: Methane Detection
+site_url: https://douglas-martins.github.io/methane-detection/ # TODO confirm exact GH Pages URL once Step 9.6 deploys
+repo_url: https://github.com/douglas-martins/methane-detection
+theme:
+  name: material
+  icon:
+    logo: material/satellite-variant
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - content.code.copy
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+plugins:
+  - search
+  - include-markdown
+  - callouts
+markdown_extensions:
+  - admonition
+  - pymdownx.blocks.admonition
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - tables
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - Methodology: methodology.md
+  - Dataset: dataset.md
+  - Results: results.md
+  - Pipeline:
+      - Overview: pipeline/overview.md
+      - Data Layer: pipeline/data-layer.md
+      - Training: pipeline/training.md
+      - CI/CD: pipeline/ci-cd.md
+      - Serving: pipeline/serving.md
+      - Monitoring: pipeline/monitoring.md
+      - Retraining Loop: pipeline/retraining.md
+  - Model Registry: model-registry.md
+  - Design Decisions: decisions.md
+  - Changelog: changelog.md

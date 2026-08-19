@@ -34,7 +34,7 @@ def require_mlflow_tracking_env() -> None:
     if missing:
         raise RuntimeError(
             "Missing required MLflow tracking environment variable(s): "
-            f"{', '.join(missing)} (see docs/environment_notes.md)"
+            f"{', '.join(missing)} (see internal-docs/setup/environment-notes.md)"
         )
 
 

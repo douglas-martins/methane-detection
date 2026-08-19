@@ -15,7 +15,7 @@ are unit tested (Test Size: Small/Medium, no network -- see
 __tests__/test_hf_baseline_import.py). download_checkpoint/load_model/
 import_variant are SDK glue -- network + a live MLflow server -- validated by
 an actual run instead (same Test Size: Large boundary src/training/train.py's
-own live path is validated at, see docs/environment_notes.md).
+own live path is validated at, see internal-docs/setup/environment-notes.md).
 """
 
 import logging

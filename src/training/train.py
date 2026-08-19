@@ -23,7 +23,7 @@ Run with (Environment A):
         +machine=desktop +dataset_name=starcop_mini
 
 Requires MLFLOW_TRACKING_URI / MLFLOW_TRACKING_USERNAME / MLFLOW_TRACKING_PASSWORD
-(see docs/environment_notes.md) -- validated up front, before any MLflow call,
+(see internal-docs/setup/environment-notes.md) -- validated up front, before any MLflow call,
 so a missing var raises instead of silently training against a local store.
 """
 

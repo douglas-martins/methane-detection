@@ -60,11 +60,36 @@ is actually logged):
 | Variable | Purpose |
 |---|---|
 | `MLFLOW_S3_ENDPOINT_URL` | `https://s3.<region>.backblazeb2.com` — same value as `deploy/mlflow/.env.example`'s `MLFLOW_S3_ENDPOINT_URL` on the server |
-| `AWS_ACCESS_KEY_ID` | The B2 Application Key ID (server's `.env.example` calls this `B2_APPLICATION_KEY_ID` — same value, but boto3 (used client-side) only recognizes the standard `AWS_*` names, not B2's) |
-| `AWS_SECRET_ACCESS_KEY` | The B2 Application Key (server's `B2_APPLICATION_KEY`) |
+| `AWS_ACCESS_KEY_ID` | A dedicated client-side B2 Application Key ID — **not** the server's `B2_APPLICATION_KEY_ID` (see below); boto3 (used client-side) only recognizes the standard `AWS_*` names, not B2's |
+| `AWS_SECRET_ACCESS_KEY` | That same dedicated key's secret — **not** the server's `B2_APPLICATION_KEY` |
 
-Same B2 Application Key already provisioned for the MLflow server in TASK-2.1 —
-no new key needs creating, just exporting client-side under boto3's expected names.
+**Provision a separate, least-privilege B2 Application Key for client-side
+uploads — do not reuse the MLflow server's key** (`deploy/mlflow/.env.example`'s
+`B2_APPLICATION_KEY*`, which needs broader access to manage the whole artifact
+bucket server-side).
+
+- **Scope**: B2 dashboard → Application Keys → Add a New Application Key →
+  restrict to the `methane-detection` bucket → capabilities `listFiles` +
+  `readFiles` + `writeFiles` only (no `deleteFiles`, no account-level
+  capabilities) — a training client only ever needs to write new run
+  artifacts, never delete or manage existing ones.
+- **Distribution**: export the resulting Key ID/Key under boto3's expected
+  `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` names in each training
+  machine's `.env.mlflow` (git-ignored, never committed).
+- **Rotation** (routine, no known exposure): this key is copied out to every
+  training machine (laptops, and eventually unattended Prefect workers) —
+  rotate it on a regular cadence. Provision the replacement key and update
+  `.env.mlflow` on every machine still using it *before* revoking the old
+  key, so client uploads don't fail with a 403
+  `botocore.exceptions.ClientError` in the gap.
+- **Revocation after loss or compromise**: if a machine holding this key is
+  decommissioned, lost, or suspected compromised, delete the key
+  immediately (B2 dashboard → Application Keys → delete the key — takes
+  effect immediately) — don't wait to update `.env.mlflow` on other
+  machines first, since the exposure risk outweighs the resulting 403
+  `botocore.exceptions.ClientError` on trusted machines. Provision a
+  replacement key and restore `.env.mlflow` on the trusted machines
+  afterward.
 
 ## Environment A — Apple MPS training (TASK-3.2)
 
