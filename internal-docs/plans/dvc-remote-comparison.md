@@ -51,9 +51,9 @@ The residual risk is DVC's own behavior with datasets containing many small file
 
 If any of these trigger, moving to B2 is a real migration, not a one-line reconfig — `dvc remote add` only registers a new remote's config, it doesn't move any data there:
 
-1. Add B2 as a new remote alongside Drive (`dvc remote add b2 s3://<bucket> --local` + application key) — don't flip the default yet.
+1. Add B2 as a new remote alongside Drive, in shared config so every clone knows about it: `dvc remote add b2 s3://<bucket>` plus `dvc remote modify b2 endpointurl <B2 S3 endpoint>` and `dvc remote modify b2 region <region>` (no `--local` on these — they're not secret and belong in `.dvc/config`, checked into git). Keep the application key itself out of git: `dvc remote modify b2 access_key_id <key> --local` and `dvc remote modify b2 secret_access_key <secret> --local` (or the `DVC_REMOTE_B2_ACCESS_KEY_ID`/`DVC_REMOTE_B2_SECRET_ACCESS_KEY` env vars), which write to the gitignored `.dvc/config.local`. Don't flip the default yet.
 2. Push every currently DVC-tracked object to it: `dvc push -r b2`.
-3. Validate from a clean clone: `dvc pull -r b2` reproduces the exact same tracked data.
+3. Validate from a clean clone: after cloning, configure that clone's own local B2 credentials (step 1's `--local`/env-var credentials aren't part of the shared config and won't be present in a fresh clone), then confirm `dvc pull -r b2` reproduces the exact same tracked data.
 4. Only once that validation passes, flip the default remote (`dvc remote default b2`) and retire Drive — keep Drive configured and populated until step 3 confirms B2 is trustworthy.
 
 No pipeline or code changes are needed either way — the migration cost is entirely in steps 1–3, not in `dvc.yaml`/config-group changes.
