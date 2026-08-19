@@ -44,9 +44,16 @@ AWS_ACCESS_KEY_ID=<B2 Application Key ID>
 AWS_SECRET_ACCESS_KEY=<B2 Application Key>
 ```
 
-Same B2 key already provisioned for the MLflow server in TASK-2.1 (see
-`deploy/mlflow/.env.example`) — boto3 just needs it under the standard
-`AWS_*` names, not B2's own `B2_APPLICATION_KEY*` naming.
+Use a **separate, least-privilege B2 Application Key** for this — don't reuse
+the MLflow server's key (`deploy/mlflow/.env.example`'s `B2_APPLICATION_KEY*`).
+The server's key needs broad access to manage the whole artifact bucket; a
+training client only ever needs to write new run artifacts, so it should hold
+a key scoped to this bucket with `listFiles`/`readFiles`/`writeFiles` only, no
+`deleteFiles` or account-level capabilities. Export the resulting Key ID/Key
+under boto3's expected `AWS_*` names (boto3 doesn't recognize B2's own
+`B2_APPLICATION_KEY*` naming). See
+`internal-docs/setup/environment-notes.md` for the full
+provisioning/rotation/revocation procedure.
 
 **Gotcha**: if the credentials file uses plain `VAR=value` lines (no
 `export`), a bare `source .env.mlflow` sets shell-local variables that never
