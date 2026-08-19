@@ -32,6 +32,13 @@ dev = [
     "interrogate",
     "ruff",
 ]
+docs = [
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocs-include-markdown-plugin",
+    "mkdocs-callouts",
+    "pymdown-extensions",
+]
 
 [tool.uv]
 package = false

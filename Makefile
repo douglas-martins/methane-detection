@@ -13,7 +13,7 @@ ENV_B_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/reg
 BATS_IMAGE := bats/bats:latest
 SCRIPTS_TEST_PATHS := scripts/__tests__
 
-.PHONY: test-env-a coverage test-env-b coverage-env-b badges badges-env-b test docstring-coverage test-scripts lint
+.PHONY: test-env-a coverage test-env-b coverage-env-b badges badges-env-b test docstring-coverage test-scripts lint docs-serve docs-build
 
 test-env-a:
 	$(ENV_A_PYTHON) -m pytest $(ENV_A_TEST_PATHS) -v
@@ -50,5 +50,11 @@ lint:
 
 test-scripts:
 	docker run --rm -v "$$PWD":/code -w /code $(BATS_IMAGE) $(SCRIPTS_TEST_PATHS)
+
+docs-serve:
+	$(ENV_B_PYTHON) -m mkdocs serve
+
+docs-build:
+	$(ENV_B_PYTHON) -m mkdocs build --strict
 
 test: test-env-a test-env-b
