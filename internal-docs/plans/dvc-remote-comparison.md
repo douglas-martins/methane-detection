@@ -14,12 +14,14 @@ You already pay for 5TB of Google storage, so the marginal cost of using it as t
 |---|---|---|
 | Marginal cost | ✅ $0 — existing 5TB quota | ⚠️ New paid service |
 | Rate limits (default) | 🔴 Shared DVC OAuth pool | ✅ Dedicated per-account |
-| Rate limits (with own OAuth client) | ✅ 1,000,000 quota units/min/project, 325,000/min/user/project, dedicated | ✅ Dedicated per-account |
+| Rate limits (with own OAuth client) | ✅ 1,000,000\* quota units/min/project, 325,000\*/min/user/project, dedicated | ✅ Dedicated per-account |
 | Throughput / protocol | ⚠️ Per-file API calls, no bulk PUT | ✅ S3-compatible, built for bulk transfer |
 | Many-small-files behavior | ⚠️ Known DVC slowdown (hrs for GBs of small files) | ⚠️ Same DVC-side bottleneck, faster backend |
 | Setup effort | ⚠️ GCP project + OAuth client + consent screen | ⚠️ B2 account + application key + bucket |
 | Native DVC support | ✅ First-class (`dvc[gdrive]`) | ✅ First-class (S3-compatible remote) |
-| Egress cost | ⚠️ Free up to 1TB/day/project, then 400,000,000 quota units/day/project before billing applies | ✅ Free up to 3× avg. storage/month |
+| Egress cost | ⚠️ Free up to 1TB\*/day/project, then 400,000,000\* quota units/day/project before billing applies | ✅ Free up to 3× avg. storage/month |
+
+\* These Google-published per-minute and per-day figures are not guaranteed for every project — Google has been known to grandfather prior quotas for projects created before 2026-05-01, or that used the Drive API between 2025-11 and 2026-04. Treat these numbers as conditional and verify current limits in Cloud Console → APIs & Services → Quotas before relying on them.
 
 ## 2. Monthly marginal cost as the dataset grows
 
@@ -35,9 +37,9 @@ Google Drive cost stays $0 at every size because it draws down storage you alrea
 
 ## 3. Why the rate limit isn't the blocker it first looked like
 
-The rate-limit worry from D-01 was about the **default** DVC/pydrive2 OAuth app, whose quota is shared across every DVC user on the internet. Registering your own Google Cloud OAuth client (a one-time, free setup: create a GCP project → enable the Drive API → create a Desktop OAuth client ID) puts this project on its own quota — 1,000,000 quota units/minute/project and 325,000 quota units/minute/user/project, dedicated to you. That removes the main argument for paying for a second storage service.
+The rate-limit worry from D-01 was about the **default** DVC/pydrive2 OAuth app, whose quota is shared across every DVC user on the internet. Registering your own Google Cloud OAuth client (a one-time, free setup: create a GCP project → enable the Drive API → create a Desktop OAuth client ID) puts this project on its own quota — 1,000,000 quota units/minute/project and 325,000 quota units/minute/user/project, dedicated to you. These figures are not guaranteed for every project: Google has been known to grandfather prior quotas for projects created before 2026-05-01, or that used the Drive API between 2025-11 and 2026-04, so treat them as conditional and confirm the actual allocation in Cloud Console → APIs & Services → Quotas rather than assuming these numbers apply. That removes the main argument for paying for a second storage service.
 
-**Egress is conditionally free, not unconditionally**: Google currently allows up to 1TB/day/project in Drive API egress, and a complimentary 400,000,000 quota units/day/project before any billing applies. Per Google's own documentation (checked 2026-08-19), full billing details for exceeding that threshold are expected to be published later in 2026, with at least 90 days' notice before charges take effect — worth re-checking before this project's usage grows enough to approach that ceiling.
+**Egress is conditionally free, not unconditionally**: Google currently allows up to 1TB/day/project in Drive API egress, and a complimentary 400,000,000 quota units/day/project before any billing applies. As with the rate-limit figures above, these egress thresholds may differ by project cohort (creation date, or prior Drive API usage in the 2025-11–2026-04 window) — verify in Cloud Console before relying on them. Per Google's own documentation (checked 2026-08-19), full billing details for exceeding that threshold are expected to be published later in 2026, with at least 90 days' notice before charges take effect — worth re-checking before this project's usage grows enough to approach that ceiling.
 
 The residual risk is DVC's own behavior with datasets containing many small files (patch-level hyperspectral tiles): it uploads file-by-file rather than in bulk, which is slow on *any* backend, Drive or B2. B2's S3-compatible API handles this somewhat better since bulk/multipart transfer is native to S3 semantics, but it does not eliminate DVC's per-file overhead.
 
