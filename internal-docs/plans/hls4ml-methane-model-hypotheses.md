@@ -25,12 +25,12 @@ Run these in parallel against identical splits and full-scene evaluation:
 | P0       | **SpectralTiny-86**           | selected EMIT/AVIRIS bands | Can a 1x1 spectral bottleneck plus a tiny spatial CNN remove matched-filter latency without attention? |
 | P1       | **TinyU-4**                   | `mag1c/WMF + RGB`          | Are two spatial scales worth the skip-buffer and conversion complexity?                                |
 | P1       | **Distilled TinyDS/TinyU**    | either input regime        | Can one student reproduce the false-positive suppression of the five-model MARS ensemble?              |
-| P2       | **On-board retrainable head (H9)** | frozen encoder latents | Can a tiny head be retrained on-board from few-shot labels to adapt without redeployment, as RaVAEn demonstrated for cloud detection? |
+| P2       | **On-board retrainable head (H9)** | frozen encoder latents | Can a tiny head be retrained on-board from few-shot labels to adapt without redeployment, as RaVAEn demonstrated for cloud detection? Not comparable to H1–H3 until the [H9.1 protocol](#h91--required-evaluation-protocol-precondition-for-comparison-with-h1h3) is fixed. |
 | Control  | **MF threshold + morphology** | `mag1c/WMF`                | What accuracy, latency, and resource floor must learned models beat?                                   |
 
 **Do not begin with a direct U-Net, SegFormer, or EfficientViT conversion.** First prove the conversion, bit-accuracy, synthesis, and end-to-end data path with a deliberately constrained student.
 
-**Also run OpenVino/VPU as a parallel, non-FPGA fallback benchmark (Section 8.5, Alternative E)**, not as the primary path: it is flight-proven (Section 6A) and de-risks the case where hls4ml conversion or synthesis gates block a promising candidate.
+**Also run OpenVino/VPU as a parallel, non-FPGA fallback benchmark (Section 8.5, Alternative E)**, not as the primary path: it is flight-proven (Section 6A) and de-risks the case where hls4ml conversion or synthesis gates block a promising candidate — but the flight evidence used an EOL OpenVino toolchain (2022.3 LTS + MYRIAD/HDDL), so pin that toolchain or re-validate on a current one (Section 8.5) before treating it as an available fallback rather than historical evidence.
 
 ---
 
@@ -460,12 +460,24 @@ Start with PTQ to prove architecture and synthesis. Move to QAT only after the f
 
 ### 8.5 Non-FPGA fallback: OpenVino / Myriad VPU
 
-Section 6A reports a flight-proven (not benchmark-proxy) deployment of a PyTorch-trained encoder via OpenVino on an Intel Movidius Myriad X VPU, on the same class of hardware (quad-core x86 CPU + VPU + 2GB RAM) HyperspectralViTs used only as a ground proxy (Section 6.5). This is relevant to Section 8 specifically because it sidesteps most of the conversion blockers in Section 8.1: OpenVino's PyTorch/ONNX import supports attention, LayerNorm, and common activations (Hardswish/SiLU/GELU) that the hls4ml PyTorch frontend does not.
+Section 6A reports a flight-proven (not benchmark-proxy) deployment of a PyTorch-trained encoder via OpenVino on an Intel Movidius Myriad X VPU, on the same class of hardware (quad-core x86 CPU + VPU + 2GB RAM) HyperspectralViTs used only as a ground proxy (Section 6.5). This is relevant to Section 8 specifically because it sidesteps most of the conversion blockers in Section 8.1: OpenVino's PyTorch/ONNX import supports attention, LayerNorm, and common activations (Hardswish/SiLU/GELU) that the hls4ml PyTorch frontend does not — subject to the toolchain pin below, since operator coverage is version-specific and should not be assumed from current OpenVino documentation.
 
-This does not replace the hls4ml/HLS track — it trades away fixed-point/resource-level control (Section 12.1's LUT/FF/DSP/BRAM metrics do not apply to a VPU) in exchange for a much larger supported-operator set and a shorter path to a validated on-board system. Recorded as **Alternative E** in Section 9. Two ways to use it:
+**Toolchain pin required.** The RaVAEn flight evidence (Section 6A.2) was produced with OpenVino's legacy **MYRIAD/HDDL plugin** targeting the Intel Movidius Myriad X VPU. Intel deprecated and then removed the MYRIAD/HDDL plugin from mainline OpenVino starting with the 2023.0 release, replacing it with the newer NPU plugin for different silicon; **OpenVino 2022.3 LTS is the last release confirmed to support the MYRIAD/HDDL plugin the flight evidence used.** The flight results do not transfer to a different OpenVino version or a different VPU/NPU chip without re-validation. Before Alternative E is treated as an actionable fallback rather than historical evidence, either:
 
-1. **As a risk hedge:** if a candidate architecture (e.g. TinyU-4's skip connections, or any dilation/upsampling variant) fails hls4ml conversion or FIFO/BRAM synthesis gates (Section 12.3), the same float or PTQ model can likely still be exported through OpenVino, giving a fallback deployment path rather than a dead end.
-2. **As a parallel benchmark:** measure OpenVino/VPU latency and power alongside HLS synthesis results for the same candidate, to test whether the added engineering cost of HLS is actually justified by this project's specific latency/power targets (Section 13).
+- (a) pin the toolchain to OpenVino 2022.3 LTS + MYRIAD/HDDL plugin on Myriad X hardware, and accept that this is an unsupported/EOL toolchain not eligible for current Intel support; or
+- (b) re-validate the conversion and inference path on a current OpenVino release and a currently available/supported VPU or NPU board.
+
+Section 13's "FPGA/SoC board and exact part: TBD" row must record which of these two applies.
+
+This does not replace the hls4ml/HLS track — it trades away fixed-point/resource-level control (Section 12.1's LUT/FF/DSP/BRAM metrics do not apply to a VPU) in exchange for a much larger supported-operator set and a shorter path to a validated on-board system. Recorded as **Alternative E** in Section 9. Two ways to use it, both conditioned on the toolchain pin above:
+
+1. **As a risk hedge:** if a candidate architecture (e.g. TinyU-4's skip connections, or any dilation/upsampling variant) fails hls4ml conversion or FIFO/BRAM synthesis gates (Section 12.3), the same float or PTQ model can likely still be exported through the pinned OpenVino toolchain, giving a fallback deployment path rather than a dead end.
+2. **As a parallel benchmark:** measure OpenVino/VPU latency and power on the pinned toolchain and board alongside HLS synthesis results for the same candidate, to test whether the added engineering cost of HLS is actually justified by this project's specific latency/power targets (Section 13).
+
+**Required smoke tests before relying on this path:**
+
+1. convert a representative H1–H3 float checkpoint through the pinned OpenVino toolchain and confirm it stays within the plugin's supported operator subset for that version (Conv2D, depthwise Conv2D, BatchNorm, ReLU, nearest-neighbor upsample, concatenation — the same restricted op set Section 8.1 already requires for hls4ml, so both paths can share one constrained architecture);
+2. run inference end-to-end on the pinned VPU/board (or the currently available equivalent chosen under option (b) above) and confirm output parity with the float PyTorch model on the same golden test set used for the hls4ml float/quantized/C-sim/board comparison (Section 12.2).
 
 ---
 
@@ -529,23 +541,25 @@ This may offer the best balance: retain original spectral information, avoid att
 
 A cascade only saves compute if the scheduler can genuinely avoid Stage 2. Putting both stages in a fixed always-running dataflow graph does not provide the same benefit.
 
-### E. Non-FPGA fallback: VPU + OpenVino (flight-proven)
+### E. Non-FPGA fallback: VPU + OpenVino (flight-proven on an EOL toolchain; historical evidence until re-pinned)
+
+**Toolchain constraint (see Section 8.5 for full detail):** the flight evidence used OpenVino's MYRIAD/HDDL plugin on Myriad X, last supported in **OpenVino 2022.3 LTS**; that plugin is removed from current mainline OpenVino. Treat everything below as **historical evidence of feasibility**, not a currently reproducible fallback, until either the 2022.3 LTS + MYRIAD/HDDL toolchain is explicitly pinned and accepted as EOL, or the path is re-validated on a current OpenVino release and a currently available VPU/NPU board — and until the smoke tests in Section 8.5 pass on whichever toolchain is chosen.
 
 **Benefits**
 
-- flight-proven on real hardware (D-Orbit ION SCV004; Section 6A), not only a benchmark proxy;
-- much larger supported-operator set than hls4ml's PyTorch frontend (Section 8), avoiding the attention/LayerNorm/Hardswish/SiLU/GELU conversion blockers listed in Section 8.1–8.2;
+- flight-proven on real hardware (D-Orbit ION SCV004; Section 6A), not only a benchmark proxy — conditional on reproducing the same toolchain (OpenVino 2022.3 LTS + MYRIAD/HDDL) or re-validating on a current equivalent;
+- much larger supported-operator set than hls4ml's PyTorch frontend (Section 8), avoiding the attention/LayerNorm/Hardswish/SiLU/GELU conversion blockers listed in Section 8.1–8.2 — subject to confirming the operator subset on the pinned toolchain version specifically;
 - lower engineering risk and shorter iteration loop than HLS synthesis: no C-sim/RTL co-sim/timing-closure cycle;
 - supports on-board training of a small head on top of a frozen encoder (Section 6A.2), which hls4ml does not target at all.
 
 **Costs/risks**
 
 - loses HLS's fine-grained fixed-point precision and per-layer resource control, so it is not a like-for-like substitute if the FPGA/power/resource budget is the hard constraint;
-- Myriad X is a specific, aging Intel VPU product line — not a guarantee that a *current* board/VPU offers equivalent OpenVino support or availability (Section 13);
+- Myriad X is a specific, aging Intel VPU product line, and its OpenVino plugin (MYRIAD/HDDL) is deprecated and removed from mainline OpenVino releases after 2022.3 LTS — there is no guarantee that a *current* board/VPU/NPU offers equivalent OpenVino support or availability (Section 13);
 - no LUT/FF/DSP/BRAM data exists for this path because it is not an FPGA target; the resource/power comparisons in Section 12.1 don't directly apply;
 - still subject to the same I/O/tiling overhead documented in Section 6A.2 and Section 5.5.
 
-**Use when:** the FPGA resource/power budget is not yet the binding constraint, a faster path to a validated on-board system is more valuable than HLS-level control, or as a parallel benchmark to sanity-check whether hls4ml's added engineering cost is justified for this project's actual latency/power targets.
+**Use when:** the FPGA resource/power budget is not yet the binding constraint, a faster path to a validated on-board system is more valuable than HLS-level control, or as a parallel benchmark to sanity-check whether hls4ml's added engineering cost is justified for this project's actual latency/power targets — **and** the toolchain pin and smoke tests in Section 8.5 have been completed or explicitly scheduled. Until then, cite this alternative as motivating evidence, not as a validated deployment option.
 
 ---
 
@@ -695,6 +709,30 @@ frozen spatial/spectral encoder (e.g. TinyDS/SpectralTiny backbone, weights fixe
 - retraining introduces a state-management problem (versioning, rollback, drift monitoring) absent from a fixed-weight deployment, and is out of scope for hls4ml/HLS synthesis — this hypothesis is realistic only on the VPU/OpenVino or CPU fallback path (Alternative E in Section 9), not on a static HLS bitstream.
 
 **Priority:** exploratory / P2. Do not block the P0/P1 portfolio in Section 1 on this hypothesis; treat it as a system-level extension to evaluate once a frozen encoder from H1–H3 is validated.
+
+### H9.1 — Required evaluation protocol (precondition for comparison with H1–H3)
+
+H9 answers a different question from H1–H3 (on-board adaptability, not frozen-weight segmentation accuracy) and Section 12's metric hierarchy and go/no-go gates do not cover it. Before H9 is compared against H1–H3 in the Section 1 portfolio table or promoted past exploratory status, define:
+
+1. **Frozen-encoder checkpoint:** the exact H1–H3 architecture, weights, training data, and checkpoint version that is frozen and reused as the encoder. H9 has no independent encoder; without pinning this, "H9's accuracy" is undefined.
+2. **Tile-level versus pixel-level task:** whether the on-board head predicts a whole-tile label (RaVAEn's task) or a per-pixel mask (H1–H3's task). These are not interchangeable, and Section 12.1's primary metrics assume per-pixel/per-event output.
+3. **Adaptation-label budget:** the number and source of on-board few-shot labels available for retraining the head (e.g., N confirmed detections + N confirmed false alarms), analogous to RaVAEn's 1,305-tile budget, fixed in advance rather than tuned post hoc.
+4. **Held-out scenes:** scenes/sensors excluded from both encoder pretraining and head adaptation, used only to measure post-adaptation gain or regression.
+5. **Adaptation time:** the wall-clock/epoch budget for on-board retraining under the target on-board compute envelope (VPU/CPU per Section 8.5/Alternative E, not FPGA), reported against RaVAEn's measured 0.09–0.2 s/epoch as a reference point, not an assumption that this project's head/hardware will match it.
+6. **Rollback rule:** an explicit, automatic condition for reverting the head to its last known-good state if on-board retraining degrades held-out performance (e.g., revert if held-out event recall at the fixed false-alert budget drops by more than X points).
+7. **Acceptance metric:** the specific metric and threshold for accepting an on-board-adapted head as an improvement over the frozen baseline, expressed in Section 12.1's primary operational terms (event recall at a fixed false-alert budget), not pixel F1/AUPRC alone — since pixel-level metrics are what H1–H3 optimize for and may not be reported for a tile-level H9 head.
+
+Until these seven items are fixed, H9's row in the Section 1 portfolio table records a research direction, not a result comparable to H1–H3's "main question" framing; treat any accuracy or timing claim attributed to H9 as provisional.
+
+### H9.2 — Acceptance gates
+
+H9 stays **exploratory/P2** regardless of gate outcome; passing these gates makes H9 a reportable result, not a promotion into the P0/P1 portfolio (Section 1) or the general go/no-go gates (Section 12.3), which do not cover on-board retraining. Report all five together on the same held-out set — a single passing metric without the rest is not sufficient:
+
+1. **Few-shot label budget:** adaptation uses no more than the budget pinned in H9.1 item 3; report the result at exactly that budget, not a best-of-several-budgets figure chosen after the fact.
+2. **Held-out-scene evaluation:** post-adaptation gains are measured only on the scenes/sensors held out per H9.1 item 4 — never seen during encoder pretraining or head adaptation.
+3. **Segmentation/per-pixel accuracy:** if the H9 head is per-pixel rather than tile-level (H9.1 item 2), it must be scored with the same per-pixel/per-event metrics H1–H3 use (Section 12.1) on the held-out set. **RaVAEn's binary per-tile AUPRC 0.979 / F1 0.956 (Section 6A.2) is evidence for tile-level cloud classification only; it is not evidence for methane segmentation accuracy or for a per-pixel H9 head, and must not be cited as such.**
+4. **Rollback to frozen baseline:** the adapted head is reverted automatically per the H9.1 item 6 rollback rule if held-out performance regresses versus the frozen baseline; report both the adapted and the reverted-baseline numbers, not the adapted number alone.
+5. **Measured on-board training cost:** report actual wall-clock/epoch training time on the pinned on-board target (Alternative E's pinned toolchain, Section 8.5). RaVAEn's 0.09–0.2 s/epoch (Section 6A.2) is a reference point only, not a substitute for measuring this project's own head size and hardware.
 
 ---
 
@@ -972,7 +1010,7 @@ A network-only speedup is not a deployment result.
 | Threshold overfitting                  | optimistic reported F1                  | validation-only calibration; locked test threshold     |
 | L1B assumption on-board                | unavailable input product               | model partial preprocessing or simulate L0-like data   |
 | Radiation/toolchain/platform limits    | board demo not flight ready             | separate ML feasibility from flight qualification      |
-| hls4ml/HLS the only deployment path evaluated | a convertible-but-blocked candidate is abandoned instead of shipped | benchmark OpenVino/VPU (Alternative E, Section 8.5) in parallel as a fallback |
+| hls4ml/HLS the only deployment path evaluated | a convertible-but-blocked candidate is abandoned instead of shipped | benchmark OpenVino/VPU (Alternative E, Section 8.5) in parallel as a fallback, but first pin the toolchain (OpenVino 2022.3 LTS + MYRIAD/HDDL is EOL; a current release needs re-validation) and pass the Section 8.5 conversion/inference smoke tests — otherwise treat Alternative E as historical evidence, not an available fallback |
 | On-board retraining (H9) has no labeling/versioning mechanism | drift correction stays theoretical | scope H9 as exploratory/P2; do not depend on it for the P0/P1 portfolio |
 
 ---
