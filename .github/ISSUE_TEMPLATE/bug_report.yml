@@ -1,0 +1,51 @@
+name: Bug report
+description: Something in the pipeline, training, serving, or docs isn't working as expected.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. Include the full error/traceback if there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen instead.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Which environment?
+      description: See CONTRIBUTING.md for the two-environment setup.
+      options:
+        - Environment A (vendor/starcop/.venv, Python 3.10, torch 1.13.1)
+        - Environment B (.venv, Python 3.12, torch >=2.5)
+        - CI (GitHub Actions)
+        - Serving (BentoML deployment)
+        - Not code — documentation
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal command(s) or code that trigger it.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: commit
+    attributes:
+      label: Commit / branch
+      description: Output of `git rev-parse HEAD` (or the branch name) at the time you hit this.
+    validations:
+      required: false
