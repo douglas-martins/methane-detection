@@ -4,7 +4,8 @@
 > **Analysis date:** 2026-08-19  
 > **Target project:** `methane-detection`  
 > **Primary deployment tool considered:** [hls4ml](https://fastmachinelearning.org/hls4ml/)  
-> **Decision rule:** do not choose an architecture until the target FPGA, system boundary, throughput, power, and full-granule false-alert budget are defined.
+> **Decision rule:** do not choose an architecture until the target FPGA, system boundary, throughput, power, and full-granule false-alert budget are defined.  
+> **Update 2026-08-19:** added RaVAEn on-board flight evidence (Section 6A), a non-FPGA fallback track (Section 8.5), Alternative E (Section 9), and H9 (Section 10), after reading Růžička et al., *Fast Model Inference and Training On-Board of Satellites*, arXiv:2307.08700.
 
 ## 1. Executive summary
 
@@ -24,9 +25,12 @@ Run these in parallel against identical splits and full-scene evaluation:
 | P0       | **SpectralTiny-86**           | selected EMIT/AVIRIS bands | Can a 1x1 spectral bottleneck plus a tiny spatial CNN remove matched-filter latency without attention? |
 | P1       | **TinyU-4**                   | `mag1c/WMF + RGB`          | Are two spatial scales worth the skip-buffer and conversion complexity?                                |
 | P1       | **Distilled TinyDS/TinyU**    | either input regime        | Can one student reproduce the false-positive suppression of the five-model MARS ensemble?              |
+| P2       | **On-board retrainable head (H9)** | frozen encoder latents | Can a tiny head be retrained on-board from few-shot labels to adapt without redeployment, as RaVAEn demonstrated for cloud detection? |
 | Control  | **MF threshold + morphology** | `mag1c/WMF`                | What accuracy, latency, and resource floor must learned models beat?                                   |
 
 **Do not begin with a direct U-Net, SegFormer, or EfficientViT conversion.** First prove the conversion, bit-accuracy, synthesis, and end-to-end data path with a deliberately constrained student.
+
+**Also run OpenVino/VPU as a parallel, non-FPGA fallback benchmark (Section 8.5, Alternative E)**, not as the primary path: it is flight-proven (Section 6A) and de-risks the case where hls4ml conversion or synthesis gates block a promising candidate.
 
 ---
 
@@ -344,6 +348,44 @@ Risks:
 
 ---
 
+## 6A. RaVAEn on D-Orbit ION SCV004: on-board flight evidence
+
+### 6A.1 Why this paper is a different kind of evidence
+
+Unlike MARS (ground reprocessing) and HyperspectralViTs (CPU/VPU/GPU proxy benchmarks, Section 6.5), Růžička et al. (2023, arXiv:2307.08700) report an **actual flight deployment**: RaVAEn, a VAE encoder that maps 32x32x4-band Sentinel-2 tiles to 128-dimensional latents, running on D-Orbit's ION SCV004 CubeSat demonstration mission. The same author group overlaps with this project's STARCOP baseline (Růžička and Mateo-García are co-authors of both). This paper targets exactly the system-boundary question raised in Section 2 and Section 13, but answers it with measured flight timings rather than a ground proxy or synthetic estimate.
+
+### 6A.2 Hardware and evidence
+
+- **Flown hardware**, not a proxy: quad-core x86-64 CPU, Intel Movidius Myriad X VPU, 2GB RAM — the same hardware class HyperspectralViTs used only as a ground-based proxy (Section 6.5).
+- Three compute regimes measured on this exact hardware, encoding one file of 225 tiles at batch size 64 (RGB+NIR bands):
+
+  | Regime           | Encoding only | Encoding + IO |
+  | ----------------- | -------------: | -------------: |
+  | Torch CPU          |         0.327s |         0.825s |
+  | OpenVino CPU        |         0.171s |         0.659s |
+  | OpenVino Myriad VPU |         0.111s |         0.596s |
+
+- The gap between "encoding only" and "encoding + IO" is roughly constant (~0.49s) across all three devices: load/tiling overhead does not shrink as the encoder gets faster. This is hardware-measured confirmation of the same warning this document already makes from ground-processing timing (Section 5.5) and system-boundary framing (Section 2): **a fast network does not produce a fast system if I/O or preprocessing dominates.**
+- The Myriad VPU is not only faster on average but also more *stable*: CPU/PyTorch shows large per-batch timing spikes, while Myriad/OpenVino stays in a tight band (paper's Fig. 3a vs 3b). For a duty-cycled or real-time on-board budget, tail latency may matter as much as mean latency.
+- **On-board training, not just inference.** A frozen VAE encoder (pre-trained on the ground) produces 128-dim latents; a tiny one-layer FC classifier (129 trainable parameters) is trained **on-board** from those latents for a cloud-detection few-shot task (1,305 training tiles), reaching AUPRC 0.979, F1 0.956 at threshold 0.5. Average epoch time drops from 0.201s (batch 32) to 0.091s (batch 256) — training is cheap once the encoder is frozen and features are pre-extracted.
+
+### 6A.3 What is transferable to this project
+
+RaVAEn is a scene-level cloud-detection VAE, not a methane segmentation network, and its unit of output is a whole-tile embedding, not a per-pixel mask — it is not a competing architecture for TinyDS/TinyU/SpectralTiny and its accuracy numbers do not transfer. Three findings are transferable as design inputs:
+
+1. **OpenVino + Myriad VPU is a flight-proven, non-FPGA on-board deployment path.** It sidesteps the hls4ml conversion-risk surface documented in Section 8 (unsupported PyTorch ops, LayerNorm/attention limits, FX-tracing fragility) because OpenVino supports a much larger standard-op set out of the box, at the cost of losing HLS's fine-grained fixed-point/resource control. Recorded as Alternative E in Section 9 and Section 8.5.
+2. **Frozen encoder + tiny trainable head, retrained on-board, is flight-demonstrated.** This is a different system pattern from H0–H8 in Section 10: instead of shipping a fixed inference-only network, ship a frozen feature extractor and let a small head be (re)trained on-board from few-shot labels collected in orbit. Recorded as H9 in Section 10.
+3. **I/O/tiling overhead as a hardware-measured, first-class budget item**, not just a ground-processing anecdote. This strengthens, without changing, the full-pipeline benchmarking requirement already in Section 12.1 and Section 13.
+
+### 6A.4 Limits of this evidence
+
+- RaVAEn's task (scene-level cloud yes/no from a whole-tile VAE latent) is much coarser than per-pixel methane segmentation; none of its accuracy numbers transfer.
+- 4-band, 32x32 Sentinel-2 RGB+NIR tiles are smaller and coarser than either this project's 4-channel Mag1c+RGB AVIRIS patches or HyperspectralViTs' 86-band EMIT input; the encoder's compute profile does not generalize to a spectral segmentation network.
+- Myriad X / OpenVino is a specific, aging Intel VPU product line. A target-hardware decision should not anchor on this exact chip without checking current availability — Section 13's "FPGA/SoC board and exact part: TBD" row should treat it as one candidate to evaluate or explicitly rule out, not assume.
+- No resource utilization, power draw, or radiation/reliability data is reported for the VPU beyond the encode/train timings above — not yet comparable to the hardware-metrics rigor Section 12.1 requires.
+
+---
+
 ## 7. Comparison from multiple design angles
 
 | Angle                     | Current STARCOP project  | MARS RGB+WMF                             | HyperspectralViTs all-band              | Hardware implication                                |
@@ -358,6 +400,8 @@ Risks:
 | Quantization evidence     | none                     | none                                     | FP16 TensorRT only                      | Need QAT/PTQ and fixed-point tests                  |
 | Hardware evidence         | CPU/MPS/GPU pipeline     | ground processing                        | CPU/VPU/GPU proxy                       | Need actual HLS synthesis                           |
 | Software maturity         | tested MLOps composition | research code                            | research code                           | Reimplement students locally                        |
+
+RaVAEn (Section 6A) is omitted from this table because it solves a coarser task (scene-level cloud classification from a whole-tile VAE latent, not per-pixel methane segmentation) and so is not comparable row-for-row with the three segmentation systems above. Its value here is orthogonal: it is the only one of the four with **flight-measured**, not proxy or ground, hardware evidence, and it is the source of Alternative E (Section 9) and H9 (Section 10).
 
 ---
 
@@ -413,6 +457,15 @@ Important constraints found in the converter source:
 4. **HGQ/HGQ2:** promising model-wise precision inference, primarily Keras-oriented and a larger workflow change.
 
 Start with PTQ to prove architecture and synthesis. Move to QAT only after the float student is competitive and the HLS graph is stable.
+
+### 8.5 Non-FPGA fallback: OpenVino / Myriad VPU
+
+Section 6A reports a flight-proven (not benchmark-proxy) deployment of a PyTorch-trained encoder via OpenVino on an Intel Movidius Myriad X VPU, on the same class of hardware (quad-core x86 CPU + VPU + 2GB RAM) HyperspectralViTs used only as a ground proxy (Section 6.5). This is relevant to Section 8 specifically because it sidesteps most of the conversion blockers in Section 8.1: OpenVino's PyTorch/ONNX import supports attention, LayerNorm, and common activations (Hardswish/SiLU/GELU) that the hls4ml PyTorch frontend does not.
+
+This does not replace the hls4ml/HLS track — it trades away fixed-point/resource-level control (Section 12.1's LUT/FF/DSP/BRAM metrics do not apply to a VPU) in exchange for a much larger supported-operator set and a shorter path to a validated on-board system. Recorded as **Alternative E** in Section 9. Two ways to use it:
+
+1. **As a risk hedge:** if a candidate architecture (e.g. TinyU-4's skip connections, or any dilation/upsampling variant) fails hls4ml conversion or FIFO/BRAM synthesis gates (Section 12.3), the same float or PTQ model can likely still be exported through OpenVino, giving a fallback deployment path rather than a dead end.
+2. **As a parallel benchmark:** measure OpenVino/VPU latency and power alongside HLS synthesis results for the same candidate, to test whether the added engineering cost of HLS is actually justified by this project's specific latency/power targets (Section 13).
 
 ---
 
@@ -475,6 +528,24 @@ This may offer the best balance: retain original spectral information, avoid att
 - host/FPGA scheduler skips Stage 2 for empty areas.
 
 A cascade only saves compute if the scheduler can genuinely avoid Stage 2. Putting both stages in a fixed always-running dataflow graph does not provide the same benefit.
+
+### E. Non-FPGA fallback: VPU + OpenVino (flight-proven)
+
+**Benefits**
+
+- flight-proven on real hardware (D-Orbit ION SCV004; Section 6A), not only a benchmark proxy;
+- much larger supported-operator set than hls4ml's PyTorch frontend (Section 8), avoiding the attention/LayerNorm/Hardswish/SiLU/GELU conversion blockers listed in Section 8.1–8.2;
+- lower engineering risk and shorter iteration loop than HLS synthesis: no C-sim/RTL co-sim/timing-closure cycle;
+- supports on-board training of a small head on top of a frozen encoder (Section 6A.2), which hls4ml does not target at all.
+
+**Costs/risks**
+
+- loses HLS's fine-grained fixed-point precision and per-layer resource control, so it is not a like-for-like substitute if the FPGA/power/resource budget is the hard constraint;
+- Myriad X is a specific, aging Intel VPU product line — not a guarantee that a *current* board/VPU offers equivalent OpenVino support or availability (Section 13);
+- no LUT/FF/DSP/BRAM data exists for this path because it is not an FPGA target; the resource/power comparisons in Section 12.1 don't directly apply;
+- still subject to the same I/O/tiling overhead documented in Section 6A.2 and Section 5.5.
+
+**Use when:** the FPGA resource/power budget is not yet the binding constraint, a faster path to a validated on-board system is more valuable than HLS-level control, or as a parallel benchmark to sanity-check whether hls4ml's added engineering cost is justified for this project's actual latency/power targets.
 
 ---
 
@@ -600,6 +671,30 @@ Output:
 **Hypothesis:** jointly learned confidence ranks connected components better than using only maximum pixel probability.
 
 Keep the pooling shape static. If multi-output conversion proves fragile, compute confidence in postprocessing instead.
+
+### H9 — Frozen encoder + on-board retrainable head enables in-orbit adaptation
+
+Motivated directly by the RaVAEn flight result (Section 6A.2): a frozen spectral/spatial encoder produces a compact per-tile or per-pixel latent representation; a small trainable head (linear or shallow MLP, analogous to RaVAEn's 129-parameter classifier) is (re)trained **on-board** from a small number of newly labeled or newly confirmed tiles, without a ground uplink of new weights.
+
+**Architecture sketch:**
+
+```text
+frozen spatial/spectral encoder (e.g. TinyDS/SpectralTiny backbone, weights fixed after ground training)
+ -> per-tile or per-pixel latent vector
+ -> small trainable head (linear / 1-2 layer MLP), retrained on-board from few-shot labels
+```
+
+**Hypothesis:** most of the domain/sensor drift and hard-negative false-alert problems identified in H5/H6 do not require a full model redeployment to correct; a small head retrained on-board from a handful of confirmed detections or confirmed false alarms can recover much of the accuracy loss, at training cost consistent with RaVAEn's measured 0.09–0.2s/epoch for a comparably sized head.
+
+**Relationship to existing hypotheses:** this is complementary to, not a replacement for, H1–H3 (which decide the frozen encoder's architecture) and H8 (two-head confidence design — the on-board-retrainable head could be the confidence head specifically, which is lower-risk than retraining the segmentation head itself).
+
+**Failure modes:**
+
+- a segmentation encoder's latent space may not be as linearly separable as RaVAEn's cloud-detection VAE latents, so a linear/shallow head may underfit;
+- on-board retraining needs a labeling mechanism (confirmed detection, operator uplink, or heuristic pseudo-label) that this project does not yet have;
+- retraining introduces a state-management problem (versioning, rollback, drift monitoring) absent from a fixed-weight deployment, and is out of scope for hls4ml/HLS synthesis — this hypothesis is realistic only on the VPU/OpenVino or CPU fallback path (Alternative E in Section 9), not on a static HLS bitstream.
+
+**Priority:** exploratory / P2. Do not block the P0/P1 portfolio in Section 1 on this hypothesis; treat it as a system-level extension to evaluate once a frozen encoder from H1–H3 is validated.
 
 ---
 
@@ -877,6 +972,8 @@ A network-only speedup is not a deployment result.
 | Threshold overfitting                  | optimistic reported F1                  | validation-only calibration; locked test threshold     |
 | L1B assumption on-board                | unavailable input product               | model partial preprocessing or simulate L0-like data   |
 | Radiation/toolchain/platform limits    | board demo not flight ready             | separate ML feasibility from flight qualification      |
+| hls4ml/HLS the only deployment path evaluated | a convertible-but-blocked candidate is abandoned instead of shipped | benchmark OpenVino/VPU (Alternative E, Section 8.5) in parallel as a fallback |
+| On-board retraining (H9) has no labeling/versioning mechanism | drift correction stays theoretical | scope H9 as exploratory/P2; do not depend on it for the P0/P1 portfolio |
 
 ---
 
@@ -907,6 +1004,7 @@ A network-only speedup is not a deployment result.
 - Růžička et al., [Operational machine learning for remote spectroscopic detection of CH4 point sources](https://arxiv.org/abs/2511.07719), v2.
 - Růžička and Markham, [HyperspectralViTs: General Hyperspectral Models for On-Board Remote Sensing](https://arxiv.org/abs/2410.17248), IEEE JSTARS 2025.
 - Růžička et al., [Semantic segmentation of methane plumes with hyperspectral machine learning models](https://www.nature.com/articles/s41598-023-44918-6), Scientific Reports 2023.
+- Růžička et al., [Fast Model Inference and Training On-Board of Satellites](https://arxiv.org/abs/2307.08700), arXiv:2307.08700, 2023 — analyzed in Section 6A; motivates H9 and Alternative E.
 
 ### hls4ml documentation
 
