@@ -100,7 +100,7 @@ the project's existing vendor-import-seam pattern).
     function: sum `(recall_n − recall_{n−1}) × precision_n` over the sorted
     points, no interpolation) or (b) trapezoidal integration
     (`sklearn.metrics.auc`-style linear interpolation) — the two can diverge
-    meaningfully on a curve built from only ~13 threshold samples. Check the
+    meaningfully on a curve built from only 16 threshold samples. Check the
     STARCOP paper's own evaluation methodology for which one it used (`vendor/starcop`
     itself never computes AUPRC, so this isn't settled by the vendor code); if the
     paper doesn't say, default to non-interpolated average precision (the more
@@ -201,13 +201,21 @@ One run per variant, e.g. `starcop-baseline-mag1c-rgb-paper-eval-<date>`:
   metrics via the existing `src/training/validation_metrics.py::extract_scalar_metrics`
   helper.
 - **Artifacts**: per-scene results CSV (with the corrected bucket column), the full
-  `run_validation` metrics JSON, a generated `paper_comparison.md` (this run's numbers
-  next to the paper's published Table 1/2 values — those are entered once, by hand,
-  with an explicit table/page citation, never approximated), the curated
-  sample-mask PNGs, and a frozen dependency manifest (`pip freeze` or equivalent) from
-  whichever environment — A or B, per Phase 0's runtime choice — actually ran the
-  evaluation, so a numeric drift between two runs of "the same" evaluation can be
-  root-caused against an actual dependency diff instead of guessed at.
+  `run_validation` metrics JSON, the curated sample-mask PNGs (filenames prefixed
+  with the variant name, e.g. `mag1c_rgb_sample1.png`, so per-variant runs never
+  collide when later merged), and a frozen dependency manifest (`pip freeze` or
+  equivalent) from whichever environment — A or B, per Phase 0's runtime choice —
+  actually ran the evaluation, so a numeric drift between two runs of "the same"
+  evaluation can be root-caused against an actual dependency diff instead of
+  guessed at. Also logged: a copy of `paper_comparison.md` (this run's numbers next
+  to the paper's published Table 1/2 values for this variant) for per-run
+  provenance — but the *canonical* source of the paper-reported values is a single
+  repo-committed file, `internal-docs/plans/paper_reference_metrics.md`, entered
+  once by hand across all three variants with an explicit table/page citation,
+  never approximated and never re-typed per run. Each run's logged
+  `paper_comparison.md` copy is generated from that one canonical file, not an
+  independent hand entry, so there is exactly one place the paper's numbers can
+  drift from the published source.
 
 ### Phase 4 — Prefect: make it a repeatable, auditable run
 
@@ -217,14 +225,28 @@ New `flows/eval_baseline.py`, same `@task`/`@flow` shape and injectable-callable
 testing pattern as `flows/retrain.py` (its `pull_dataset`/`notify`/failure-message
 helpers are reused directly, not reinvented). Tasks, in order: pull the dataset (dvc
 pull), ensure MultiSTARCOP is registered (idempotent check-then-import), run the
-evaluation per variant (shelling to Phase 1's CLI, parsing the same
-`MLFLOW_RUN_ID=` sentinel convention `retrain.py` already establishes), run the
-BentoML live check (Phase 5, still non-fatal — a serving-side outage shouldn't block
-regenerating the numbers), **then** emit docs assets (Phase 6), notify. The live
-check now runs *before* asset emission, and its pass/fail result is threaded into
-`--emit-docs-assets` so the generated page's "How this was verified" section
-(Phase 6) states plainly whether the live spot-check passed, failed, or didn't run —
-never silently claiming verification that didn't happen.
+evaluation per variant (shelling to Phase 1's CLI once per variant, each call
+already passing that same `--emit-docs-assets DIR` per Phase 1, so it writes that
+variant's curated PNGs — filenames prefixed with the variant name so the three
+invocations sharing one `DIR` never collide — and a per-variant metrics fragment;
+parsing the same `MLFLOW_RUN_ID=` sentinel convention `retrain.py` already
+establishes, the task loops over all three variants and captures and holds **one
+run ID per variant**, keyed by variant name, plus the paths to that variant's
+per-scene results CSV, masks, and metrics JSON already written as MLflow artifacts
+per Phase 3), run the BentoML live check (Phase 5, still non-fatal — a serving-side
+outage shouldn't block regenerating the numbers) once per servable variant, **then
+aggregate and notify**. Aggregation is a new, distinct, lightweight final task —
+not a fourth call into Phase 1's CLI and not another call into `run_validation`:
+keyed by variant, it consumes every variant's already-captured run ID and
+per-variant docs-asset fragment from the evaluation task, plus the canonical
+`paper_reference_metrics.md` (Phase 3), and merges them into **one** combined
+comparison fragment covering all three variants — never leaving three separate
+per-variant fragments for `docs/results.md` to merge by hand. The live check runs
+*before* aggregation for exactly this reason, and its per-variant
+pass/fail/not-run results are threaded into that same aggregation task so the
+generated page's "How this was verified" section (Phase 6) states plainly, per
+variant, whether the live spot-check passed, failed, or didn't run — never
+silently claiming verification that didn't happen.
 
 **The flow never passes `--limit`.** This is the sole path that logs to
 `starcop-paper-eval` and emits docs assets, so it always shells out to Phase 1's CLI
@@ -306,19 +328,37 @@ it's already explicit about being a non-representative smoke test.
 **No hand-typed reproduction numbers, no drift**: this applies to this project's own
 measured outputs only — the paper-reported side of the comparison table is, by
 design, a fixed reference value entered once by hand with an explicit table/page
-citation (Phase 3), since it comes from an external publication and cannot be
-"generated" by this project's pipeline; that hand-entry is correct, not a drift risk,
-and stays that way unless the paper itself changes. `--emit-docs-assets DIR`
-(Phase 1) writes the curated PNGs plus a generated Markdown table fragment covering
-only this-reproduction's numbers, which `docs/results.md` pulls in via the
-`mkdocs-include-markdown-plugin` (`{% include-markdown %}` — already used by
-`docs/changelog.md`, so this is a proven mechanism here, not a new one). The
-reproduction side of the page is mechanically tied to the last real run's output,
-not a manually maintained copy; the paper-reported side is mechanically tied to
-`paper_comparison.md`'s one-time hand entry (Phase 3), not re-typed per page edit.
-Because `--emit-docs-assets` is rejected in combination with `--limit` (Phase 1) and
-is only ever invoked by Phase 4's un-limited flow run, the assets `docs/results.md`
-includes can never come from a partial/smoke-test pass.
+citation, since it comes from an external publication and cannot be "generated" by
+this project's pipeline; that hand-entry is correct, not a drift risk, and stays
+that way unless the paper itself changes. That single hand entry lives in one
+repo-committed file, `internal-docs/plans/paper_reference_metrics.md` (Phase 3) —
+not an MLflow artifact — precisely so the MkDocs build can read it directly off
+disk without needing MLflow connectivity or resolving which run's artifact copy is
+current.
+
+**Aggregation, keyed by variant.** Because Phase 4 evaluates all three variants as
+separate runs (one `MLFLOW_RUN_ID` each), each variant's own `--emit-docs-assets DIR`
+call (Phase 1) only ever writes that variant's curated PNGs (variant-prefixed
+filenames, so the three invocations sharing one `DIR` never collide) and a
+per-variant metrics fragment — it is not itself the cross-variant aggregation.
+Phase 4's final aggregation task is: given the three captured run IDs, load each
+variant's per-variant fragment/metrics, join each row against the matching variant
+entry in `paper_reference_metrics.md`, and write **one** combined Markdown table
+fragment (all three variants, reproduction vs. paper-reported, in a single table)
+into `DIR`, replacing the three per-variant fragments rather than leaving them for
+`docs/results.md` to merge. `docs/results.md` pulls that one combined fragment in
+via the `mkdocs-include-markdown-plugin`
+(`{% include-markdown %}` — already used by `docs/changelog.md`, so this is a
+proven mechanism here, not a new one). The reproduction side of the page is
+mechanically tied to the last full flow run's aggregated output, not a manually
+maintained copy; the paper-reported side is mechanically tied to
+`paper_reference_metrics.md`'s one-time hand entry, not re-typed per page edit or
+per variant. Because `--emit-docs-assets` is rejected in combination with `--limit`
+(Phase 1), each per-variant call only ever runs as part of Phase 4's un-limited
+flow, and the aggregation task itself only runs after all three variant
+evaluations and their live checks have completed, so the fragment
+`docs/results.md` includes can never come from a partial/smoke-test pass or from
+only a subset of variants.
 
 ## Ordering
 
