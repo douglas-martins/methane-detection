@@ -226,27 +226,47 @@ testing pattern as `flows/retrain.py` (its `pull_dataset`/`notify`/failure-messa
 helpers are reused directly, not reinvented). Tasks, in order: pull the dataset (dvc
 pull), ensure MultiSTARCOP is registered (idempotent check-then-import), run the
 evaluation per variant (shelling to Phase 1's CLI once per variant, each call
-already passing that same `--emit-docs-assets DIR` per Phase 1, so it writes that
+already passing that same `--emit-docs-assets STAGING_DIR` per Phase 1, where
+`STAGING_DIR` is a fresh, **run-scoped** directory named with this flow run's ID —
+never the canonical directory `docs/results.md` reads from — so it writes that
 variant's curated PNGs — filenames prefixed with the variant name so the three
-invocations sharing one `DIR` never collide — and a per-variant metrics fragment;
-parsing the same `MLFLOW_RUN_ID=` sentinel convention `retrain.py` already
-establishes, the task loops over all three variants and captures and holds **one
-run ID per variant**, keyed by variant name, plus the paths to that variant's
-per-scene results CSV, masks, and metrics JSON already written as MLflow artifacts
-per Phase 3), run the BentoML live check (Phase 5, still non-fatal — a serving-side
-outage shouldn't block regenerating the numbers) once per servable variant, **then
-aggregate and notify**. Aggregation is a new, distinct, lightweight final task —
-not a fourth call into Phase 1's CLI and not another call into `run_validation`:
-keyed by variant, it consumes every variant's already-captured run ID and
-per-variant docs-asset fragment from the evaluation task, plus the canonical
-`paper_reference_metrics.md` (Phase 3), and merges them into **one** combined
-comparison fragment covering all three variants — never leaving three separate
-per-variant fragments for `docs/results.md` to merge by hand. The live check runs
-*before* aggregation for exactly this reason, and its per-variant
+invocations sharing one `STAGING_DIR` never collide — and a per-variant metrics
+fragment; parsing the same `MLFLOW_RUN_ID=` sentinel convention `retrain.py`
+already establishes, the task loops over all three variants and captures and
+holds **one run ID per variant**, keyed by variant name, plus the paths to that
+variant's per-scene results CSV, masks, and metrics JSON already written as
+MLflow artifacts per Phase 3), run the BentoML live check (Phase 5, still
+non-fatal — a serving-side outage shouldn't block regenerating the numbers) once
+per servable variant, **then aggregate, publish, and notify**. Aggregation is a
+new, distinct, lightweight task — not a fourth call into Phase 1's CLI and not
+another call into `run_validation`: keyed by variant, it consumes every variant's
+already-captured run ID and per-variant docs-asset fragment from `STAGING_DIR`,
+plus the canonical `paper_reference_metrics.md` (Phase 3), and merges them into
+**one** combined comparison fragment covering all three variants, written into
+that same `STAGING_DIR` — never leaving three separate per-variant fragments for
+`docs/results.md` to merge by hand. Before publishing, the task validates that
+all three variants' run IDs, artifacts, and live-check statuses (pass/fail/not-run
+— a live check must have a recorded status, not be silently missing) are present
+in `STAGING_DIR`; a flow run that fails this check errors out and never touches
+the canonical directory, so a partial run cannot corrupt what's already published.
+Only once validation passes does a final **publish** step atomically replace the
+canonical directory (e.g. write-then-`rename`/directory-swap, not an in-place
+file-by-file overwrite) with `STAGING_DIR`'s contents, so `docs/results.md` (and
+any concurrent `make docs-build`) only ever sees either the previous complete
+publish or the new complete one, never a directory mid-overwrite. The live check
+runs *before* aggregation for exactly this reason, and its per-variant
 pass/fail/not-run results are threaded into that same aggregation task so the
 generated page's "How this was verified" section (Phase 6) states plainly, per
 variant, whether the live spot-check passed, failed, or didn't run — never
 silently claiming verification that didn't happen.
+
+**Concurrency protection.** Because this flow is on-demand (no schedule, see
+below) it can be triggered more than once before a prior run finishes; the
+deployment must set a Prefect concurrency limit of 1 (tag- or deployment-scoped)
+so two overlapping runs can never both reach the publish step and interleave
+writes to the canonical directory or to `STAGING_DIR`'s parent. A run that can't
+acquire the slot fails fast with a clear "another eval_baseline run is already in
+progress" message rather than queuing silently or racing the in-progress run.
 
 **The flow never passes `--limit`.** This is the sole path that logs to
 `starcop-paper-eval` and emits docs assets, so it always shells out to Phase 1's CLI
@@ -337,17 +357,21 @@ disk without needing MLflow connectivity or resolving which run's artifact copy 
 current.
 
 **Aggregation, keyed by variant.** Because Phase 4 evaluates all three variants as
-separate runs (one `MLFLOW_RUN_ID` each), each variant's own `--emit-docs-assets DIR`
-call (Phase 1) only ever writes that variant's curated PNGs (variant-prefixed
-filenames, so the three invocations sharing one `DIR` never collide) and a
-per-variant metrics fragment — it is not itself the cross-variant aggregation.
-Phase 4's final aggregation task is: given the three captured run IDs, load each
-variant's per-variant fragment/metrics, join each row against the matching variant
+separate runs (one `MLFLOW_RUN_ID` each), each variant's own `--emit-docs-assets
+STAGING_DIR` call (Phase 1) only ever writes that variant's curated PNGs
+(variant-prefixed filenames, so the three invocations sharing one `STAGING_DIR`
+never collide) and a per-variant metrics fragment into that run-scoped staging
+directory — it is not itself the cross-variant aggregation, and it never touches
+the canonical directory `docs/results.md` reads from. Phase 4's final aggregation
+task is: given the three captured run IDs, load each variant's per-variant
+fragment/metrics from `STAGING_DIR`, join each row against the matching variant
 entry in `paper_reference_metrics.md`, and write **one** combined Markdown table
 fragment (all three variants, reproduction vs. paper-reported, in a single table)
-into `DIR`, replacing the three per-variant fragments rather than leaving them for
-`docs/results.md` to merge. `docs/results.md` pulls that one combined fragment in
-via the `mkdocs-include-markdown-plugin`
+into that same `STAGING_DIR`, replacing the three per-variant fragments rather
+than leaving them for `docs/results.md` to merge. Only after Phase 4's
+completeness check passes does the publish step atomically swap this staged
+output into the canonical directory; `docs/results.md` pulls the combined
+fragment from that canonical directory in via the `mkdocs-include-markdown-plugin`
 (`{% include-markdown %}` — already used by `docs/changelog.md`, so this is a
 proven mechanism here, not a new one). The reproduction side of the page is
 mechanically tied to the last full flow run's aggregated output, not a manually
