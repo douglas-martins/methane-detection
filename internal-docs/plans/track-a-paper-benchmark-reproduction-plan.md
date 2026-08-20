@@ -58,6 +58,12 @@ back to Environment A (already proven end-to-end by the mini-set script). Either
 new code should avoid environment-specific imports outside the one vendor shim, so
 this stays a runtime choice, not an architecture decision.
 
+**A `--limit`-ed dry pass is diagnostic only.** It must never log to the
+`starcop-paper-eval` MLflow experiment (Phase 3's permanent benchmark record) and
+must never be combined with `--emit-docs-assets` (Phase 6) — see the CLI validation
+in Phase 1. This dry pass exists to de-risk the Environment A/B choice, not to
+produce a reportable number.
+
 ### Phase 1 — Evaluation core (`src/evaluation/`, new package)
 
 - [ ] Not started
@@ -83,9 +89,45 @@ the project's existing vendor-import-seam pattern).
   `starcop.metrics.{precision,recall,f1score,iou}` the same way `run_validation`
   does internally — just off the corrected bucket. Also derives AUPRC from
   `run_validation`'s `metrics["thresholded"]` list (not directly returned by
-  vendor code). Unit tests use a small hand-built synthetic `out_data`/`test.csv`
-  pair with known expected F1 values, plus a row-count-integrity assertion (guards
-  against a silent id-mismatch dropping rows).
+  vendor code) — **the AUPRC convention must be pinned before implementation, not
+  left to a library default**:
+  - `metrics["thresholded"]` is built high-to-low threshold
+    (`validation.py:41-42`); that ordering is not guaranteed to be strictly
+    ascending in recall once TP/FP/FN come from summed per-bucket confusion
+    matrices, so the derived (precision, recall) points must be explicitly
+    re-sorted by ascending recall before integration — never just reversed.
+  - Pick, explicitly, either (a) non-interpolated average precision (step
+    function: sum `(recall_n − recall_{n−1}) × precision_n` over the sorted
+    points, no interpolation) or (b) trapezoidal integration
+    (`sklearn.metrics.auc`-style linear interpolation) — the two can diverge
+    meaningfully on a curve built from only ~13 threshold samples. Check the
+    STARCOP paper's own evaluation methodology for which one it used (`vendor/starcop`
+    itself never computes AUPRC, so this isn't settled by the vendor code); if the
+    paper doesn't say, default to non-interpolated average precision (the more
+    common convention), and record that assumption explicitly in
+    `paper_comparison.md` (Phase 3) and `docs/results.md` (Phase 6) rather than
+    presenting it as an unqualified match to the paper's number.
+  - Document how missing recall endpoints (recall=0 / recall=1 — not guaranteed
+    by the threshold list, e.g. the highest threshold can yield zero predicted
+    positives) are handled by the chosen method, rather than leaving it to
+    whatever the integration code does by accident.
+  - Add a synthetic `metrics["thresholded"]`-shaped fixture with a deliberately
+    non-monotonic precision-recall curve whose expected AUPRC differs between the
+    non-interpolated and trapezoidal conventions, so an accidental method swap
+    fails a unit test instead of only showing up as an unexplained drift against
+    the paper's published number.
+
+  **The join is validated, not assumed 1:1**: asserts `id` is unique
+  on both `out_data` and `test.csv` before joining, that the two `id` sets are
+  exactly equal (no extra/missing scenes either side), and uses a one-to-one merge
+  (e.g. pandas `merge(..., validate="one_to_one")`) so a duplicate or mismatched id
+  raises instead of silently duplicating or dropping rows; rejects any null
+  `qplume` in the joined result before bucketing, since a silent NaN would
+  otherwise fail the `>=1000` strong/weak split without erroring. Unit tests use a
+  small hand-built synthetic `out_data`/`test.csv` pair with known expected F1
+  values, plus the row-count-integrity assertion (guards against a silent
+  id-mismatch dropping rows) and dedicated cases for duplicate ids, mismatched id
+  sets, and null `qplume` values, each asserting the join raises.
 - **`select_docs_examples.py`** (pure, unit-tested) — deterministic picks for the
   public doc: best strong-plume detection, a weak-plume true positive, a false
   negative if any exist, cleanest no-plume scene.
@@ -94,10 +136,17 @@ the project's existing vendor-import-seam pattern).
   not duplicated), wires the dataloader, calls `run_validation(products_plot=None)`
   for the fast metrics-only pass over all 342 scenes, then a second tiny pass calling
   `starcop.plot.plot_batch(...)` (same call `notebooks/starcop_baseline_validation.py`
-  already makes) only for the curated scene ids, to produce sample-mask PNGs.
+  already makes) only for the curated scene ids, to produce sample-mask PNGs — and,
+  for those same curated scene ids, persists the offline predicted mask/confidence
+  (or a digest) as the artifact Phase 5's `live_verify.py` diffs against.
   Asserts the known counts (342 total, 166/176 has_plume split, 57/109 strong/weak)
   as hard checks, not just eyeballed. Supports `--limit N` (Phase 0) and
-  `--emit-docs-assets DIR` (Phase 6).
+  `--emit-docs-assets DIR` (Phase 6) — **but the CLI rejects the two together**:
+  `--limit N` is a local smoke-test flag only, and `--emit-docs-assets` requires the
+  full, unlimited 342-scene run (the hard-count assertions above gate it). Likewise,
+  MLflow logging into `starcop-paper-eval` (Phase 3) is skipped whenever `--limit` is
+  set, so a partial run can never land in the permanent benchmark record next to real
+  paper-reproduction numbers.
 - **CLI**: `scripts/run_starcop_baseline_evaluation.py` — thin argparse glue only,
   mirroring `scripts/import_starcop_hf_baseline.py`'s split.
 
@@ -136,7 +185,16 @@ One run per variant, e.g. `starcop-baseline-mag1c-rgb-paper-eval-<date>`:
 - **Tags**: variant, registry model name + version, checkpoint sha256, DVC dataset
   version (reusing `src/training/dvc_dataset_version.py`, same pattern `train.py`
   already uses), `n_test_scenes=342` (sanity-checked, not just recorded),
-  `paper_reference=true`, `resolved_device` (which environment/accelerator ran it).
+  `paper_reference=true`, `resolved_device` (which environment/accelerator ran it),
+  plus evaluation *software* revision — not just data/checkpoint revision — since
+  `run_validation`'s vendor-pinned quirks are exactly what this plan works around:
+  this repo's commit and dirty flag (`eval_code_git_sha`/`eval_code_dirty`, same
+  pattern as `train.py`'s existing `dataset_dirty` tag — MLflow's automatic
+  `mlflow.source.git.commit` tag covers the clean-tree case but not a dirty
+  working tree, and doesn't cover the vendored submodule below), and
+  `vendor_starcop_sha` (the `vendor/starcop` submodule commit actually checked
+  out for this run, since it isn't captured by MLflow's own git auto-tagging and
+  a future submodule bump could silently change `run_validation`'s behavior).
 - **Metrics**: the corrected `strong_f1score`/`weak_f1score`/`no_plume_FPR`/`auprc`
   (the real Table 1/2 headline numbers — explicitly distinguished by name from
   `run_validation`'s own uncorrected `easy_*`/`hard_*` keys) plus the full aggregate
@@ -145,8 +203,11 @@ One run per variant, e.g. `starcop-baseline-mag1c-rgb-paper-eval-<date>`:
 - **Artifacts**: per-scene results CSV (with the corrected bucket column), the full
   `run_validation` metrics JSON, a generated `paper_comparison.md` (this run's numbers
   next to the paper's published Table 1/2 values — those are entered once, by hand,
-  with an explicit table/page citation, never approximated), and the curated
-  sample-mask PNGs.
+  with an explicit table/page citation, never approximated), the curated
+  sample-mask PNGs, and a frozen dependency manifest (`pip freeze` or equivalent) from
+  whichever environment — A or B, per Phase 0's runtime choice — actually ran the
+  evaluation, so a numeric drift between two runs of "the same" evaluation can be
+  root-caused against an actual dependency diff instead of guessed at.
 
 ### Phase 4 — Prefect: make it a repeatable, auditable run
 
@@ -154,11 +215,21 @@ One run per variant, e.g. `starcop-baseline-mag1c-rgb-paper-eval-<date>`:
 
 New `flows/eval_baseline.py`, same `@task`/`@flow` shape and injectable-callable
 testing pattern as `flows/retrain.py` (its `pull_dataset`/`notify`/failure-message
-helpers are reused directly, not reinvented). Tasks: pull the dataset (dvc pull),
-ensure MultiSTARCOP is registered (idempotent check-then-import), run the evaluation
-per variant (shelling to Phase 1's CLI, parsing the same `MLFLOW_RUN_ID=` sentinel
-convention `retrain.py` already establishes), emit docs assets (Phase 6), run the
-BentoML live check (Phase 5, non-fatal if it fails), notify.
+helpers are reused directly, not reinvented). Tasks, in order: pull the dataset (dvc
+pull), ensure MultiSTARCOP is registered (idempotent check-then-import), run the
+evaluation per variant (shelling to Phase 1's CLI, parsing the same
+`MLFLOW_RUN_ID=` sentinel convention `retrain.py` already establishes), run the
+BentoML live check (Phase 5, still non-fatal — a serving-side outage shouldn't block
+regenerating the numbers), **then** emit docs assets (Phase 6), notify. The live
+check now runs *before* asset emission, and its pass/fail result is threaded into
+`--emit-docs-assets` so the generated page's "How this was verified" section
+(Phase 6) states plainly whether the live spot-check passed, failed, or didn't run —
+never silently claiming verification that didn't happen.
+
+**The flow never passes `--limit`.** This is the sole path that logs to
+`starcop-paper-eval` and emits docs assets, so it always shells out to Phase 1's CLI
+for the full, unlimited run; `--limit` stays a manual, interactive-only flag for
+Phase 0's dry pass and is never wired into `eval_baseline.py` or `prefect.yaml`.
 
 Deployed to the existing `mac-mps` work pool via a new `prefect.yaml` entry —
 **no schedule**: this is an on-demand "regenerate the numbers" operation triggered
@@ -170,9 +241,31 @@ recurring job.
 - [ ] Not started
 
 New `src/evaluation/live_verify.py`: for each curated scene, POST its input array to
-the live `/predict` endpoint and compare the returned plume-pixel count against the
-value already recorded in Phase 1's `out_data.csv` for that scene — no extra offline
-inference needed, it's already in the artifact.
+the live `/predict` endpoint and compare the response against Phase 1's own offline
+prediction for that scene, using the same JSON contract `test_inference.py` already
+establishes (`predict_response`'s `{"mask": [[int]], "confidence": [[float]]}`) —
+**not just a derived plume-pixel count**: two materially different masks can sum to
+the same pixel count, so a count-only comparison can pass even when the live API
+disagrees pixel-for-pixel with the offline run. Phase 1 persists the offline mask
+(or a deterministic digest, e.g. a sha256 of the mask array) and confidence array
+for the curated scenes only — not all 342, to avoid bloating the MLflow artifact
+store — as an artifact `live_verify.py` diffs against: mask equality (or digest
+match) pixel-for-pixel, and confidence values within an explicit numeric tolerance
+(e.g. `atol=1e-5`, matching the sigmoid/threshold arithmetic `test_inference.py`
+already exercises — not exact float equality, which would spuriously fail across
+CPU/MPS numeric differences).
+
+**Pin the served model to the exact checkpoint being verified, not whatever
+`Staging` currently resolves to**: `service.py` resolves the `MODEL_NAME`/
+`MODEL_STAGE` env vars (default `starcop-baseline-mag1c-rgb`/`Staging`) to whichever
+registry version currently holds that stage alias — that can silently drift from
+the registry version + checkpoint sha256 Phase 1 evaluated and Phase 3 tagged (a
+later promotion could move `Staging` to a different version between the offline run
+and the live check). `live_verify.py` must set `MODEL_NAME`/`MODEL_STAGE` for the
+`bentoml serve` process it targets to the same registry version/checkpoint sha256
+recorded in Phase 3's tags for that run, and assert the served model's identity
+matches before comparing any predictions — otherwise a "passing" check could still
+be silently comparing against the wrong model.
 
 **Explicit scope limit**: only the two Hyper variants are servable live today (the
 service loads exactly one `MODEL_NAME`/`MODEL_STAGE` at a time). Verifying
@@ -202,16 +295,30 @@ it's already explicit about being a non-representative smoke test.
    language already established by the existing sample images.
 4. **"What do these numbers mean"** — a short non-technical glossary callout for
    precision/recall/F1/false-positive-rate.
-5. **"How this was verified"** — brief, links to the MLflow run, notes predictions
-   were spot-checked against the live API. Deep infra explanation stays in
-   `docs/pipeline/{training,serving}.md`, not here.
+5. **"How this was verified"** — brief, links to the MLflow run, states the actual
+   outcome of the Phase 5 live spot-check for this run — passed, failed, or didn't
+   run — rather than an unconditional "predictions were spot-checked" claim; a
+   failed/skipped check is surfaced here as an explicit unverified status, not
+   omitted. Deep infra explanation stays in `docs/pipeline/{training,serving}.md`,
+   not here.
 6. Footer: last-updated date + exact MLflow run ID(s), so staleness is checkable.
 
-**No hand-typed numbers, no drift**: `--emit-docs-assets DIR` (Phase 1) writes the
-curated PNGs plus a generated Markdown table fragment that `docs/results.md` pulls in
-via the `mkdocs-include-markdown-plugin` (`{% include-markdown %}` — already used by
-`docs/changelog.md`, so this is a proven mechanism here, not a new one). The page is
-mechanically tied to the last real run's output, not a manually maintained copy.
+**No hand-typed reproduction numbers, no drift**: this applies to this project's own
+measured outputs only — the paper-reported side of the comparison table is, by
+design, a fixed reference value entered once by hand with an explicit table/page
+citation (Phase 3), since it comes from an external publication and cannot be
+"generated" by this project's pipeline; that hand-entry is correct, not a drift risk,
+and stays that way unless the paper itself changes. `--emit-docs-assets DIR`
+(Phase 1) writes the curated PNGs plus a generated Markdown table fragment covering
+only this-reproduction's numbers, which `docs/results.md` pulls in via the
+`mkdocs-include-markdown-plugin` (`{% include-markdown %}` — already used by
+`docs/changelog.md`, so this is a proven mechanism here, not a new one). The
+reproduction side of the page is mechanically tied to the last real run's output,
+not a manually maintained copy; the paper-reported side is mechanically tied to
+`paper_comparison.md`'s one-time hand entry (Phase 3), not re-typed per page edit.
+Because `--emit-docs-assets` is rejected in combination with `--limit` (Phase 1) and
+is only ever invoked by Phase 4's un-limited flow run, the assets `docs/results.md`
+includes can never come from a partial/smoke-test pass.
 
 ## Ordering
 
