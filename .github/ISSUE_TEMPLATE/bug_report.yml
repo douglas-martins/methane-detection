@@ -6,7 +6,7 @@ body:
     id: description
     attributes:
       label: What happened?
-      description: A clear description of the bug. Include the full error/traceback if there is one.
+      description: A clear description of the bug. Include the full error/traceback if there is one — redact tokens, credentials, and any other secrets or PII first.
     validations:
       required: true
 

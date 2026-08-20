@@ -4,12 +4,12 @@
 
 ## How was this tested?
 
-<!-- Commands you ran, e.g. `make test-env-b`, `make lint`. Real fixtures, not mocked interactions -- see CONTRIBUTING.md. -->
+<!-- Commands you ran, e.g. `make test-env-b`, `make lint`. Prefer real fixtures over broad mocking -- see CONTRIBUTING.md. -->
 
 ## Checklist
 
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) (`feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`) — `commitlint.yml` gates this.
 - [ ] Relevant tests pass locally (`make test-env-a` and/or `make test-env-b`).
-- [ ] `make lint` is clean.
+- [ ] `ruff check` / `ruff format --check` clean on the Python files this PR changes (what `lint.yml` actually gates on — not a full-repo `make lint`, since `main` carries pre-existing findings).
 - [ ] `vendor/starcop/` was not edited (composition-only — see CONTRIBUTING.md's Architecture section).
 - [ ] Public docs (`docs/`) updated if this changes reader-facing behavior; `internal-docs/` updated if this changes internal process/setup.
