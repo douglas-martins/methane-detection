@@ -279,7 +279,7 @@ class TestRunEvaluationForVariant:
 
         [kwargs] = calls
         for key, value in os.environ.items():
-            if key != "MLFLOW_TRACKING_URI":
+            if key not in ("MLFLOW_TRACKING_URI", "MLFLOW_S3_ENDPOINT_URL"):
                 assert kwargs["env"].get(key) == value
 
 
