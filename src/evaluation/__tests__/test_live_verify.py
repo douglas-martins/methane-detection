@@ -98,6 +98,21 @@ class TestComparePrediction:
         assert result["confidence_match"] is True
         assert result["passed"] is True
 
+    def test_fails_when_difference_exceeds_atol_even_if_within_default_rtol(self):
+        # np.allclose's default rtol=1e-5 adds a relative-tolerance
+        # allowance on top of atol (|a-b| <= atol + rtol*|b|) -- for a
+        # large-enough confidence value that extra slack alone can cover a
+        # difference bigger than atol, which the "confident within atol"
+        # docstring promises. Must compare with rtol=0 so atol is the only
+        # threshold that matters.
+        offline = self._offline(mask_sha256=live_verify.mask_sha256([[0, 1]]), confidence=[[1.0]])
+        live = {"mask": [[0, 1]], "confidence": [[1.0 + 1.5e-5]]}
+
+        result = live_verify.compare_prediction(offline, live, atol=1e-5)
+
+        assert result["confidence_match"] is False
+        assert result["passed"] is False
+
     def test_respects_a_custom_atol(self):
         offline = self._offline(
             mask_sha256=live_verify.mask_sha256([[0, 1]]), confidence=[[0.1, 0.9]]

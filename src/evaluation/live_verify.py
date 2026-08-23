@@ -71,7 +71,12 @@ def compare_prediction(offline: dict, live: dict, atol: float = DEFAULT_ATOL) ->
     live_digest = mask_sha256(live["mask"])
     mask_match = live_digest == offline["mask_sha256"]
     confidence_match = bool(
-        np.allclose(np.asarray(live["confidence"]), np.asarray(offline["confidence"]), atol=atol)
+        np.allclose(
+            np.asarray(live["confidence"]),
+            np.asarray(offline["confidence"]),
+            atol=atol,
+            rtol=0.0,
+        )
     )
     return {
         "scene_id": offline["scene_id"],
