@@ -47,5 +47,8 @@ class TestAssertResolvedAccelerator:
         assert "cuda" in message.lower()
         assert "vendor/starcop/.venv" not in message
 
-    def test_is_a_noop_when_cpu_accelerator_requested_regardless_of_resolved_device(self):
-        accelerator_check.assert_resolved_accelerator("cpu", "cpu")  # should not raise
+    @pytest.mark.parametrize("resolved_device_type", ["cpu", "cuda", "mps"])
+    def test_is_a_noop_when_cpu_accelerator_requested_regardless_of_resolved_device(
+        self, resolved_device_type
+    ):
+        accelerator_check.assert_resolved_accelerator("cpu", resolved_device_type)  # should not raise
