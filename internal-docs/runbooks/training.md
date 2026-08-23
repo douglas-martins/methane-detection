@@ -93,9 +93,20 @@ architecture rather than erroring (see TASK-3.1 in
 for understanding exactly what each script does under the hood.
 
 ```bash
+# M4 Pro (Environment A):
 cd /path/to/methane-detection
 set -a; source .env.mlflow; set +a
 vendor/starcop/.venv/bin/python src/training/train.py \
+  +machine=macbook \
+  +dataset_name=starcop_mini \
+  experiment_name=my-run-name
+```
+
+```bash
+# RTX 5070 desktop (Environment B -- see the divergence above):
+cd /path/to/methane-detection
+set -a; source .env.mlflow; set +a
+.venv/bin/python src/training/train.py \
   +machine=desktop \
   +dataset_name=starcop_mini \
   experiment_name=my-run-name
