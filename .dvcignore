@@ -1,3 +1,18 @@
 # Add patterns of files dvc should ignore, which could improve
 # the performance. Learn more at
 # https://dvc.org/doc/user-guide/dvcignore
+
+# MultiSTARCOP/varon evaluation computes these Varon ratio-band features
+# on the fly (src/evaluation/dataset_wiring.py -> feature_extration.
+# extract_features) and writes them directly into data/starcop_raw/, a
+# DVC-tracked directory -- not tracked content, regenerated every varon
+# run. Without this, `dvc pull` refuses with "Can't remove the following
+# unsaved files without confirmation" once a varon eval has run at least
+# once (track-a-paper-benchmark-reproduction-plan.md Phase 4, hit for real
+# by flows/eval_baseline.py's pull_dataset task on 2026-08-22).
+data/starcop_raw/**/ratio_wv3_*.tif
+
+# Byproduct of the earlier STARCOP_mini baseline-validation notebook run
+# (notebooks/starcop_baseline_validation.py), same "computed output sitting
+# in a DVC-tracked directory" issue.
+data/processed/starcop_mini/**/weight_mag1c.tif
