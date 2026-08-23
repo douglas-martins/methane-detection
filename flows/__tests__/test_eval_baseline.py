@@ -656,6 +656,25 @@ class TestRenderAggregateComparison:
         assert "HyperSTARCOP — mag1c + RGB" in rendered
         assert rendered.count("| Metric | Paper | Reproduced |") == 3
 
+        # Each variant's own status must land directly under its own
+        # heading, not just appear somewhere in the rendered text -- a bug
+        # that swapped mag1c_only/mag1c_rgb's statuses, or hardcoded one
+        # status for every variant, would otherwise slip through.
+        lines = rendered.splitlines()
+
+        def _section(heading_substring):
+            idx = next(i for i, line in enumerate(lines) if heading_substring in line)
+            return lines[idx : idx + 8]
+
+        varon_section = _section("MultiSTARCOP — Varon ratio")
+        assert any("out of scope" in line.lower() for line in varon_section)
+
+        mag1c_only_section = _section("HyperSTARCOP — mag1c only")
+        assert any("Live API check:** passed" in line for line in mag1c_only_section)
+
+        mag1c_rgb_section = _section("HyperSTARCOP — mag1c + RGB")
+        assert any("Live API check:** failed" in line for line in mag1c_rgb_section)
+
     def test_includes_the_live_check_status_per_servable_variant(self):
         variant_results = {
             "varon": {"run_id": "r1", "metrics": self._metrics()},
