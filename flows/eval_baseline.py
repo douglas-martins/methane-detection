@@ -249,7 +249,14 @@ def run_live_check_for_variant(
         return {"status": "not_run", "detail": str(exc)}
     finally:
         process.terminate()
-        process.wait(timeout=30)
+        try:
+            process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            try:
+                process.wait(timeout=30)
+            except Exception:
+                pass
 
 
 def validate_run_completeness(variant_results: dict, servable_variants=SERVABLE_VARIANTS) -> None:

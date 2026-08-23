@@ -6,6 +6,7 @@ subprocess, network, or MLflow server. See
 track-a-paper-benchmark-reproduction-plan.md Phase 4.
 """
 
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -521,6 +522,42 @@ class TestRunLiveCheckForVariant:
         )
 
         assert process.terminated is True
+        assert process.waited is True
+
+    def test_kills_the_process_when_terminate_does_not_stop_it_in_time(self):
+        # "never raises" is documented on run_live_check_for_variant itself
+        # -- a hung process.wait(timeout=30) raising subprocess.TimeoutExpired
+        # out of the `finally` would break that contract and clobber whatever
+        # result/exception was already in flight.
+        class HangingFakeProcess(FakeProcess):
+            def __init__(self):
+                super().__init__()
+                self.killed = False
+                self._wait_calls = 0
+
+            def wait(self, timeout=None):
+                self._wait_calls += 1
+                if self._wait_calls == 1:
+                    raise subprocess.TimeoutExpired(cmd="bentoml serve", timeout=timeout)
+                self.waited = True
+
+            def kill(self):
+                self.killed = True
+
+        process = HangingFakeProcess()
+
+        result = eval_baseline.run_live_check_for_variant(
+            Path("/repo"),
+            "mag1c_rgb",
+            "https://mlflow.example.com",
+            start_serve_fn=lambda repo_root, variant, port: process,
+            wait_for_health_fn=lambda base_url: (_ for _ in ()).throw(RuntimeError("boom")),
+            verify_fn=lambda variant, **kwargs: pytest.fail("must not reach verify_fn"),
+        )
+
+        assert result["status"] == "not_run"
+        assert process.terminated is True
+        assert process.killed is True
         assert process.waited is True
 
 
