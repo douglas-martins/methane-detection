@@ -51,4 +51,5 @@ class TestAssertResolvedAccelerator:
     def test_is_a_noop_when_cpu_accelerator_requested_regardless_of_resolved_device(
         self, resolved_device_type
     ):
-        accelerator_check.assert_resolved_accelerator("cpu", resolved_device_type)  # should not raise
+        # should not raise
+        accelerator_check.assert_resolved_accelerator("cpu", resolved_device_type)
