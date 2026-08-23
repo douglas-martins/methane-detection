@@ -251,9 +251,17 @@ def verify_variant(
         offline_dir = client.download_artifacts(run.info.run_id, "offline_predictions", scratch)
         offline_predictions = parse_offline_predictions_dir(offline_dir)
 
-        checkpoint_path, _config_path, _provenance = hf_baseline_import.resolve_checkpoint(
+        checkpoint_path, _config_path, provenance = hf_baseline_import.resolve_checkpoint(
             variant, Path(scratch) / "checkpoint"
         )
+        expected_checkpoint_sha256 = run.data.tags.get("checkpoint_sha256")
+        if provenance["checkpoint_sha256"] != expected_checkpoint_sha256:
+            raise ModelIdentityMismatch(
+                f"resolved checkpoint for variant={variant!r} has "
+                f"checkpoint_sha256={provenance['checkpoint_sha256']!r}, but run "
+                f"{run.info.run_id!r}'s offline predictions were evaluated with "
+                f"checkpoint_sha256={expected_checkpoint_sha256!r}"
+            )
         _model, settings = load_and_place_model(checkpoint_path, device=torch.device("cpu"))
 
     if not offline_predictions:
