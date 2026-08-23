@@ -197,3 +197,130 @@ new issue).
 | Total wall-clock (5 epochs) | 519.8s (8.66 min) | 258.4s (4.31 min) |
 | Per-epoch | ~104.0s | ~51.7s |
 | Speedup | — | **~2.0x** |
+
+## Desktop — RTX 5070 CUDA training, and why it runs under Environment B (TASK-3.1)
+
+**This machine's training runs under Environment B (`.venv`), not Environment
+A** (`vendor/starcop/.venv`) — the one deliberate deviation from every other
+machine's launch script. Reason, found by actually spiking it (2026-08-23),
+not assumed:
+
+### The blocker: Environment A's stock torch silently corrupts Blackwell compute
+
+`vendor/starcop/requirements.txt` pins `torch==1.13.1` exactly (submodule-
+owned, composition-only — not editable). Official 1.13.1 wheels were built
+against CUDA 11.6/11.7 and contain no compiled kernels for Blackwell's
+`sm_120` compute capability (PyTorch added Blackwell kernel support around
+the 2.7 line). Real spike result, under Environment A on this machine:
+
+- `torch.cuda.is_available()` → `True`
+- `torch.cuda.get_device_capability(0)` → `(12, 0)` (sm_120)
+- PyTorch warns at import (*"...is not compatible with the current PyTorch
+  installation. The current PyTorch install supports CUDA capabilities
+  sm_37 sm_50 sm_60 sm_70 sm_75 sm_80 sm_86"*) but **does not raise**
+- A CPU tensor `[0.3005, 0.5537, 0.9759, 0.5056]` becomes `[0., 1., 1., 1.]`
+  after `.to('cuda')`; `x + 1` on that GPU tensor then yields all zeros
+
+This is **silent data corruption**, not the crash a Blackwell/pre-cu128
+mismatch would normally produce and not the silent-CPU-fallback class of bug
+TASK-3.2 found for MPS. The device tag stays `cuda:0` throughout, so neither
+`accelerator_check.assert_resolved_accelerator` nor a `FINISHED` MLflow run
+would catch it — a real training run under this exact torch build could
+complete with plausible-looking-but-wrong metrics. **Do not run training
+under Environment A's stock torch on this GPU, for any reason.**
+
+Upgrading torch inside Environment A to fix this was considered and rejected:
+it would cascade into `pytorch-lightning`, `torchmetrics`,
+`segmentation-models-pytorch`, and `kornia` all needing bumps too, at which
+point Environment A's venv would no longer resemble "the original 2022
+STARCOP paper stack" (its entire reason for existing, TASK-0.2/TASK-0.3) —
+on this one machine only, undermining the whole point of a separate
+Environment A.
+
+### The fix: Environment B already works, confirmed real
+
+Environment B (`torch==2.12.1+cu130` on this machine) passed the identical
+tensor-corruption check cleanly (values survive `.to('cuda')`/`+1`
+unchanged), plus three escalating real tests: the full import chain
+(`pytorch_lightning`, `torchmetrics`, `segmentation_models_pytorch`,
+`kornia`, vendor's own `ModelModule`/`Permian2019DataModule`), a real
+forward+backward pass through the actual model-construction path on
+`cuda:0` (correct output, finite gradients), and
+`Trainer(accelerator="gpu", devices=1)` resolving to `CUDAAccelerator`/
+`cuda:0`.
+
+### Four real bugs found and fixed getting an actual training run green
+
+Same composition-only discipline as TASK-3.2's attempts above — each is a
+genuine Environment-B-vs-vendor-code version mismatch:
+
+1. **Missing `scikit-image`** — `data_module.prepare_data()` imports
+   `skimage` transitively (via vendor's `sampling_dataset.py` →
+   `mask_creation.py`), never declared in root `pyproject.toml`.
+   `ModuleNotFoundError: No module named 'skimage'`. Fixed: added
+   `scikit-image` to `pyproject.toml` `dependencies` (permanent, same class
+   of gap as TASK-5.1's missing `boto3`/`wandb`/`rasterio`).
+2. **Lightning 2.x rejects STARCOP's pre-2.0 hooks** — `ModelModule`
+   implements `validation_epoch_end`/`test_epoch_end` (removed in Lightning
+   2.0); its own configuration validator raises `NotImplementedError`
+   merely because the method is *present*, regardless of whether it's
+   called. Fixed via composition: `src/training/lightning2_compat.py`
+   shadows the old names and binds `on_validation_epoch_end`/
+   `on_test_epoch_end` instead — version-gated (no-op under Lightning
+   <2.0), so Environment A is unaffected.
+3. **`ReduceLROnPlateau` dropped `verbose`** — `ModelModule.
+   configure_optimizers` still passes `verbose=True`; a later torch release
+   removed the kwarg. `TypeError: ReduceLROnPlateau.__init__() got an
+   unexpected keyword argument 'verbose'`. Fixed via composition:
+   `src/training/optimizer_compat.py`, gated by introspecting the installed
+   `ReduceLROnPlateau` signature (not a hardcoded torch version).
+4. **mlflow's `log_model` default changed** — this mlflow version (3.14.0)
+   defaults `serialization_format` to `'pt2'` (torch.export tracing,
+   requires `input_example`) instead of `'pickle'`. `train.py` already had
+   this exact fix in one other place (`src/registry/hf_baseline_import.py`)
+   — just never carried into `train.py` itself since it had never run under
+   torch≥2.1 before. One-line fix: `serialization_format="pickle"`.
+
+### Verified (2026-08-23)
+
+5-epoch `starcop_mini` run via `./scripts/train_desktop.sh starcop_mini
+training.max_epochs=5 dataloader.batch_size=4 dataloader.num_workers=0`, run
+`f16aa1f8330248df855ceea77eb1a281`: status `FINISHED`, `resolved_device` tag
+= `cuda:0` (confirmed via `MlflowClient.get_run` directly against the live
+server, not inferred from console output), real metrics (`val_loss=0.0729`,
+`val_accuracy=0.9102`, `val_f1score=0.0136` — low methane-class F1 expected
+at this tiny 5-epoch scale). Same known limitation as TASK-2.2/TASK-3.2's
+runs: `run_validation`'s post-training diagnostic warn-and-skips — this time
+via a different root cause (`torchmetrics.ConfusionMatrix(num_classes=2)`
+missing the now-required `task=` kwarg under `torchmetrics==1.9.0`, not
+TASK-2.2's documented skewed-split `KeyError`), same non-fatal handling.
+
+**Benchmark vs TASK-2.2's CPU baseline and TASK-3.2's MPS baseline** (same
+`starcop_mini` config, same 5 epochs):
+
+| Metric | CPU (M4 Pro) | MPS (M4 Pro) | CUDA (RTX 5070, Environment B) |
+| --- | --- | --- | --- |
+| Total wall-clock (5 epochs) | 519.8s | 258.4s | ~222.7s |
+| Per-epoch | ~104.0s | ~51.7s | ~44.5s |
+| Speedup vs CPU | — | ~2.0x | **~2.3x** |
+| Speedup vs MPS | — | — | **~1.16x** |
+
+The RTX 5070's speedup over MPS is modest for a discrete desktop GPU —
+likely dominated by fixed per-step overhead at this tiny scale
+(`batch_size=4`, `num_workers=0`, deliberately matching TASK-3.2's config
+for a fair comparison rather than this GPU's actual throughput ceiling). GPU
+utilization wasn't captured via concurrent `nvidia-smi` this run — the
+`resolved_device` tag plus the real-op correctness evidence above is
+stronger proof of genuine GPU use than a utilization percentage alone
+(same reasoning TASK-3.2 used for skipping a visual Activity-Monitor check).
+
+### CUDA toolkit install (Arch Linux, native)
+
+```bash
+sudo pacman -S cuda   # 13.3.1-1 at the time of writing, 2.20 GiB download
+```
+
+`nvcc` lands at `/opt/cuda/bin/nvcc` — not on `PATH` by default on Arch.
+Driver requirement (≥ 570 for Blackwell/CUDA 12.8+) is separate from the
+toolkit and was already satisfied on this machine (driver `610.57.04`,
+`nvidia-smi`).

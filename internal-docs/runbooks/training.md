@@ -71,19 +71,26 @@ NoCredentialsError`) — easy to miss since metrics/params log fine before that.
 
 ## Running it
 
-**On the M4 Pro, prefer the launch script** (TASK-3.3a): `./scripts/train_mac.sh
-[dataset_name]` (defaults to `starcop_mini`). It wraps everything in this
-section — credential sourcing with `set -a`/`set +a`, the hardcoded
-`MLFLOW_TRACKING_URI`, `PYTORCH_ENABLE_MPS_FALLBACK=1`, and the
-`accelerator=mps devices=1` flags — into one command, plus a pre-flight
-check that fails loudly if a required credential is missing rather than
-failing deep into the run. Extra Hydra overrides can be passed after the
-dataset name, e.g. `./scripts/train_mac.sh starcop_mini training.max_epochs=5`.
-The arg-building logic lives in `src/training/launch_profiles.py`
-(unit-tested; see `test_launch_profiles.py`), so the `.sh` file itself stays
-thin. The manual steps below remain the reference for other machines
-(desktop/Colab scripts are still pending, TASK-3.3b/3.3c) and for
-understanding exactly what the script does under the hood.
+**Prefer the per-machine launch script** (TASK-3.3a/3.3b): `./scripts/train_mac.sh
+[dataset_name]` on the M4 Pro, `./scripts/train_desktop.sh [dataset_name]`
+on the RTX 5070 desktop (both default `dataset_name` to `starcop_mini`).
+Each wraps everything in this section — credential sourcing with
+`set -a`/`set +a`, the hardcoded `MLFLOW_TRACKING_URI`, the accelerator
+flags — into one command, plus a pre-flight check that fails loudly if a
+required credential is missing rather than failing deep into the run. Extra
+Hydra overrides can be passed after the dataset name, e.g.
+`./scripts/train_desktop.sh starcop_mini training.max_epochs=5`. The
+arg-building logic lives in `src/training/launch_profiles.py` (unit-tested;
+see `test_launch_profiles.py`), so both `.sh` files stay thin.
+
+**Important divergence**: `train_mac.sh` runs under Environment A
+(`vendor/starcop/.venv/bin/python`), but `train_desktop.sh` runs under
+**Environment B** (`.venv/bin/python`) — Environment A's stock
+`torch==1.13.1` silently corrupts compute on the RTX 5070's Blackwell
+architecture rather than erroring (see TASK-3.1 in
+`internal-docs/setup/environment-notes.md` for the full spike). Colab
+(TASK-3.3c) is still pending. The manual steps below remain the reference
+for understanding exactly what each script does under the hood.
 
 ```bash
 cd /path/to/methane-detection
@@ -127,6 +134,17 @@ with real metrics while never touching the GPU. `train.py` guards against
 this: it asserts the resolved device actually is `mps` and tags every run
 with `resolved_device`, so check that tag in the MLflow UI rather than
 trusting a `FINISHED` status alone.
+
+On the RTX 5070 desktop (Arch Linux, native CUDA — TASK-3.1),
+`training.accelerator=gpu training.devices=1` under **Environment B**
+gives a real ~2.3x speedup over the CPU baseline and ~1.16x over MPS (see
+TASK-3.1 in `internal-docs/setup/environment-notes.md` for the full spike,
+the four composition-only fixes needed, and benchmark numbers). Nothing
+extra needs installing per-run — `scikit-image` in root `pyproject.toml`
+and the `lightning2_compat`/`optimizer_compat` composition fixes in
+`train.py` are already in place. The CUDA toolkit itself (`sudo pacman -S
+cuda`, once per machine) is a one-time system-level install, separate from
+either Python environment.
 
 `WANDB_MODE=disabled` is useful for a tracking-only smoke test without
 setting up real W&B credentials — training and MLflow logging both work
