@@ -16,9 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "evaluation"))
 
-import torch  # noqa: E402
 import paper_eval_mlflow  # noqa: E402
 import run_baseline_eval  # noqa: E402
+import torch  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_TEST_CSV = _REPO_ROOT / "data" / "starcop_raw" / "test.csv"
@@ -44,7 +44,8 @@ def main() -> None:
         "--emit-docs-assets",
         default=None,
         metavar="DIR",
-        help="Write curated sample PNGs + offline predictions to DIR (requires the full, unlimited run)",
+        help="Write curated sample PNGs + offline predictions to DIR "
+        "(requires the full, unlimited run)",
     )
     args = parser.parse_args()
 
@@ -61,7 +62,8 @@ def main() -> None:
 
     # Bulky, not meant for a terminal -- kept in `result` for log_paper_eval_run,
     # stripped from the printed summary.
-    summary = {k: v for k, v in result.items() if k not in ("joined_scene_results", "run_validation_metrics")}
+    _bulky_keys = ("joined_scene_results", "run_validation_metrics")
+    summary = {k: v for k, v in result.items() if k not in _bulky_keys}
     print(json.dumps(summary, indent=2, default=str))
 
     # Automatic on every full run, per Phase 1's own established gating --

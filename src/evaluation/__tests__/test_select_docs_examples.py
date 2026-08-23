@@ -9,7 +9,6 @@ predicted-positive pixels.
 """
 
 import pandas as pd
-
 import select_docs_examples
 
 

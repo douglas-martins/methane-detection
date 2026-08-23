@@ -21,10 +21,9 @@ pattern for such glue (see starcop_datamodule.py's test file).
 
 from pathlib import Path
 
+import dataset_wiring
 import pandas as pd
 import rasterio.windows
-
-import dataset_wiring
 
 
 def _write_csv(tmp_path: Path, rows: list[dict]) -> Path:

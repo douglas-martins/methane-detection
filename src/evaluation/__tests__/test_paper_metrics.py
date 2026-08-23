@@ -11,10 +11,9 @@ section, re-sorted by ascending recall rather than just reversed.
 """
 
 import pandas as pd
+import paper_metrics
 import pytest
 import torch
-
-import paper_metrics
 
 
 def _out_data_row(**overrides):
@@ -280,7 +279,10 @@ class TestSortPrecisionRecallByAscendingRecall:
 
         sorted_points = paper_metrics.sort_precision_recall_by_ascending_recall(thresholded)
 
-        assert sorted_points == [(pytest.approx(0.1), pytest.approx(1.0)), (pytest.approx(0.5), pytest.approx(0.6))]
+        assert sorted_points == [
+            (pytest.approx(0.1), pytest.approx(1.0)),
+            (pytest.approx(0.5), pytest.approx(0.6)),
+        ]
         assert type(sorted_points[0][0]) is float
 
 

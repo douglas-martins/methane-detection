@@ -20,7 +20,9 @@ STRONG_QPLUME_THRESHOLD_KG_H = 1000.0
 TILE_CLASSIFICATION_PIXEL_THRESHOLD = 10
 
 
-def join_scene_results_with_test_csv(out_data: pd.DataFrame, test_csv: pd.DataFrame) -> pd.DataFrame:
+def join_scene_results_with_test_csv(
+    out_data: pd.DataFrame, test_csv: pd.DataFrame
+) -> pd.DataFrame:
     """Joins run_validation's per-scene `out_data` (indexed by scene `id`)
     with `test_csv`'s `qplume` column, by `id`. Raises `ValueError` instead
     of silently duplicating or dropping rows: on a non-unique `id` on either
