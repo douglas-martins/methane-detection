@@ -631,7 +631,7 @@ class TestRenderAggregateComparison:
         base.update(overrides)
         return base
 
-    def test_renders_one_table_covering_all_three_variants(self):
+    def test_renders_one_table_for_each_variant(self):
         variant_results = {
             "varon": {"run_id": "r1", "metrics": self._metrics()},
             "mag1c_only": {
@@ -651,8 +651,29 @@ class TestRenderAggregateComparison:
         assert "varon" in rendered
         assert "mag1c_only" in rendered
         assert "mag1c_rgb" in rendered
-        # One combined table, not three separate ones.
-        assert rendered.count("| Metric |") == 1
+        assert "MultiSTARCOP — Varon ratio" in rendered
+        assert "HyperSTARCOP — mag1c only" in rendered
+        assert "HyperSTARCOP — mag1c + RGB" in rendered
+        assert rendered.count("| Metric | Paper | Reproduced |") == 3
+
+        # Each variant's own status must land directly under its own
+        # heading, not just appear somewhere in the rendered text -- a bug
+        # that swapped mag1c_only/mag1c_rgb's statuses, or hardcoded one
+        # status for every variant, would otherwise slip through.
+        lines = rendered.splitlines()
+
+        def _section(heading_substring):
+            idx = next(i for i, line in enumerate(lines) if heading_substring in line)
+            return lines[idx : idx + 8]
+
+        varon_section = _section("MultiSTARCOP — Varon ratio")
+        assert any("out of scope" in line.lower() for line in varon_section)
+
+        mag1c_only_section = _section("HyperSTARCOP — mag1c only")
+        assert any("Live API check:** passed" in line for line in mag1c_only_section)
+
+        mag1c_rgb_section = _section("HyperSTARCOP — mag1c + RGB")
+        assert any("Live API check:** failed" in line for line in mag1c_rgb_section)
 
     def test_includes_the_live_check_status_per_servable_variant(self):
         variant_results = {
@@ -693,13 +714,13 @@ class TestRenderAggregateComparison:
 
         rendered = eval_baseline.render_aggregate_comparison(variant_results, self._reference())
 
-        # varon's own "Live check" row (not just its header row) must
-        # explicitly say it wasn't checked, not omit the row or say "passed".
+        # Varon's own section must explicitly say it wasn't checked,
+        # not omit the status or claim "passed".
         lines = rendered.splitlines()
-        varon_header_idx = next(i for i, line in enumerate(lines) if "varon" in line)
-        next_section_lines = lines[varon_header_idx + 1 : varon_header_idx + 7]
-        live_check_lines = [line for line in next_section_lines if "Live check" in line]
-        assert live_check_lines, "expected a Live check row directly under varon's section"
+        varon_header_idx = next(i for i, line in enumerate(lines) if "MultiSTARCOP" in line)
+        varon_section = lines[varon_header_idx : varon_header_idx + 8]
+        live_check_lines = [line for line in varon_section if "Live API check" in line]
+        assert live_check_lines, "expected a live-check status under Varon's heading"
         assert "out of scope" in live_check_lines[0].lower() or "n/a" in live_check_lines[0].lower()
 
 

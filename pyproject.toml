@@ -23,6 +23,7 @@ dependencies = [
     "prefect",
     "boto3",
     "requests",
+    "scikit-image",
 ]
 
 [dependency-groups]

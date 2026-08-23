@@ -277,27 +277,41 @@ def validate_run_completeness(variant_results: dict, servable_variants=SERVABLE_
 
 
 def render_aggregate_comparison(variant_results: dict, reference: dict) -> str:
-    """One combined markdown table covering all three variants --
-    reproduction vs. paper-reported, plus each servable variant's live
-    spot-check status -- replacing the three separate per-variant
-    `paper_comparison.md` fragments each variant's own MLflow run already
-    carries, never leaving them for docs/results.md to merge by hand."""
+    """Render one raw Markdown comparison table per model variant.
+
+    Separate tables keep the paper-versus-run comparison readable while each
+    variant's live spot-check status remains explicit.
+    """
     metric_labels = (
         ("strong_f1score", "Strong F1"),
         ("weak_f1score", "Weak F1"),
         ("no_plume_FPR", "FPR (tile-level)"),
         ("auprc", "AUPRC"),
     )
-    lines = [
-        "# Paper comparison — all variants",
-        "",
-        "| Metric | Paper | This run |",
-        "| --- | --- | --- |",
-    ]
+    variant_labels = {
+        "varon": "MultiSTARCOP — Varon ratio",
+        "mag1c_only": "HyperSTARCOP — mag1c only",
+        "mag1c_rgb": "HyperSTARCOP — mag1c + RGB",
+    }
+    lines = ["# Paper comparison — all variants"]
     for variant in VARIANTS:
         ref = reference.get(variant, {})
         metrics = variant_results[variant]["metrics"]
-        lines.append(f"| **{variant}** | | |")
+        live_check = variant_results[variant].get("live_check")
+        live_status = (
+            live_check["status"] if live_check else "out of scope (MultiSTARCOP not deployed live)"
+        )
+        lines.extend(
+            [
+                "",
+                f"## {variant_labels[variant]}",
+                "",
+                f"**Variant:** `{variant}` · **Live API check:** {live_status}",
+                "",
+                "| Metric | Paper | Reproduced |",
+                "| --- | ---: | ---: |",
+            ]
+        )
         for key, label in metric_labels:
             paper_value = ref.get(key)
             paper_str = (
@@ -307,10 +321,6 @@ def render_aggregate_comparison(variant_results: dict, reference: dict) -> str:
             )
             this_value = metrics[key] * 100
             lines.append(f"| {label} | {paper_str} | {this_value:.2f} |")
-        if variant in variant_results and "live_check" in variant_results[variant]:
-            lines.append(f"| Live check | | {variant_results[variant]['live_check']['status']} |")
-        else:
-            lines.append("| Live check | | out of scope (MultiSTARCOP not servable live) |")
     return "\n".join(lines) + "\n"
 
 

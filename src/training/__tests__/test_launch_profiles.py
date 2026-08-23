@@ -32,6 +32,14 @@ class TestBuildLaunchArgs:
         with pytest.raises(ValueError, match="raspberry-pi"):
             launch_profiles.build_launch_args("raspberry-pi", "starcop_mini")
 
+    def test_build_launch_args_for_desktop_includes_gpu_accelerator(self):
+        args = launch_profiles.build_launch_args("desktop", "starcop_mini")
+
+        assert "+machine=desktop" in args
+        assert "+dataset_name=starcop_mini" in args
+        assert "training.accelerator=gpu" in args
+        assert "training.devices=1" in args
+
 
 class TestRequiredEnvVars:
     def test_required_env_vars_includes_tracking_and_artifact_credentials(self):
