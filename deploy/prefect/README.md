@@ -304,7 +304,8 @@ its original (credential-less) environment; the file on disk had changed,
 the live process hadn't. Confirmed directly: `ps eww <pid> | grep AWS_`
 showed nothing on the stale process. **Any `.env.prefect` change requires
 bouncing the worker to take effect** — same `bootout`/`bootstrap` sequence
-as the "If it should be running but isn't" section above:
+as the "Check its actual state" / stop instructions in "Mac worker (D-10)"
+step 4 above:
 
 ```bash
 launchctl bootout gui/$(id -u)/com.methane-detection.prefect-worker
