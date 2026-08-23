@@ -55,7 +55,7 @@ plume boundary.
 case — easy to miss entirely — and this is exactly the kind of detection that
 matters most for catching leaks early.
 
-![A clean scene with no methane plume, correctly identified as such](assets/paper_eval/mag1c_only_ang20191018t141549_r11008_c0_w512_h512.png)
+![A clean scene with no methane plume, correctly identified as such](assets/paper_eval/mag1c_rgb_ang20191018t141549_r18688_c0_w512_h512.png)
 
 **A clean scene, correctly cleared.** No plume in the label, none predicted —
 the entire frame reads as correct no-plume. Avoiding false alarms matters as
