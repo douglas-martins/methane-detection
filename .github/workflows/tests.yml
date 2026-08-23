@@ -7,6 +7,7 @@ on:
       - "src/training/**"
       - "src/registry/**"
       - "src/serving/**"
+      - "src/evaluation/**"
       - "configs/training/**"
       - "vendor/starcop/**"
       - "tests/vendor_starcop/**"

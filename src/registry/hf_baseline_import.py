@@ -22,12 +22,24 @@ import logging
 import tempfile
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 _HF_REPO = "isp-uv-es/starcop"
 _SENSOR = "AVIRIS-NG"  # both HF variants are trained on AVIRIS-NG, same as this project's own data
 
 _VARIANT_SUBFOLDERS = {
     "mag1c_only": "hyperstarcop_mag1c_only",
     "mag1c_rgb": "hyperstarcop_mag1c_rgb",
+}
+
+# MultiSTARCOP/varon was never published to _HF_REPO (verified live via
+# HfApi().list_repo_files -- only the two hyperstarcop_* subfolders above
+# exist there) -- it ships only as a Google-Drive zip
+# (src/data/download/download_mini_dataset.py), already pulled and
+# DVC-tracked at this path (models/starcop_baseline.dvc). See
+# track-a-paper-benchmark-reproduction-plan.md Phase 2.
+_LOCAL_CHECKPOINT_PATHS = {
+    "varon": _REPO_ROOT / "models" / "starcop_baseline" / "multistarcop_varon",
 }
 
 _MODEL_MODE_CLASS_NAMES = {
@@ -47,6 +59,14 @@ _MODEL_MODE_CLASS_NAMES = {
 _EXPECTED_CHECKPOINT_SHA256 = {
     "mag1c_only": "2d4391d5b05f90c411fd459db5bbe4e88650e5ff30ec2eb10d36c66ed0a43137",
     "mag1c_rgb": "96e274be943f64e028faded3bac3d1ee325ee7a79d6de2ee7f5deeaea1ef188d",
+    # Weaker trust model than the two entries above: those are checked
+    # against an independent source (HF's own published blob sha256 via
+    # HfApi().model_info(files_metadata=True)). varon has no independent
+    # upstream digest to check against -- this is a hash of whatever was
+    # already on disk (originally pulled via gdown from Google Drive, now
+    # DVC-pinned), so it guards against future silent corruption of the
+    # tracked file but does not verify the original download was authentic.
+    "varon": "ccc9a7ec3d0bc8acf7e2f6232e798da0744d0890d02c0e2c54d08b3b1702b37e",
 }
 
 # Full commit sha of _HF_REPO, reviewed and pinned rather than resolved live
@@ -95,11 +115,17 @@ def model_class_for_mode(model_mode: str):
 
 def verify_checkpoint_digest(variant: str, checkpoint_path: Path) -> None:
     """Raises ValueError if checkpoint_path's sha256 doesn't match
-    _EXPECTED_CHECKPOINT_SHA256[variant]."""
+    _EXPECTED_CHECKPOINT_SHA256[variant]. Reads in chunks via `hashlib.sha256().update()`
+    rather than `hashlib.file_digest` (added in Python 3.11) -- this project
+    runs a dual-environment setup where Environment A (vendor/starcop/.venv)
+    is Python 3.10, so this function must work on both."""
     import hashlib
 
+    digest = hashlib.sha256()
     with open(checkpoint_path, "rb") as f:
-        actual = hashlib.file_digest(f, "sha256").hexdigest()
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    actual = digest.hexdigest()
 
     expected = _EXPECTED_CHECKPOINT_SHA256[variant]
     if actual != expected:
@@ -142,6 +168,65 @@ def download_checkpoint(variant: str, dest_dir: Path) -> tuple[Path, Path, str]:
     return checkpoint_path, config_path, revision
 
 
+def local_checkpoint_dir(variant: str) -> Path:
+    """Returns the local, DVC-tracked directory `variant` lives in when it's
+    not sourced from HuggingFace (e.g. MultiSTARCOP/varon, published only as
+    a Google-Drive zip). Raises ValueError for a variant not in this table."""
+    try:
+        return _LOCAL_CHECKPOINT_PATHS[variant]
+    except KeyError:
+        raise ValueError(
+            f"unknown_local_variant {variant!r}; expected one of {sorted(_LOCAL_CHECKPOINT_PATHS)}"
+        ) from None
+
+
+def resolve_checkpoint(
+    variant: str,
+    dest_dir: Path,
+    download_checkpoint_fn=download_checkpoint,
+) -> tuple[Path, Path, dict]:
+    """Returns (checkpoint_path, config_path, provenance_tags) for `variant`,
+    dispatching on where it actually lives -- HuggingFace (`_VARIANT_SUBFOLDERS`,
+    via `download_checkpoint_fn`) or local/DVC-tracked
+    (`_LOCAL_CHECKPOINT_PATHS`, read straight off disk, digest-verified, no
+    network). This is the single entry point both `import_variant` (registry
+    import) and `run_baseline_eval.py::evaluate_variant` (the real eval run)
+    call instead of `download_checkpoint` directly, so a variant's source is
+    decided in exactly one place. Raises ValueError for a variant in neither
+    table."""
+    if variant in _VARIANT_SUBFOLDERS:
+        checkpoint_path, config_path, revision = download_checkpoint_fn(variant, dest_dir)
+        return (
+            checkpoint_path,
+            config_path,
+            {
+                "source": "huggingface",
+                "hf_repo": _HF_REPO,
+                "hf_revision": revision,
+                "hf_subfolder": variant_subfolder(variant),
+                "checkpoint_sha256": _EXPECTED_CHECKPOINT_SHA256[variant],
+            },
+        )
+    if variant in _LOCAL_CHECKPOINT_PATHS:
+        checkpoint_dir = local_checkpoint_dir(variant)
+        checkpoint_path = checkpoint_dir / "final_checkpoint_model.ckpt"
+        config_path = checkpoint_dir / "config.yaml"
+        verify_checkpoint_digest(variant, checkpoint_path)
+        return (
+            checkpoint_path,
+            config_path,
+            {
+                "source": "local",
+                "local_path": str(checkpoint_path),
+                "checkpoint_sha256": _EXPECTED_CHECKPOINT_SHA256[variant],
+            },
+        )
+    raise ValueError(
+        f"unknown_variant {variant!r}; expected one of "
+        f"{sorted(set(_VARIANT_SUBFOLDERS) | set(_LOCAL_CHECKPOINT_PATHS))}"
+    )
+
+
 def load_model(checkpoint_path: Path):
     """Reconstructs the STARCOP LightningModule saved at `checkpoint_path`,
     returning (model, settings). `settings` is the OmegaConf DictConfig
@@ -163,11 +248,21 @@ def load_model(checkpoint_path: Path):
     return model, settings
 
 
-def import_variant(variant: str, stage: str | None) -> None:
+def import_variant(
+    variant: str,
+    stage: str | None,
+    resolve_checkpoint_fn=resolve_checkpoint,
+    load_model_fn=load_model,
+) -> None:
     """Downloads `variant`, logs it as an MLflow run (params, tags, raw
     checkpoint artifact, pyfunc-loadable model artifact), and -- unless
     `stage` is None -- registers/promotes it via mlflow_registry's already
-    tested register_and_promote."""
+    tested register_and_promote.
+
+    resolve_checkpoint_fn/load_model_fn are injectable (same seam pattern as
+    resolve_checkpoint's own download_checkpoint_fn) so tests can exercise
+    this real-MLflow-run glue against a real sqlite tracking store without
+    needing a real checkpoint file or a real STARCOP model to load."""
     import sys
 
     _training_dir = str(Path(__file__).resolve().parents[1] / "training")
@@ -185,18 +280,15 @@ def import_variant(variant: str, stage: str | None) -> None:
     mlflow.set_experiment("starcop-baselines")
 
     with tempfile.TemporaryDirectory() as tmp:
-        checkpoint_path, config_path, revision = download_checkpoint(variant, Path(tmp))
-        model, settings = load_model(checkpoint_path)
+        checkpoint_path, config_path, provenance_tags = resolve_checkpoint_fn(variant, Path(tmp))
+        model, settings = load_model_fn(checkpoint_path)
 
         model_name = registry_model_name(variant)
         with mlflow.start_run(run_name=f"{model_name}-import") as run:
             mlflow.log_params(mlflow_utils.flatten_hydra_params(settings))
             mlflow.set_tags(
                 {
-                    "source": "huggingface",
-                    "hf_repo": _HF_REPO,
-                    "hf_revision": revision,
-                    "hf_subfolder": variant_subfolder(variant),
+                    **provenance_tags,
                     "variant": variant,
                     "baseline": "true",
                     "sensor": _SENSOR,

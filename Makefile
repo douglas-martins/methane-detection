@@ -1,14 +1,14 @@
 ENV_A_PYTHON := vendor/starcop/.venv/bin/python
 ENV_A_GENBADGE := vendor/starcop/.venv/bin/genbadge
-ENV_A_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop src/training/__tests__
+ENV_A_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop src/training/__tests__ src/registry/__tests__ src/evaluation/__tests__
 ENV_A_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preprocessing --cov=src/training
 
 ENV_B_PYTHON := .venv/bin/python
 ENV_B_GENBADGE := .venv/bin/genbadge
 ENV_B_INTERROGATE := .venv/bin/interrogate
 ENV_B_RUFF := .venv/bin/ruff
-ENV_B_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/registry/__tests__ src/serving/__tests__
-ENV_B_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/registry --cov=src/serving
+ENV_B_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/registry/__tests__ src/serving/__tests__ src/evaluation/__tests__ flows/__tests__
+ENV_B_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/registry --cov=src/serving --cov=src/evaluation --cov=flows
 
 BATS_IMAGE := bats/bats:latest
 SCRIPTS_TEST_PATHS := scripts/__tests__

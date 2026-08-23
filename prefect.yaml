@@ -31,3 +31,20 @@ deployments:
       - cron: "0 3 * * 1"
         timezone: "UTC"
         active: false
+
+  # Phase 4 (track-a-paper-benchmark-reproduction-plan.md): on-demand paper-eval
+  # benchmark regeneration -- no schedule, triggered manually whenever the
+  # vendor pin, dataset snapshot, or eval code changes. concurrency_limit is
+  # deployment-scoped, not tag-scoped, so it only throttles eval-baseline
+  # against itself -- mac-mps is a shared work pool (retrain-weekly also runs
+  # on it), and a tag-scoped limit would throttle that too. CANCEL_NEW gives
+  # the fail-fast behavior this phase's own text requires: a run that can't
+  # acquire the slot is cancelled immediately with a clear "another
+  # eval_baseline run is already in progress" status, not queued silently.
+  - name: eval-baseline
+    entrypoint: flows/eval_baseline.py:eval_baseline_flow
+    work_pool:
+      name: mac-mps
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
