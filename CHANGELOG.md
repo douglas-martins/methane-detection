@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v0.21.0 (2026-08-23)
+
+### Bug Fixes
+
+- **training**: Guard the gpu accelerator against silent misresolution
+  ([`c12d2c4`](https://github.com/douglas-martins/methane-detection/commit/c12d2c4c8e4e3e726fbb378b489c20dd8bbc9989))
+
+- **training**: Make lightning2_compat tests independent of ambient Lightning version
+  ([`cde8221`](https://github.com/douglas-martins/methane-detection/commit/cde822190a20de080ab2a2567536d816686bdf45))
+
+- **training**: Stop pointing gpu accelerator errors at vendor/starcop/.venv
+  ([`4cb2166`](https://github.com/douglas-martins/methane-detection/commit/4cb21663e86b523580082c14b85917e765314703))
+
+### Features
+
+- **training**: Add train_desktop.sh launch script for RTX 5070 CUDA training
+  ([`42b64e2`](https://github.com/douglas-martins/methane-detection/commit/42b64e218bdb0068a65cc09acea26cb2ffb7019d))
+
+- **training**: Enable RTX 5070 CUDA training via Environment B
+  ([`a6aef7e`](https://github.com/douglas-martins/methane-detection/commit/a6aef7e053a09ee5209db3abe517d0b30e99f4de))
+
+### Refactoring
+
+- **evaluation**: Render one comparison table per model variant
+  ([`aa890f3`](https://github.com/douglas-martins/methane-detection/commit/aa890f3bd4fd4a6c056eb222e99d2af03aedede5))
+
+
 ## v0.20.0 (2026-08-23)
 
 ### Bug Fixes
