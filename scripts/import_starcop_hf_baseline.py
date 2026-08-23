@@ -23,7 +23,9 @@ def main() -> None:
     """Parses CLI args and imports the requested checkpoint variant."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "variant", choices=["mag1c_only", "mag1c_rgb"], help="STARCOP checkpoint variant to import"
+        "variant",
+        choices=["mag1c_only", "mag1c_rgb", "varon"],
+        help="STARCOP checkpoint variant to import",
     )
     parser.add_argument(
         "--stage",
