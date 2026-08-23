@@ -105,6 +105,52 @@ port-forwarding, no Tailscale. `scripts/prefect_worker_mac.sh` starts a
 Process-type worker against a `mac-mps` work pool, polling this server's
 public API outbound-only.
 
+### Rule: never rely on ambient PATH or env vars in code a flow can reach
+
+**The worker's environment is not your interactive shell's environment.**
+It's a `launchd`-supervised process (see the "Mac worker: install as a
+launchd service" section below) — `launchctl print
+gui/$(id -u)/com.methane-detection.prefect-worker` shows its real `default
+environment` is just `PATH => /usr/bin:/bin:/usr/sbin:/sbin`, launchd's own
+minimal default. It does **not** inherit `~/.zshrc`/`~/.zprofile`, `asdf`,
+Homebrew's PATH additions, or anything else a normal terminal session sets
+up. Every subprocess a flow spawns — directly, or transitively through a
+script it shells out to — inherits this same restricted environment.
+
+Hit for real, twice, building `flows/eval_baseline.py` (Phase 4 of
+`track-a-paper-benchmark-reproduction-plan.md`, 2026-08-22): a bare `"uv"`
+subprocess call raised `FileNotFoundError` (it lives at `~/.local/bin/uv`,
+outside this PATH), and a Python-level constant (`MLFLOW_TRACKING_URI`,
+set the same way `retrain.py` already did for its own direct `MlflowClient`
+calls) never reached a child subprocess because a constant in one
+process's memory isn't automatically an environment variable in another's.
+
+**The rule, going forward, for any script reachable from a flow**:
+
+- Never invoke a bare command name (`"uv"`, `"git"`, `"dvc"`) and rely on
+  PATH to find it. Either build an absolute path explicitly (e.g.
+  `repo_root / ".venv" / "bin" / "dvc"`, `retrain.pull_dataset`'s own
+  pattern), or resolve it defensively with a `shutil.which(...)`-first,
+  known-fallback-second helper (see
+  `paper_eval_mlflow.resolve_uv_binary`/`resolve_git_binary` for the
+  pattern to copy).
+- Never assume a Python-level constant or an already-imported module's
+  state reaches a subprocess. If a subprocess needs an environment
+  variable, build its `env=` dict explicitly
+  (`{**os.environ, "THE_VAR": the_value}`) at the call site — don't just
+  set the constant somewhere else and hope it propagates.
+- Prefer explicit `env=` construction close to the actual `subprocess.run`/
+  `Popen` call, not a module-level `os.environ[...] = ...` mutation
+  elsewhere, so it's obvious at the call site exactly what the child
+  process needs and gets.
+- When a new secret genuinely does need to reach every flow-spawned
+  subprocess (not just one call site), add it to `.env.prefect` — the one
+  file `prefect_worker_mac.sh` sources with `set -a` before starting the
+  worker, so every subprocess inherits it automatically (see
+  `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`'s entry below for the
+  precedent). Don't invent a second way to get secrets to a worker
+  subprocess.
+
 **One-time setup**, once this resource is live in Coolify:
 
 1. `.venv` (Environment B, Python 3.12) already has `prefect==3.7.7`
@@ -126,14 +172,51 @@ public API outbound-only.
    sed "s|__REPO_ROOT__|$(pwd)|g" scripts/com.methane-detection.prefect-worker.plist \
      > ~/Library/LaunchAgents/com.methane-detection.prefect-worker.plist
    mkdir -p logs
-   launchctl load ~/Library/LaunchAgents/com.methane-detection.prefect-worker.plist
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.methane-detection.prefect-worker.plist
    ```
 
-   `KeepAlive`+`RunAtLoad` in the plist restart the worker on crash and on
-   every login — the tradeoff D-10 explicitly accepted (the Mac must be
-   awake with this process running whenever a flow might fire) in exchange
-   for not opening any inbound access to this machine. Logs land in
-   `logs/prefect-worker.{,err.}log` (git-ignored).
+   `bootstrap`/`bootout` are Apple's current recommended subcommands (the
+   older `load`/`unload` are legacy — `man launchctl`); use them for this
+   agent throughout, not just here. `KeepAlive`+`RunAtLoad` in the plist
+   restart the worker on crash and on every login — the tradeoff D-10
+   explicitly accepted (the Mac must be awake with this process running
+   whenever a flow might fire) in exchange for not opening any inbound
+   access to this machine. Logs land in `logs/prefect-worker.{,err.}log`
+   (git-ignored).
+
+   **Check its actual state**, don't assume from `launchctl list | grep
+   ...` alone — the label is `com.methane-detection.prefect-worker` (a dot
+   before `prefect-worker`, easy to mistype as a hyphen and get a false
+   "not running"):
+
+   ```bash
+   launchctl print gui/$(id -u)/com.methane-detection.prefect-worker
+   # state = running / pid = ... / last exit code = 0 means it's healthy
+   ```
+
+   If `bootstrap` (or the legacy `load`) fails with `Load failed: 5: Input/
+   output error`, that almost always means it's *already* loaded, not that
+   something's broken — launchd refuses to double-register a label.
+   Confirm with `launchctl print` above before assuming anything is wrong.
+
+   **It's meant to run forever** — this isn't something to start/stop per
+   flow run, it's meant to sit there polling so it's ready whenever a flow
+   fires next, the same way any always-on service works. It's cheap to
+   leave running (a poll loop, ~0% CPU, well under 100MB RSS observed after
+   several days up), not a per-run cost. A plain `kill` on its PID won't
+   stop it either — `KeepAlive` just restarts it within seconds. To stop it
+   deliberately:
+
+   ```bash
+   # Stops it now, but it comes back at your next login -- the plist is
+   # still in ~/Library/LaunchAgents/, which gets rescanned and reloaded
+   # on every login (the same mechanism that makes it survive reboots).
+   launchctl bootout gui/$(id -u)/com.methane-detection.prefect-worker
+
+   # Actually permanent -- stops it now AND at every future login:
+   launchctl bootout gui/$(id -u)/com.methane-detection.prefect-worker
+   rm ~/Library/LaunchAgents/com.methane-detection.prefect-worker.plist
+   ```
 
 The same pattern is meant to generalize to a future `desktop-rtx5070`
 worker on the Windows/NVIDIA machine once TASK-3.1/D-06/D-07 unblock —
@@ -200,15 +283,50 @@ subprocess the worker spawns inherits all four automatically — no separate
 secrets mechanism needed. The flow also needs `MLFLOW_TRACKING_URI`
 already required by `scripts/train_mac.sh`/`.env.mlflow`.
 
+**`flows/eval_baseline.py` (track-a-paper-benchmark-reproduction-plan.md
+Phase 4) needs two more lines in `.env.prefect`**: `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` (the B2 artifact-store credentials, same values as
+`.env.mlflow`). Unlike `retrain.py`, which shells out to `train_mac.sh` (a
+shell script that self-sources `.env.mlflow` independently), this flow
+shells out to plain Python CLIs (`scripts/run_starcop_baseline_evaluation.py`,
+`scripts/run_live_verify.py`) that only ever see whatever environment the
+worker process itself already has — so these two credentials have to live
+in `.env.prefect` directly, the same way `GITHUB_ACTIONS_PAT`/Pushover
+creds already do.
+
+**Editing `.env.prefect` does nothing to an already-running worker — it
+only gets read at process startup.** Hit for real, 2026-08-22: added
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` to the file, then a flow run
+still failed with `botocore.exceptions.NoCredentialsError: Unable to
+locate credentials` — the worker process had been running since the
+previous Monday, five days before that edit, so it was still running with
+its original (credential-less) environment; the file on disk had changed,
+the live process hadn't. Confirmed directly: `ps eww <pid> | grep AWS_`
+showed nothing on the stale process. **Any `.env.prefect` change requires
+bouncing the worker to take effect** — same `bootout`/`bootstrap` sequence
+as the "If it should be running but isn't" section above:
+
+```bash
+launchctl bootout gui/$(id -u)/com.methane-detection.prefect-worker
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.methane-detection.prefect-worker.plist
+# Verify the new process actually picked up the change:
+launchctl print gui/$(id -u)/com.methane-detection.prefect-worker | grep pid
+ps eww <the-new-pid> | tr ' ' '\n' | grep AWS_
+```
+
 **Deploy and validate manually before trusting the schedule:**
 
 ```bash
-.venv/bin/prefect deploy --all          # registers retrain-weekly, inactive
+.venv/bin/prefect deploy --all          # registers retrain-weekly (inactive) and eval-baseline
 .venv/bin/prefect deployment run 'retrain/retrain-weekly'
+.venv/bin/prefect deployment run 'eval-baseline/eval-baseline'
 ```
 
-Watch it run to `Completed` in the UI. Once you're satisfied, flip the
-schedule on with `prefect deployment schedule resume 'retrain/retrain-weekly'`.
+Watch each run to `Completed` in the UI. Once you're satisfied,
+flip `retrain-weekly`'s schedule on with
+`prefect deployment schedule resume 'retrain/retrain-weekly'` —
+`eval-baseline` has no schedule to flip; it's on-demand only, triggered
+manually whenever the vendor pin, dataset snapshot, or eval code changes.
 
 ## Validation
 
