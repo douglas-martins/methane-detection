@@ -15,6 +15,24 @@ _EXPECTED_RESOLVED_DEVICE_TYPE = {
     "gpu": "cuda",
 }
 
+# Per-accelerator remediation text -- mps and gpu point at different
+# environments/fixes on this project (mps: Environment A's pinned Lightning
+# version; gpu: Environment B's interpreter and real CUDA/Blackwell support,
+# see TASK-3.1 in mlops-methane-detection-plan.md), so they must not share
+# one blurb.
+_REMEDIATION = {
+    "mps": (
+        "check that pytorch-lightning>=1.7.0 is installed in "
+        "vendor/starcop/.venv (1.6.4 has no MPSAccelerator and silently "
+        "falls back to CPU instead of erroring)."
+    ),
+    "gpu": (
+        "check that training is running under Environment B's interpreter "
+        "(.venv/bin/python) and that CUDA is actually available/functional "
+        "on this machine."
+    ),
+}
+
 
 def assert_resolved_accelerator(requested_accelerator: str, resolved_device_type: str) -> None:
     """Raises RuntimeError if "mps" or "gpu" was requested but Lightning
@@ -26,8 +44,5 @@ def assert_resolved_accelerator(requested_accelerator: str, resolved_device_type
         raise RuntimeError(
             f"training.accelerator={requested_accelerator} was requested but "
             f"resolved to device type {resolved_device_type!r} (expected "
-            f"{expected!r}) -- check that pytorch-lightning>=1.7.0 is "
-            "installed in vendor/starcop/.venv (1.6.4 has no MPSAccelerator "
-            "and silently falls back to CPU instead of erroring) and, for "
-            "gpu, that CUDA is actually available/functional on this machine."
+            f"{expected!r}) -- {_REMEDIATION[requested_accelerator]}"
         )

@@ -31,5 +31,21 @@ class TestAssertResolvedAccelerator:
         with pytest.raises(RuntimeError, match="gpu"):
             accelerator_check.assert_resolved_accelerator("gpu", "cpu")
 
+    def test_mps_error_points_at_vendor_starcop_venv_and_lightning_version(self):
+        with pytest.raises(RuntimeError) as excinfo:
+            accelerator_check.assert_resolved_accelerator("mps", "cpu")
+
+        assert "vendor/starcop/.venv" in str(excinfo.value)
+        assert "pytorch-lightning>=1.7.0" in str(excinfo.value)
+
+    def test_gpu_error_points_at_environment_b_venv_not_vendor_starcop(self):
+        with pytest.raises(RuntimeError) as excinfo:
+            accelerator_check.assert_resolved_accelerator("gpu", "cpu")
+
+        message = str(excinfo.value)
+        assert ".venv/bin/python" in message
+        assert "cuda" in message.lower()
+        assert "vendor/starcop/.venv" not in message
+
     def test_is_a_noop_when_cpu_accelerator_requested_regardless_of_resolved_device(self):
         accelerator_check.assert_resolved_accelerator("cpu", "cpu")  # should not raise
