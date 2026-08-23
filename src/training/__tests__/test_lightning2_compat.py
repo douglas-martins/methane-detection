@@ -12,7 +12,6 @@ Environment B (lightning 2.6.5) on the RTX 5070.
 """
 
 import lightning2_compat
-import pytest
 import pytorch_lightning
 
 
@@ -36,7 +35,16 @@ class _FakeModelModule:
 
 
 class TestBindNewStyleEpochEndHooks:
-    def test_shadows_the_old_hook_names_so_lightning_2x_does_not_reject_them(self):
+    """These test the Lightning >=2.0 behavior specifically, so each pins
+    pytorch_lightning.__version__ via monkeypatch rather than relying on
+    whichever Lightning happens to be installed in the environment the
+    suite runs under (Environment A's real Lightning is <2.0, which would
+    otherwise make bind_new_style_epoch_end_hooks correctly no-op here and
+    fail every assertion below for the wrong reason).
+    """
+
+    def test_shadows_the_old_hook_names_so_lightning_2x_does_not_reject_them(self, monkeypatch):
+        monkeypatch.setattr(pytorch_lightning, "__version__", "2.6.5")
         model = _FakeModelModule()
 
         lightning2_compat.bind_new_style_epoch_end_hooks(model)
@@ -44,7 +52,8 @@ class TestBindNewStyleEpochEndHooks:
         assert not callable(getattr(model, "validation_epoch_end", None))
         assert not callable(getattr(model, "test_epoch_end", None))
 
-    def test_on_validation_epoch_end_calls_val_epoch_end_with_val_prefix(self):
+    def test_on_validation_epoch_end_calls_val_epoch_end_with_val_prefix(self, monkeypatch):
+        monkeypatch.setattr(pytorch_lightning, "__version__", "2.6.5")
         model = _FakeModelModule()
         lightning2_compat.bind_new_style_epoch_end_hooks(model)
 
@@ -52,7 +61,8 @@ class TestBindNewStyleEpochEndHooks:
 
         assert model.calls == ["val"]
 
-    def test_on_test_epoch_end_calls_val_epoch_end_with_test_prefix(self):
+    def test_on_test_epoch_end_calls_val_epoch_end_with_test_prefix(self, monkeypatch):
+        monkeypatch.setattr(pytorch_lightning, "__version__", "2.6.5")
         model = _FakeModelModule()
         lightning2_compat.bind_new_style_epoch_end_hooks(model)
 
@@ -60,12 +70,13 @@ class TestBindNewStyleEpochEndHooks:
 
         assert model.calls == ["test"]
 
-    def test_new_hooks_pick_up_a_later_rebind_of_val_epoch_end(self):
+    def test_new_hooks_pick_up_a_later_rebind_of_val_epoch_end(self, monkeypatch):
         """train.py rebinds model.val_epoch_end (background-F1 patch, decision
         7) before calling this -- but order must not matter: the new-style
         hooks call self.val_epoch_end dynamically, not a captured reference,
         so binding this first and rebinding val_epoch_end after still works.
         """
+        monkeypatch.setattr(pytorch_lightning, "__version__", "2.6.5")
         model = _FakeModelModule()
         lightning2_compat.bind_new_style_epoch_end_hooks(model)
 
@@ -76,17 +87,6 @@ class TestBindNewStyleEpochEndHooks:
 
         assert replaced_calls == ["val"]
         assert model.calls == []
-
-    @pytest.mark.skipif(
-        int(pytorch_lightning.__version__.split(".")[0]) < 2,
-        reason="only meaningful to assert the no-op path under lightning<2.0's own real version",
-    )
-    def test_is_not_a_noop_under_the_installed_lightning_2x(self):
-        model = _FakeModelModule()
-
-        lightning2_compat.bind_new_style_epoch_end_hooks(model)
-
-        assert getattr(model, "validation_epoch_end", "unset") is None
 
 
 class TestVersionGuard:
