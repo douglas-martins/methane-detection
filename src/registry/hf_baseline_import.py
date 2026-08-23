@@ -22,6 +22,8 @@ import logging
 import tempfile
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 _HF_REPO = "isp-uv-es/starcop"
 _SENSOR = "AVIRIS-NG"  # both HF variants are trained on AVIRIS-NG, same as this project's own data
 
@@ -37,7 +39,7 @@ _VARIANT_SUBFOLDERS = {
 # DVC-tracked at this path (models/starcop_baseline.dvc). See
 # track-a-paper-benchmark-reproduction-plan.md Phase 2.
 _LOCAL_CHECKPOINT_PATHS = {
-    "varon": Path("models/starcop_baseline/multistarcop_varon"),
+    "varon": _REPO_ROOT / "models" / "starcop_baseline" / "multistarcop_varon",
 }
 
 _MODEL_MODE_CLASS_NAMES = {

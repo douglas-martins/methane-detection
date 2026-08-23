@@ -129,9 +129,16 @@ class TestDownloadCheckpoint:
 
 class TestLocalCheckpointDir:
     def test_varon_maps_to_its_local_dvc_tracked_directory(self):
-        assert hf_baseline_import.local_checkpoint_dir("varon") == Path(
-            "models/starcop_baseline/multistarcop_varon"
+        assert hf_baseline_import.local_checkpoint_dir("varon") == (
+            hf_baseline_import._REPO_ROOT / "models" / "starcop_baseline" / "multistarcop_varon"
         )
+
+    def test_varon_local_dir_is_absolute_so_it_resolves_regardless_of_cwd(self):
+        # A bare relative Path only resolves when the caller's cwd happens to
+        # be the repo root -- both baseline CLIs (run_starcop_baseline_evaluation.py,
+        # import_starcop_hf_baseline.py) already build their other default
+        # paths off __file__, not cwd, for exactly this reason.
+        assert hf_baseline_import.local_checkpoint_dir("varon").is_absolute()
 
     def test_unknown_variant_raises_value_error(self):
         with pytest.raises(ValueError, match="unknown_local_variant"):
