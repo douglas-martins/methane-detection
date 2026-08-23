@@ -2,6 +2,46 @@
 
 <!-- version list -->
 
+## v0.20.0 (2026-08-23)
+
+### Bug Fixes
+
+- **dvc**: Ignore computed byproducts written into tracked directories
+  ([`b5dfe6f`](https://github.com/douglas-martins/methane-detection/commit/b5dfe6fcb63aad1e6166a4dfb1f437a92261efc5))
+
+- **evaluation**: Compare live confidence using atol only
+  ([`253455b`](https://github.com/douglas-martins/methane-detection/commit/253455b6368d7a9d81fbc80205a9b9ba26489be3))
+
+- **evaluation**: Preserve scene id in joined_scene_results records
+  ([`52dbe24`](https://github.com/douglas-martins/methane-detection/commit/52dbe2481634230244e996fe67e93742f1a456f2))
+
+- **evaluation**: Reject verify_variant on checkpoint provenance mismatch
+  ([`bd16958`](https://github.com/douglas-martins/methane-detection/commit/bd1695864683d86ff5fcd1f34de667b5b07f9338))
+
+- **flows**: Kill live-check process if terminate doesn't stop it in time
+  ([`c38ea8a`](https://github.com/douglas-martins/methane-detection/commit/c38ea8a0030cf83ef16b274ba0b7833b95e260cc))
+
+- **registry**: Resolve varon checkpoint path from repo root, not cwd
+  ([`d87c5b6`](https://github.com/douglas-martins/methane-detection/commit/d87c5b6c2c0a0aadfe095c950cdfec3585141ad9))
+
+### Features
+
+- **evaluation**: Add STARCOP paper-benchmark evaluation core
+  ([`e0d97e8`](https://github.com/douglas-martins/methane-detection/commit/e0d97e892570d5f114584daf8983f889b3f436e4))
+
+- **evaluation**: Log paper-reproduction runs to MLflow
+  ([`f84f7b5`](https://github.com/douglas-martins/methane-detection/commit/f84f7b5c7a8b3256d6dd172c0baaf02c27be61e2))
+
+- **evaluation**: Verify live BentoML predictions against offline eval
+  ([`3125e72`](https://github.com/douglas-martins/methane-detection/commit/3125e72bb7c3e966456e9208b09e099fbb617fd1))
+
+- **flows**: Add on-demand eval-baseline Prefect flow
+  ([`e8ad279`](https://github.com/douglas-martins/methane-detection/commit/e8ad27960f0ca44580c2eaeac0dabd8c26f79f6f))
+
+- **registry**: Support local-source checkpoints for MultiSTARCOP/varon
+  ([`fecf4b5`](https://github.com/douglas-martins/methane-detection/commit/fecf4b5593e525676ac2cdd80ba495d238296eb3))
+
+
 ## v0.19.0 (2026-08-18)
 
 ### Bug Fixes
