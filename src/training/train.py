@@ -17,9 +17,23 @@ composed with new behavior from outside:
   - Background F1: model.val_epoch_end rebound via types.MethodType on the
     one model instance (decision 7).
   - Multi-logger image logging: MultiLoggerImageLogger subclass (decision 3).
+  - Lightning 2.x compat: ModelModule's pre-2.0 validation_epoch_end/
+    test_epoch_end hooks rebound to on_validation_epoch_end/on_test_epoch_end
+    via lightning2_compat.py (TASK-3.1) -- a no-op under Lightning <2.0, so
+    Environment A's older pytorch-lightning pin is unaffected.
+  - torch ReduceLROnPlateau compat: ModelModule.configure_optimizers's
+    verbose=True kwarg (removed by a later torch release than Environment A's
+    pin) rebound via optimizer_compat.py (TASK-3.1) -- a no-op wherever torch
+    still accepts it.
 
-Run with (Environment A):
+Run with (Environment A, Mac/MPS and Windows-Desktop-Blackwell-pending
+machines) or Environment B (this project's own Desktop/RTX 5070, per
+TASK-3.1 -- Environment A's exact-pinned torch==1.13.1 has no working CUDA
+kernels for Blackwell/sm_120 on this GPU):
     vendor/starcop/.venv/bin/python src/training/train.py \\
+        +machine=macbook +dataset_name=starcop_mini
+    # or, on the RTX 5070 desktop:
+    .venv/bin/python src/training/train.py \\
         +machine=desktop +dataset_name=starcop_mini
 
 Requires MLFLOW_TRACKING_URI / MLFLOW_TRACKING_USERNAME / MLFLOW_TRACKING_PASSWORD
@@ -49,10 +63,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import accelerator_check  # noqa: E402
 import kornia.augmentation as K  # noqa: E402
+import lightning2_compat  # noqa: E402
 import metrics_ext  # noqa: E402
 import mlflow.pytorch  # noqa: E402
 import mlflow_utils  # noqa: E402
 import normalizer_dtype_fix  # noqa: E402
+import optimizer_compat  # noqa: E402
 import plot_confusion_matrix as pcm  # noqa: E402
 import settings_overlay  # noqa: E402
 import validation_metrics  # noqa: E402
@@ -186,6 +202,8 @@ def train(hydra_settings: DictConfig) -> None:
         settings.model.train = True
         model = get_model(settings, settings.experiment_name)
         model.val_epoch_end = types.MethodType(_patched_val_epoch_end, model)
+        lightning2_compat.bind_new_style_epoch_end_hooks(model)
+        optimizer_compat.bind_verbose_free_configure_optimizers(model)
         # This is a workaround for a bug in STARCOP's ModelModule that causes on MPS backend
         normalizer_dtype_fix.cast_normalizer_params_to_float32(model.normalizer)
 
@@ -265,7 +283,11 @@ def train(hydra_settings: DictConfig) -> None:
         # Logged via the pytorch flavor (MLmodel metadata), in addition to the
         # raw checkpoint above, so registered versions (TASK-2.3) are loadable
         # via mlflow.pyfunc.load_model -- the raw checkpoint alone isn't.
-        mlflow.pytorch.log_model(model, artifact_path="model")
+        # serialization_format="pickle": mlflow's default ("pt2", torch.export
+        # tracing) requires an input_example this call doesn't have -- same fix
+        # as src/registry/hf_baseline_import.py, found running a real training
+        # job on Environment B (TASK-3.1).
+        mlflow.pytorch.log_model(model, artifact_path="model", serialization_format="pickle")
 
         mlflow.log_figure(
             pcm.plot_confusion_matrix(model._last_confusion_matrix), "confusion_matrix.png"
