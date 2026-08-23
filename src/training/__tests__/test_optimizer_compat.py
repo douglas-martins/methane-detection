@@ -54,9 +54,7 @@ class TestBindVerboseFreeConfigureOptimizers:
         assert result["monitor"] == "val_loss"
         assert isinstance(result["lr_scheduler"], _NoVerboseReduceLROnPlateau)
 
-    def test_is_a_noop_when_installed_reduce_lr_on_plateau_still_accepts_verbose(
-        self, monkeypatch
-    ):
+    def test_is_a_noop_when_installed_reduce_lr_on_plateau_still_accepts_verbose(self, monkeypatch):
         class _VerboseReduceLROnPlateau:
             def __init__(self, optimizer, mode, factor, patience, verbose):
                 pass

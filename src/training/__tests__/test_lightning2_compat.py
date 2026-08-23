@@ -12,8 +12,8 @@ Environment B (lightning 2.6.5) on the RTX 5070.
 """
 
 import lightning2_compat
-import pytorch_lightning
 import pytest
+import pytorch_lightning
 
 
 class _FakeModelModule:
