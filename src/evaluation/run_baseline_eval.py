@@ -283,7 +283,10 @@ def evaluate_variant(
         "docs_examples": picks,
         # Phase 3 (MLflow permanent record) needs these; Phase 1/2 never did --
         # a strict addition, no existing key's shape changes.
-        "joined_scene_results": joined.to_dict(orient="records"),
+        # reset_index first: joined is id-indexed, and to_dict(orient="records")
+        # drops the index entirely -- without this, every record silently
+        # loses its scene id.
+        "joined_scene_results": joined.reset_index().to_dict(orient="records"),
         "run_validation_metrics": run_validation_metrics,
         "checkpoint_provenance": checkpoint_provenance,
         "device": str(device),
