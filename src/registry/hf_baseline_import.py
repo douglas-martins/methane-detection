@@ -246,11 +246,21 @@ def load_model(checkpoint_path: Path):
     return model, settings
 
 
-def import_variant(variant: str, stage: str | None) -> None:
+def import_variant(
+    variant: str,
+    stage: str | None,
+    resolve_checkpoint_fn=resolve_checkpoint,
+    load_model_fn=load_model,
+) -> None:
     """Downloads `variant`, logs it as an MLflow run (params, tags, raw
     checkpoint artifact, pyfunc-loadable model artifact), and -- unless
     `stage` is None -- registers/promotes it via mlflow_registry's already
-    tested register_and_promote."""
+    tested register_and_promote.
+
+    resolve_checkpoint_fn/load_model_fn are injectable (same seam pattern as
+    resolve_checkpoint's own download_checkpoint_fn) so tests can exercise
+    this real-MLflow-run glue against a real sqlite tracking store without
+    needing a real checkpoint file or a real STARCOP model to load."""
     import sys
 
     _training_dir = str(Path(__file__).resolve().parents[1] / "training")
@@ -268,8 +278,8 @@ def import_variant(variant: str, stage: str | None) -> None:
     mlflow.set_experiment("starcop-baselines")
 
     with tempfile.TemporaryDirectory() as tmp:
-        checkpoint_path, config_path, provenance_tags = resolve_checkpoint(variant, Path(tmp))
-        model, settings = load_model(checkpoint_path)
+        checkpoint_path, config_path, provenance_tags = resolve_checkpoint_fn(variant, Path(tmp))
+        model, settings = load_model_fn(checkpoint_path)
 
         model_name = registry_model_name(variant)
         with mlflow.start_run(run_name=f"{model_name}-import") as run:
