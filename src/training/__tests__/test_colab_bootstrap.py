@@ -43,13 +43,21 @@ class TestRequiredColabSecrets:
     def test_includes_launch_profiles_vars_plus_dvc_service_account_json(self):
         secrets = colab_bootstrap.required_colab_secrets()
 
-        assert "MLFLOW_TRACKING_URI" in secrets
         assert "MLFLOW_TRACKING_USERNAME" in secrets
         assert "MLFLOW_TRACKING_PASSWORD" in secrets
         assert "MLFLOW_S3_ENDPOINT_URL" in secrets
         assert "AWS_ACCESS_KEY_ID" in secrets
         assert "AWS_SECRET_ACCESS_KEY" in secrets
         assert "DVC_GDRIVE_SERVICE_ACCOUNT_JSON" in secrets
+
+    def test_excludes_mlflow_tracking_uri(self):
+        # The notebook hardcodes MLFLOW_TRACKING_URI unconditionally (same
+        # reasoning as train_mac.sh/train_desktop.sh) -- requiring the user to
+        # also supply it as a Secret/env var would demand a value that's
+        # discarded regardless, and raise a confusing error if they don't.
+        secrets = colab_bootstrap.required_colab_secrets()
+
+        assert "MLFLOW_TRACKING_URI" not in secrets
 
 
 class TestReadSecret:

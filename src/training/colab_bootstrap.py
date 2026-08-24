@@ -46,11 +46,18 @@ def dvc_service_account_setup_commands(service_account_json_path: str) -> List[L
 
 
 def required_colab_secrets() -> List[str]:
-    """Every Colab Secret name the notebook needs, composed on top of
-    launch_profiles.required_env_vars("colab") rather than re-declaring the
-    same MLflow/AWS names a second time.
+    """Every Colab Secret name the notebook needs a real value for, composed
+    on top of launch_profiles.required_env_vars("colab") rather than
+    re-declaring the same MLflow/AWS names a second time.
+
+    Excludes MLFLOW_TRACKING_URI even though launch_profiles.required_env_vars
+    includes it: the notebook hardcodes that value unconditionally (same
+    reasoning as train_mac.sh/train_desktop.sh), so requiring the user to
+    also supply it here would demand a value that gets discarded regardless.
     """
-    return launch_profiles.required_env_vars("colab") + [_DVC_GDRIVE_SERVICE_ACCOUNT_SECRET]
+    return [
+        name for name in launch_profiles.required_env_vars("colab") if name != "MLFLOW_TRACKING_URI"
+    ] + [_DVC_GDRIVE_SERVICE_ACCOUNT_SECRET]
 
 
 def read_secret(
