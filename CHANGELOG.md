@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.22.0 (2026-08-24)
+
+### Bug Fixes
+
+- **training**: Stop requiring MLFLOW_TRACKING_URI as a Colab secret
+  ([`3a1d2bf`](https://github.com/douglas-martins/methane-detection/commit/3a1d2bfb3be1ca15433a59899c6c8b3b3ccec73e))
+
+### Features
+
+- **training**: Add Colab training notebook and bootstrap helpers
+  ([`addb881`](https://github.com/douglas-martins/methane-detection/commit/addb881b2778b7f31e9b2aec10614b816ca43d97))
+
+
 ## v0.21.0 (2026-08-23)
 
 ### Bug Fixes
