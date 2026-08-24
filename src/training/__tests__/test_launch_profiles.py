@@ -40,6 +40,14 @@ class TestBuildLaunchArgs:
         assert "training.accelerator=gpu" in args
         assert "training.devices=1" in args
 
+    def test_build_launch_args_for_colab_includes_gpu_accelerator(self):
+        args = launch_profiles.build_launch_args("colab", "starcop_mini")
+
+        assert "+machine=colab" in args
+        assert "+dataset_name=starcop_mini" in args
+        assert "training.accelerator=gpu" in args
+        assert "training.devices=1" in args
+
 
 class TestRequiredEnvVars:
     def test_required_env_vars_includes_tracking_and_artifact_credentials(self):
