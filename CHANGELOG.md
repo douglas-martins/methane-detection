@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.22.1 (2026-08-24)
+
+### Bug Fixes
+
+- **training**: Make train_colab.ipynb's clone cell idempotent
+  ([`680c605`](https://github.com/douglas-martins/methane-detection/commit/680c60575ef23f2433e3f5211f74899f1766faf5))
+
+
 ## v0.22.0 (2026-08-24)
 
 ### Bug Fixes
