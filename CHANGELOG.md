@@ -2,6 +2,34 @@
 
 <!-- version list -->
 
+## v0.22.2 (2026-08-25)
+
+### Bug Fixes
+
+- **training**: Always load .env.mlflow in train_colab.ipynb's credentials cell
+  ([`a55d976`](https://github.com/douglas-martins/methane-detection/commit/a55d976cf135c425c9660e23d3918e2ec8f191b0))
+
+- **training**: Detect mlflow serialization_format support before using it
+  ([`e3bd2fe`](https://github.com/douglas-martins/methane-detection/commit/e3bd2fe3c8e485e566566e91859d984377739cae))
+
+- **training**: Fall back to PATH dvc when repo has no local .venv
+  ([`d47baf0`](https://github.com/douglas-martins/methane-detection/commit/d47baf0b6a4c985ccea44dea45f986a6c2aa3929))
+
+- **training**: Fix environment, DVC pull scope, and a missing dependency in train_colab.ipynb
+  ([`5c31d14`](https://github.com/douglas-martins/methane-detection/commit/5c31d144df6ebdaf5ddfe6393e3d85b19749b1dc))
+
+- **training**: Install the full vendor/starcop/requirements.txt set in train_colab.ipynb
+  ([`8b91082`](https://github.com/douglas-martins/methane-detection/commit/8b91082945d9e12878f62073cf51455a3316f0b7))
+
+- **training**: Reset kernel cwd before cloning in train_colab.ipynb
+  ([`1da6aa5`](https://github.com/douglas-martins/methane-detection/commit/1da6aa53b94fd33b0dc48e351c459adf6a7accf0))
+
+### Refactoring
+
+- **training**: Extract mlflow serialization_format detection into a tested module
+  ([`eac929d`](https://github.com/douglas-martins/methane-detection/commit/eac929dca5b48f119e22e9d09009419c3f146888))
+
+
 ## v0.22.1 (2026-08-24)
 
 ### Bug Fixes
