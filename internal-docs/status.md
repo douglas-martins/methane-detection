@@ -68,7 +68,7 @@
 ### Phase 5 remaining — Serving
 
 - [ ] **TASK-5.1** — ENVI-format `/predict` input support (currently `.npy` only)
-- [ ] **TASK-5.1** — Pin `serialization_format="pickle"` explicitly on both `mlflow.pytorch.log_model` call sites (`train.py`, `hf_baseline_import.py`) before an unpinned mlflow resolve silently breaks them
+- [x] **TASK-5.1** — `train.py`'s `mlflow.pytorch.log_model` call site now detects `serialization_format` support via `inspect.signature` instead of always passing it — found live on Colab (2026-08-24): Environment A's pinned `mlflow<3.7` predates that kwarg entirely, so the unconditional pin from the note below broke it, forwarding the unrecognized kwarg straight into `torch.save()`. `hf_baseline_import.py`'s call site still passes it unconditionally (fine there — only ever run under Environment B's newer mlflow).
 - [ ] **TASK-5.2** — Add explicit `deploy.resources.limits` to `deploy/mlflow/docker-compose.yml` (only service still missing them)
 
 ### Phase 6 remaining — Monitoring
