@@ -41,6 +41,7 @@ Requires MLFLOW_TRACKING_URI / MLFLOW_TRACKING_USERNAME / MLFLOW_TRACKING_PASSWO
 so a missing var raises instead of silently training against a local store.
 """
 
+import inspect
 import logging
 import os
 import sys
@@ -286,8 +287,20 @@ def train(hydra_settings: DictConfig) -> None:
         # serialization_format="pickle": mlflow's default ("pt2", torch.export
         # tracing) requires an input_example this call doesn't have -- same fix
         # as src/registry/hf_baseline_import.py, found running a real training
-        # job on Environment B (TASK-3.1).
-        mlflow.pytorch.log_model(model, artifact_path="model", serialization_format="pickle")
+        # job on Environment B (TASK-3.1). But Environment A pins mlflow<3.7
+        # specifically because *unpinned* mlflow's save_model() does an
+        # unconditional `from torch.export import Dim` that torch==1.13.1 can't
+        # satisfy (see environment-notes.md) -- and mlflow<3.7 predates the
+        # serialization_format kwarg entirely, so passing it there falls
+        # through **kwargs straight into torch.save(), which rejects it
+        # (`TypeError: save() got an unexpected keyword argument
+        # 'serialization_format'`), failing the very last step of an
+        # otherwise-successful Environment A run (found live on Colab,
+        # TASK-3.3c). Detect support instead of assuming either mlflow line.
+        log_model_kwargs = {"artifact_path": "model"}
+        if "serialization_format" in inspect.signature(mlflow.pytorch.log_model).parameters:
+            log_model_kwargs["serialization_format"] = "pickle"
+        mlflow.pytorch.log_model(model, **log_model_kwargs)
 
         mlflow.log_figure(
             pcm.plot_confusion_matrix(model._last_confusion_matrix), "confusion_matrix.png"
