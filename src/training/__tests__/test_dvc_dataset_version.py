@@ -112,3 +112,31 @@ class TestIsDatasetDirty:
 
         with pytest.raises((FileNotFoundError, RuntimeError), match="no-such-dvc-binary"):
             dvcv.is_dataset_dirty("mini", tmp_path, dvc_binary=bogus_binary)
+
+    def test_default_resolution_uses_venv_dvc_when_present(self, tmp_path):
+        """No dvc_binary passed, and repo_root has a .venv/bin/dvc -- must use
+        that one (train_mac.sh/train_desktop.sh's convention), not PATH."""
+        _init_tiny_dvc_repo(tmp_path)
+        venv_bin = tmp_path / ".venv" / "bin"
+        venv_bin.mkdir(parents=True)
+        (venv_bin / "dvc").symlink_to(REAL_DVC_BINARY)
+
+        assert dvcv.is_dataset_dirty("mini", tmp_path) is False
+
+    def test_default_resolution_falls_back_to_path_dvc_when_no_venv(self, tmp_path, monkeypatch):
+        """No dvc_binary passed, and repo_root has no .venv at all (e.g. Colab,
+        where dvc is pip-installed straight into the system environment) --
+        must fall back to shutil.which("dvc") instead of assuming a venv."""
+        _init_tiny_dvc_repo(tmp_path)
+        monkeypatch.setattr(dvcv.shutil, "which", lambda name: str(REAL_DVC_BINARY))
+
+        assert dvcv.is_dataset_dirty("mini", tmp_path) is False
+
+    def test_default_resolution_raises_clear_error_when_dvc_is_nowhere(self, tmp_path, monkeypatch):
+        """No dvc_binary, no .venv, and PATH has no dvc either -- should still
+        fail with a clear FileNotFoundError, not a confusing one."""
+        _init_tiny_dvc_repo(tmp_path)
+        monkeypatch.setattr(dvcv.shutil, "which", lambda name: None)
+
+        with pytest.raises(FileNotFoundError, match=r"\.venv[/\\]bin[/\\]dvc"):
+            dvcv.is_dataset_dirty("mini", tmp_path)

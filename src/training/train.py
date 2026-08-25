@@ -66,6 +66,7 @@ import kornia.augmentation as K  # noqa: E402
 import lightning2_compat  # noqa: E402
 import metrics_ext  # noqa: E402
 import mlflow.pytorch  # noqa: E402
+import mlflow_log_model_compat  # noqa: E402
 import mlflow_utils  # noqa: E402
 import normalizer_dtype_fix  # noqa: E402
 import optimizer_compat  # noqa: E402
@@ -283,11 +284,12 @@ def train(hydra_settings: DictConfig) -> None:
         # Logged via the pytorch flavor (MLmodel metadata), in addition to the
         # raw checkpoint above, so registered versions (TASK-2.3) are loadable
         # via mlflow.pyfunc.load_model -- the raw checkpoint alone isn't.
-        # serialization_format="pickle": mlflow's default ("pt2", torch.export
-        # tracing) requires an input_example this call doesn't have -- same fix
-        # as src/registry/hf_baseline_import.py, found running a real training
-        # job on Environment B (TASK-3.1).
-        mlflow.pytorch.log_model(model, artifact_path="model", serialization_format="pickle")
+        # mlflow_log_model_compat handles the serialization_format kwarg's
+        # cross-environment incompatibility -- see that module's docstring.
+        mlflow.pytorch.log_model(
+            model,
+            **mlflow_log_model_compat.build_log_model_kwargs("model", mlflow.pytorch.log_model),
+        )
 
         mlflow.log_figure(
             pcm.plot_confusion_matrix(model._last_confusion_matrix), "confusion_matrix.png"

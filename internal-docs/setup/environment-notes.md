@@ -556,3 +556,174 @@ data/starcop_mini/` — clean, silent, no browser/OAuth prompt at any point.
 Confirms the exact mechanism `deploy/prefect/README.md` documents for the
 `mac-mps` worker also works unattended from a fresh Colab VM, closing the
 one open point TASK-3.3c's pre-implementation review flagged.
+
+### `train.py` itself: Colab's preinstalled `transformers` + `tensorflow` crash the import via a broken protobuf pin (2026-08-24)
+
+First real `train.py` invocation (`+machine=colab`) crashed before touching
+any STARCOP code, inside `import pytorch_lightning`:
+
+```text
+ImportError: cannot import name 'builder' from 'google.protobuf.internal'
+```
+
+Root cause chain, from the full traceback:
+
+1. `torchmetrics==0.10.0`'s `functional/text/__init__.py` does
+   `if _TRANSFORMERS_AVAILABLE: from torchmetrics.functional.text.bert import
+   bert_score`. `_TRANSFORMERS_AVAILABLE` only checks that `transformers` is
+   *importable as a package* (`_package_available`, i.e. `find_spec`) — it
+   never actually tries the import, so a broken `transformers` install still
+   trips this branch unconditionally.
+2. Colab preinstalls `transformers` (project never asked for it). Importing
+   it pulls in `transformers.image_transforms`, which unconditionally does
+   `import tensorflow` — again, Colab preinstalls this too.
+3. Colab's preinstalled `tensorflow==2.18.0` requires `protobuf>=3.20.3`. But
+   the combined package install in `notebooks/train_colab.ipynb` section 3
+   (`pytorch-lightning`, `torchmetrics`, `wandb==0.13.3`, ..., `protobuf<4`
+   all in one `pip install` command) resolves protobuf down to **3.19.6** in
+   this exact combination — one patch below the 3.20.0 release that added
+   `google.protobuf.internal.builder` at all. (Different from the *isolated*
+   `dvc[gdrive]` + `protobuf<4` command in section 4, which resolves to
+   `3.20.3` on its own — same constraint string, different resolution,
+   because the rest of the combined command's dependency graph differs.)
+4. Tensorflow's own bundled `*_pb2.py` files were generated against a newer
+   protobuf and need `google.protobuf.internal.builder` to load — which
+   doesn't exist in 3.19.6 — so `import tensorflow` (and everything that
+   imports it) dies with the `builder` `ImportError` above.
+
+None of this — BERTScore, transformers, tensorflow — is ever used by STARCOP
+training. Re-resolving protobuf upward to satisfy tensorflow would just break
+`wandb==0.13.3`'s old-style `_pb2.py` files again (the reason `protobuf<4` is
+pinned in the first place — see the DVC section above). Fix: don't let
+`torchmetrics` see `transformers` as available at all —
+
+```python
+!pip uninstall -y transformers
+```
+
+— right after section 3's combined install, before anything imports
+`pytorch_lightning`/`torchmetrics`. This removes `transformers` from
+`_TRANSFORMERS_AVAILABLE`'s `find_spec` check, so torchmetrics's functional
+`__init__` never attempts the `bert_score` import branch and the whole
+`transformers` → `tensorflow` → `protobuf` chain is never touched.
+
+### `is_dataset_dirty()` hardcoded `.venv/bin/dvc` — breaks on Colab's venv-less install (2026-08-24)
+
+With the `transformers` fix above in place, `train.py` got further but then
+crashed inside `dvc_dataset_version.is_dataset_dirty()`:
+
+```text
+FileNotFoundError: [Errno 2] No such file or directory:
+'/content/methane-detection/.venv/bin/dvc'
+```
+
+`is_dataset_dirty()`'s default `dvc_binary` lookup assumed `train_mac.sh`/
+`train_desktop.sh`'s convention: a uv-managed `.venv/` at the repo root with
+its own `dvc` console script. `notebooks/train_colab.ipynb` installs `dvc`
+with a bare `pip install` straight into Colab's system/site environment (no
+`.venv` at all) — so that path never exists there, and `dvc` instead lands on
+`PATH` (Colab's `pip` puts console scripts in `/usr/local/bin`, which is
+already on `PATH`).
+
+Fix, in `src/training/dvc_dataset_version.py`'s `is_dataset_dirty()`: when no
+`dvc_binary` is passed, use `.venv/bin/dvc` if it exists (unchanged behavior
+for `train_mac.sh`/`train_desktop.sh`), otherwise fall back to
+`shutil.which("dvc")` (covers Colab, or any other venv-less environment where
+`dvc` is just on `PATH`).
+
+### `dvc pull`'s processed-pipeline stages were never pushed, and two of the five aren't needed anyway (2026-08-24)
+
+With the two fixes above in place, `train.py` got as far as
+`data_module.prepare_data()` before hitting:
+
+```text
+FileNotFoundError: [Errno 2] No such file or directory:
+'/content/methane-detection/data/processed/starcop_mini/patches/train_tiled_128_128.csv'
+```
+
+`data/processed/` didn't exist on the Colab VM at all — section 6's second
+`dvc pull` (`normalize@`/`split@`/`patch_extract@`/`stats@`/`coordinates@`)
+had errored out (`CheckoutError`) with `Missing cache files ... neither
+locally nor on remote` for all five targets. Checked from a dev machine that
+has this data cached locally: `dvc status -c` for the same five targets
+showed `normalize@starcop_mini`/`split@starcop_mini`/`patch_extract@starcop_mini`
+as `new` (i.e. cached locally, never pushed to the `gdrive` remote at all —
+see the D-01 update in `decisions.md` for the service-account push fix), while
+`stats@starcop_mini`/`coordinates@starcop_mini` were missing from *local*
+cache too — never generated on that machine, dangling `dvc.lock` entries
+pointing at objects that exist nowhere.
+
+Checked what `train.py`'s actual import chain reads
+(`grep -rl` across `src/training/` and the vendored STARCOP datamodule):
+only `normalize`'s output (`selected/` — the real raster files the
+patches/splits CSVs' `folder` column resolves into), `split`'s output
+(`splits/*.csv`), and `patch_extract`'s output (`patches/*.csv`) are ever
+touched. `stats`/`coordinates` are read only by their own preprocessing
+scripts and tests (`src/data/preprocessing/stats.py`,
+`src/data/preprocessing/coordinates.py`) — training never needs them. Fixed
+`notebooks/train_colab.ipynb`'s section 6 pull cell to request only the three
+stages `train.py` actually reads, instead of all five `dvc.yaml` foreach-stage
+names.
+
+### `georeader-spaceml` missing — `vendor/starcop/requirements.txt` isn't the complete package list (2026-08-24)
+
+With the dataset pulling correctly, `prepare_data()` got one step further and
+died on:
+
+```text
+ModuleNotFoundError: No module named 'georeader'
+```
+
+raised from `vendor/starcop/starcop/data/feature_extration.py`'s
+`extract_features()`, called from `starcop_datamodule.prepare_data()`.
+`vendor/starcop/requirements.txt` (what section 3's install cell copies its
+pins from) does **not** list `georeader-spaceml` (the PyPI distribution name;
+imports as `georeader`) — only the sibling
+`vendor/starcop/requirements_package.txt` does, and this project's own
+`pyproject.toml`/`uv.lock` also depends on it directly (pinned to `2.3.4`),
+which is why `train_mac.sh`/`train_desktop.sh` never hit this: their `.venv`
+comes from `uv sync` against `pyproject.toml`, not a manual copy of
+`vendor/starcop/requirements.txt`'s pins. Fix: added
+`"georeader-spaceml==2.3.4"` (matching `uv.lock`) to section 3's package
+install cell.
+
+### `train.py`'s own `serialization_format="pickle"` fix breaks under Environment A's pinned mlflow (2026-08-24)
+
+With everything above fixed, a real 5-epoch `starcop_mini` run completed on
+Colab — real metrics, checkpoints saved on `val_loss` improvements, an MLflow
+run created — then died at the very last step:
+
+```text
+File ".../mlflow/pytorch/__init__.py", line 461, in save_model
+    torch.save(pytorch_model, model_path, pickle_module=pickle_module, **kwargs)
+TypeError: save() got an unexpected keyword argument 'serialization_format'
+```
+
+`train.py`'s `mlflow.pytorch.log_model(model, artifact_path="model",
+serialization_format="pickle")` call was added for TASK-3.1 (Environment B,
+Desktop) — mlflow's default there is `"pt2"` (`torch.export` tracing), which
+needs an `input_example` this call doesn't provide, so `serialization_format=
+"pickle"` opts back into plain `torch.save()`. But Environment A pins
+`mlflow<3.7` for the *opposite* reason (`requirements/env-a-mlflow.txt`:
+unpinned mlflow's `save_model()` does an unconditional `from torch.export
+import Dim`, which crashes outright since `torch==1.13.1` has no
+`torch.export` at all — see the "unpinned mlflow" note above). mlflow<3.7
+predates the `serialization_format` kwarg existing as a named parameter at
+all, so passing it anyway falls through `**kwargs` straight into
+`torch.save()`, which rejects it — same underlying `torch.export` gap,
+opposite failure mode depending on which side of the mlflow pin you're on.
+Confirmed via `inspect.signature(mlflow.pytorch.log_model)`: present on
+mlflow 3.14.0 (Environment B), absent on Environment A's pinned range.
+
+Fix, in `src/training/train.py`: detect support instead of assuming either
+mlflow line —
+
+```python
+log_model_kwargs = {"artifact_path": "model"}
+if "serialization_format" in inspect.signature(mlflow.pytorch.log_model).parameters:
+    log_model_kwargs["serialization_format"] = "pickle"
+mlflow.pytorch.log_model(model, **log_model_kwargs)
+```
+
+`src/registry/hf_baseline_import.py` has the same unconditional pattern but
+is only ever run under Environment B's newer mlflow, so left as-is.
