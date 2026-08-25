@@ -8,6 +8,7 @@ reports drift, not identity.
 """
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -39,7 +40,15 @@ def get_dataset_version(dataset_name: str, dvc_lock_path: Path) -> str:
 def is_dataset_dirty(dataset_name: str, repo_root: Path, dvc_binary: Optional[Path] = None) -> bool:
     """Returns True if patch_extract@dataset_name has drifted from dvc.lock."""
     if dvc_binary is None:
-        dvc_binary = Path(repo_root) / ".venv" / "bin" / "dvc"
+        venv_dvc = Path(repo_root) / ".venv" / "bin" / "dvc"
+        if venv_dvc.exists():
+            dvc_binary = venv_dvc
+        else:
+            # No project-local venv (e.g. Colab, where dvc is pip-installed
+            # straight into the system/site environment rather than a uv-managed
+            # .venv) -- fall back to whatever `dvc` resolves to on PATH.
+            path_dvc = shutil.which("dvc")
+            dvc_binary = Path(path_dvc) if path_dvc else venv_dvc
 
     stage_key = f"patch_extract@{dataset_name}"
     try:
