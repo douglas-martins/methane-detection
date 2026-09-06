@@ -3,12 +3,12 @@ logic (Test Size: Small, no mocking, a plain fake function standing in for
 mlflow.pytorch.log_model): mlflow.pytorch.log_model()'s serialization_format
 kwarg doesn't exist on every mlflow version this project runs against -- see
 TASK-3.3c in mlops-methane-detection-plan.md, found running a real training
-job on Colab (Environment A, mlflow<3.7): `TypeError: save() got an
+job on Colab (baseline env, mlflow<3.7): `TypeError: save() got an
 unexpected keyword argument 'serialization_format'`.
 
-serialization_format="pickle" was added for Environment B's newer mlflow,
+serialization_format="pickle" was added for research env's newer mlflow,
 where the default flips to "pt2" (torch.export tracing, needs an
-input_example this project's log_model call doesn't provide). Environment A
+input_example this project's log_model call doesn't provide). baseline env
 pins mlflow<3.7 for the opposite reason (unpinned mlflow's save_model() does
 an unconditional torch.export import that torch==1.13.1 can't satisfy), and
 that older mlflow line predates serialization_format existing as a

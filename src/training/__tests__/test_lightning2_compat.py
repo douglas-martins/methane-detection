@@ -8,7 +8,7 @@ regardless of whether it's ever called. STARCOP's own ModelModule (vendor/
 starcop/starcop/models/model_module.py) still implements those pre-2.0
 names, unmodified (composition-only) -- see TASK-3.1 in
 mlops-methane-detection-plan.md, found running a real training job on
-Environment B (lightning 2.6.5) on the RTX 5070.
+research env (lightning 2.6.5) on the RTX 5070.
 """
 
 import lightning2_compat
@@ -38,7 +38,7 @@ class TestBindNewStyleEpochEndHooks:
     """These test the Lightning >=2.0 behavior specifically, so each pins
     pytorch_lightning.__version__ via monkeypatch rather than relying on
     whichever Lightning happens to be installed in the environment the
-    suite runs under (Environment A's real Lightning is <2.0, which would
+    suite runs under (baseline env's real Lightning is <2.0, which would
     otherwise make bind_new_style_epoch_end_hooks correctly no-op here and
     fail every assertion below for the wrong reason).
     """

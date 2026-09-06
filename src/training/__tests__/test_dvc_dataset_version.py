@@ -93,7 +93,7 @@ def _init_tiny_dvc_repo(tmp_path: Path) -> Path:
     return tmp_path / "out.txt"
 
 
-@pytest.mark.skipif(not REAL_DVC_BINARY.exists(), reason="Environment B's dvc binary not installed")
+@pytest.mark.skipif(not REAL_DVC_BINARY.exists(), reason="research env's dvc binary not installed")
 class TestIsDatasetDirty:
     def test_returns_false_for_a_clean_real_pipeline(self, tmp_path):
         _init_tiny_dvc_repo(tmp_path)

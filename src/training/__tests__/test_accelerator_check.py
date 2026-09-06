@@ -38,7 +38,7 @@ class TestAssertResolvedAccelerator:
         assert "vendor/starcop/.venv" in str(excinfo.value)
         assert "pytorch-lightning>=1.7.0" in str(excinfo.value)
 
-    def test_gpu_error_points_at_environment_b_venv_not_vendor_starcop(self):
+    def test_gpu_error_points_at_research_env_venv_not_vendor_starcop(self):
         with pytest.raises(RuntimeError) as excinfo:
             accelerator_check.assert_resolved_accelerator("gpu", "cpu")
 
