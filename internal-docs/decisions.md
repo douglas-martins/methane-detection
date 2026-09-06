@@ -20,6 +20,15 @@ Both are available on the Desktop machine; Arch has native CUDA but requires man
 
 **Relevant new input (added 2026-08 during the docs-reorg framing pass, not yet acted on)**: if FPGA-style on-board deployment work is pursued later (hls4ml is one candidate example — see `docs/methodology.md`'s Research Strategy section), its toolchain is Linux-only (no native Windows/macOS support) and would tip the scale toward a Linux-based environment on the Desktop machine regardless of which way this decision resolves for training itself. Worth factoring in when this is finally decided, not a reason to decide it now.
 
+**Update, 2026-09-06**: a first real hls4ml probe (CPU-only, no board needed — see
+[model-experiments.md](model-experiments.md)) found hls4ml conversion of this
+project's actual architecture genuinely blocked today (a missing `ReLU6` layer
+handler in hls4ml's PyTorch frontend, plus two separate ONNX-path tooling bugs),
+while Vitis AI already has a fully proven path on the same architecture family (the
+collaborator's ZCU104 benchmark). Doesn't resolve D-07, but weakens the case for
+hls4ml specifically as part of "why go Linux" — Vitis AI alone would justify the
+same Linux requirement.
+
 ---
 
 ## Resolved

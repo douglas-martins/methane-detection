@@ -39,6 +39,16 @@ vendor/starcop/.venv/bin/python -m pytest src/training/__tests__/test_dvc_datase
 
 Tests live in `__tests__/` folders next to the module they cover, named `test_*.py`; shared fixtures are in the root `conftest.py`. CI's `lint.yml` only lints the PR's *changed* Python files (main carries pre-existing ruff findings), so `make lint` running clean on your changed files is what matters, not a clean full-repo run.
 
+`make lint` and `make docstring-coverage` are a key validation step after
+any Python implementation, not an optional cleanup pass — the always-apply
+constraint is in
+[`.agents/rules/lint-and-docstring-coverage.md`](.agents/rules/lint-and-docstring-coverage.md),
+and the operational checklist (scoping lint to your diff, running the
+full-repo docstring gate, fixing rather than suppressing) is in
+[`.agents/skills/lint-and-docstring-coverage/SKILL.md`](.agents/skills/lint-and-docstring-coverage/SKILL.md)
+— `.claude/skills/lint-and-docstring-coverage` symlinks to it so Claude Code
+picks it up the same way.
+
 ## Architecture
 
 ### `vendor/starcop/` is never edited — compose from outside
@@ -76,6 +86,15 @@ A Prefect flow (research env only — where `prefect` is installed) orchestratin
 - Test-first (RED → GREEN → REFACTOR) is this repo's established pattern for non-trivial changes.
 - Real fixtures over mocks — a real tmp-path DVC repo, a real tiny GeoTIFF, a real sqlite-backed MLflow store, rather than `Mock()`/interaction checks. Small hand-written fakes exposing only the used surface are fine; broad mocking is not.
 - Test method names are intentionally undocumented (no docstrings) — the descriptive name already reads as the spec (`interrogate` config in `pyproject.toml` exempts `__tests__/`, private, magic, and nested functions from the docstring-coverage gate for this reason).
+
+The always-apply constraint behind this — write the failing test first,
+before any new Python file exists, especially under `src/` — is in
+[`.agents/rules/test-driven-development.md`](.agents/rules/test-driven-development.md).
+The full cycle, patterns, and examples are in
+[`.agents/skills/test-driven-development/SKILL.md`](.agents/skills/test-driven-development/SKILL.md)
+— agents that support the `.agents/skills` convention should load it
+directly; `.claude/skills/test-driven-development` symlinks to it so Claude
+Code picks it up the same way.
 
 ## Commit Guidelines
 
