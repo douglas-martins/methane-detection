@@ -1,6 +1,6 @@
-# Test-only dependencies for Environment A (vendor/starcop/.venv, Python 3.10).
+# Test-only dependencies for baseline env (vendor/starcop/.venv, Python 3.10).
 # Layered on top of vendor/starcop/requirements.txt via:
-#   uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/env-a-dev.txt
+#   uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/baseline-dev.txt
 # vendor/starcop/requirements.txt is submodule-owned and must never be edited directly.
 pytest
 pytest-cov

@@ -1,13 +1,13 @@
 """TASK-7.2: Prefect flow orchestrating the retraining cycle end-to-end.
 
-Runs under Environment B (root .venv, Python 3.12 -- where `prefect` is
+Runs under research env (root .venv, Python 3.12 -- where `prefect` is
 installed) as a flow run on the `mac-mps` Process work pool. See
 mlops-methane-detection-plan.md's Phase 7 section for the design history:
 D-04 decided the trigger is a cron schedule (see prefect.yaml), and D-01's
 service-account note covers the unattended `dvc pull` credential this flow
 assumes is already configured in .dvc/config.local on the worker machine.
 
-Run manually (Environment B):
+Run manually (research env):
     .venv/bin/python flows/retrain.py
 """
 

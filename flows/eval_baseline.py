@@ -10,7 +10,7 @@ Same `@task`/`@flow` shape and injectable-callable testing pattern as
 flows/retrain.py (its `pull_dataset`/`notify`/`build_failure_message`
 helpers are reused directly, not reinvented, via `import retrain`).
 
-Run manually (Environment B):
+Run manually (research env):
     .venv/bin/python flows/eval_baseline.py
 """
 
@@ -112,7 +112,7 @@ def run_evaluation_for_variant(
     always with `--emit-docs-assets staging_dir`, never `--limit` (this
     phase's own "flow never passes --limit" rule) -- and returns the
     `MLFLOW_RUN_ID` sentinel from stdout via retrain.py's own
-    `parse_run_id`. Runs under Environment A (`vendor/starcop/.venv`,
+    `parse_run_id`. Runs under baseline env (`vendor/starcop/.venv`,
     torch 1.13.1, Phase 0's decision), not the root `.venv` this flow
     process itself runs under -- an explicit environment crossing, not an
     inherited PATH lookup. Explicitly injects MLFLOW_TRACKING_URI into the

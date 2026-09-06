@@ -117,7 +117,7 @@ def verify_checkpoint_digest(variant: str, checkpoint_path: Path) -> None:
     """Raises ValueError if checkpoint_path's sha256 doesn't match
     _EXPECTED_CHECKPOINT_SHA256[variant]. Reads in chunks via `hashlib.sha256().update()`
     rather than `hashlib.file_digest` (added in Python 3.11) -- this project
-    runs a dual-environment setup where Environment A (vendor/starcop/.venv)
+    runs a dual-environment setup where baseline env (vendor/starcop/.venv)
     is Python 3.10, so this function must work on both."""
     import hashlib
 

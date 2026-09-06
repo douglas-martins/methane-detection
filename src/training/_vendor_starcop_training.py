@@ -3,7 +3,7 @@
 Mirrors src/data/preprocessing/_vendor_starcop.py's approach (same idea,
 separate module -- pytest's flat/prepend import mode caches by bare module
 name, and both src/data/preprocessing/ and src/training/ end up on sys.path
-simultaneously under `make test-env-b`, so two files literally named
+simultaneously under `make test-research`, so two files literally named
 _vendor_starcop.py collide in sys.modules). Puts vendor/starcop on sys.path
 and re-exports the real, unmodified objects this package composes around
 (see mlops-methane-detection-plan.md TASK-2.2 decision 0: nothing under

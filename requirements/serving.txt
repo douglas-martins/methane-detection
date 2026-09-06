@@ -1,5 +1,5 @@
 # Runtime dependencies for the BentoML inference service (src/serving/,
-# TASK-5.1). Environment B versions (torch>=2.5 stack) -- proven to load and
+# TASK-5.1). research env versions (torch>=2.5 stack) -- proven to load and
 # run a real Environment-A-trained STARCOP checkpoint via mlflow.pytorch,
 # see mlops-methane-detection-plan.md TASK-5.1's 2026-08-15 readiness audit
 # and its live-validation notes. Not vendor/starcop/requirements.txt's
@@ -21,7 +21,7 @@ bentoml
 # imports wandb at module level (STARCOP's own training-era code, composition-
 # only, never edited -- see mlops-methane-detection-plan.md decision 0).
 # Masked during local `bentoml serve` validation because wandb is an
-# incidental root pyproject.toml (Environment B) dependency there; the
+# incidental root pyproject.toml (research env) dependency there; the
 # containerized Bento only installs from this file, so it wasn't caught until
 # the actual deployed image failed with "No module named 'wandb'".
 wandb
