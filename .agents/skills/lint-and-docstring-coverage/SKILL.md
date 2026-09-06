@@ -20,11 +20,18 @@ the operational checklist for applying those rules.
 1. **Identify what you changed.**
 
    ```bash
-   git diff --name-only --diff-filter=ACMR -- '*.py' | grep -v '^vendor/'
+   { git diff --name-only --diff-filter=ACMR HEAD -- '*.py'; \
+     git ls-files --others --exclude-standard -- '*.py'; } \
+     | sort -u | grep -v '^vendor/'
    ```
 
-   This is your lint scope — the same base/head-diff approach
-   `.github/workflows/lint.yml` uses in CI.
+   This is your lint scope. Unlike CI's `.github/workflows/lint.yml`, which
+   diffs two already-committed refs (base vs. head), this runs mid-work,
+   before anything is committed — a bare `git diff` would miss staged
+   changes and can never see untracked files at all. `git diff HEAD` covers
+   staged and unstaged modifications; `git ls-files --others
+   --exclude-standard` adds untracked new files (e.g. one you just created
+   for TDD's RED step).
 
 2. **Run ruff against just those files** (matches CI; faster than the
    full-repo `make lint` and doesn't surface `main`'s pre-existing
