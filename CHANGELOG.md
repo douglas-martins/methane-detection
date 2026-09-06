@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.22.4 (2026-09-06)
+
+### Bug Fixes
+
+- **agents**: Catch staged and untracked files in lint-scope discovery
+  ([`175fca2`](https://github.com/douglas-martins/methane-detection/commit/175fca2eed362167359bd60c0dc51e092e7d12aa))
+
+
 ## v0.22.3 (2026-09-06)
 
 ### Bug Fixes
