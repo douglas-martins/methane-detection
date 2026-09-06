@@ -200,8 +200,8 @@ new issue).
 
 ## Desktop — RTX 5070 CUDA training, and why it runs under research env (TASK-3.1)
 
-**This machine's training runs under research env (`.venv`), not Environment
-A** (`vendor/starcop/.venv`) — the one deliberate deviation from every other
+**This machine's training runs under research env (`.venv`), not baseline
+env** (`vendor/starcop/.venv`) — the one deliberate deviation from every other
 machine's launch script. Reason, found by actually spiking it (2026-08-23),
 not assumed:
 
@@ -252,7 +252,7 @@ forward+backward pass through the actual model-construction path on
 ### Four real bugs found and fixed getting an actual training run green
 
 Same composition-only discipline as TASK-3.2's attempts above — each is a
-genuine Environment-B-vs-vendor-code version mismatch:
+genuine research-env-vs-vendor-code version mismatch:
 
 1. **Missing `scikit-image`** — `data_module.prepare_data()` imports
    `skimage` transitively (via vendor's `sampling_dataset.py` →
@@ -440,7 +440,7 @@ no Lightning version upgrade needed (GPU/CUDA support long predates 1.6.4,
 unlike `MPSAccelerator` which was added in 1.7.0). And unlike TASK-3.1's
 Desktop/Blackwell case, no silent tensor corruption — T4 (Turing, compute
 capability 7.5) is well inside the range torch 1.13.1's bundled CUDA 11.7
-runtime supports, so this isn't expected to need an research env pivot the
+runtime supports, so this isn't expected to need a research env pivot the
 way the RTX 5070 did.
 
 **Not yet done**: this was a toy model/dataset, the same scope TASK-3.2 used
