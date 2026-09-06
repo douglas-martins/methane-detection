@@ -39,7 +39,7 @@ Export itself succeeded (15 op types, `onnx.checker` passed) — the architectur
 survives ONNX export cleanly, consistent with the collaborator's ExecuTorch/XNNPACK
 result on the same architecture family. hls4ml's ONNX importer then failed on both
 `config_from_onnx_model` and `convert_from_onnx_model`:
-```
+```text
 RuntimeError: Could not find the shape for input onnx::Sub_916
 ```
 Reproduced with the normalizer stripped out too (network-only export), same failure
@@ -52,13 +52,13 @@ constants/initializers, that hls4ml 1.3.0's ONNX frontend doesn't tolerate.
 Produces a much cleaner graph (6 op types: `Add`, `Clip`, `Concat`, `Conv`, `Relu`,
 `Resize` — no `Shape`/`Slice`/`Sub`/`Cast` scaffolding). hls4ml's importer got
 further, with a specific, expected complaint instead of an opaque one:
-```
+```text
 RuntimeError: Please convert the model to channels-last format with qonnx-to-channels-last
 ```
 (hls4ml wants NHWC internally — same convention the collaborator's DPU flow already
 uses.) Ran `qonnx-cleanup` then `qonnx-to-channels-last --make-input-channels-last`;
 that hit a second, separate bug in `qonnx`'s own channels-last transform:
-```
+```text
 Exception: Required attribute kernel_shape unspecified in a Conv node
 ```
 The dynamo exporter omits `kernel_shape` as a `Conv` node attribute (valid ONNX —
@@ -69,7 +69,7 @@ ONNX graph to inject the attribute).
 
 **Attempt 3 — hls4ml's native PyTorch converter (`convert_from_pytorch_model`, skips ONNX entirely)**:
 Failed immediately and specifically, at `config_from_pytorch_model`:
-```
+```text
 Exception: Unsupported layer ReLU6
 ```
 This is the real finding, not a tooling/format quirk. The encoder is MobileNetV2,
