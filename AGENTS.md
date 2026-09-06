@@ -77,6 +77,15 @@ A Prefect flow (research env only — where `prefect` is installed) orchestratin
 - Real fixtures over mocks — a real tmp-path DVC repo, a real tiny GeoTIFF, a real sqlite-backed MLflow store, rather than `Mock()`/interaction checks. Small hand-written fakes exposing only the used surface are fine; broad mocking is not.
 - Test method names are intentionally undocumented (no docstrings) — the descriptive name already reads as the spec (`interrogate` config in `pyproject.toml` exempts `__tests__/`, private, magic, and nested functions from the docstring-coverage gate for this reason).
 
+The always-apply constraint behind this — write the failing test first,
+before any new Python file exists, especially under `src/` — is in
+[`.agents/rules/test-driven-development.md`](.agents/rules/test-driven-development.md).
+The full cycle, patterns, and examples are in
+[`.agents/skills/test-driven-development/SKILL.md`](.agents/skills/test-driven-development/SKILL.md)
+— agents that support the `.agents/skills` convention should load it
+directly; `.claude/skills/test-driven-development` symlinks to it so Claude
+Code picks it up the same way.
+
 ## Commit Guidelines
 
 This repo is trunk-based against a single long-lived `main` — **PR-only, never
