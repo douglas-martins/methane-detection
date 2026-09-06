@@ -1,0 +1,1 @@
+../../.agents/rules/conventional-commit.md

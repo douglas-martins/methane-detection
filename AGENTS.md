@@ -6,7 +6,16 @@ human-facing setup, environments, and PR workflow this file assumes.
 
 ## Commit Guidelines
 
-An operational, step-by-step checklist for applying the rules below lives in
+This repo is trunk-based against a single long-lived `main` — **PR-only, never
+commit directly to `main`**.
+
+The always-apply constraints (never commit to `main`, split by type, no `git
+add -A`, no AI attribution, …) are in
+[`.agents/rules/conventional-commit.md`](.agents/rules/conventional-commit.md)
+— follow them any time you're about to commit in this repo, whether or not
+you invoke a skill.
+
+An operational, step-by-step checklist for applying those rules lives in
 [`.agents/skills/conventional-commit/SKILL.md`](.agents/skills/conventional-commit/SKILL.md)
 — agents that support the `.agents/skills` convention should load it
 directly; `.claude/skills/conventional-commit` symlinks to it so Claude Code

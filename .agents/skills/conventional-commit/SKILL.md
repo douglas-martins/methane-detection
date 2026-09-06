@@ -17,16 +17,18 @@ context. This file is the operational checklist for applying those rules.
 ## Procedure
 
 1. **Inspect the full change set.**
+
    ```bash
    git status
    git diff
    git diff --cached
    ```
+
    Include untracked files only if they're actually part of the current
    task — say explicitly which untracked files you're excluding and why.
 
 2. **Group files by type/scope**, not by task. Re-derive the type from what
-   each change *does* (see the type table in `AGENTS.md`), not from the
+   each change _does_ (see the type table in `AGENTS.md`), not from the
    ticket or prompt that prompted it. Never combine a `feat`/`fix`/`perf`
    with an unrelated `docs`/`chore`/`refactor` in one commit.
 
@@ -36,6 +38,7 @@ context. This file is the operational checklist for applying those rules.
    this repo's commits carry no AI attribution.
 
 4. **Stage and commit each group explicitly**, one at a time:
+
    ```bash
    git add <specific files for this group>
    git commit -m "$(cat <<'EOF'
@@ -45,11 +48,12 @@ context. This file is the operational checklist for applying those rules.
    EOF
    )"
    ```
+
    Never `git add -A`/`git add .`. Never push unless explicitly asked.
 
 5. **Report the split**: which files went into which commit, the type
    chosen and why, and the resulting commit hashes (`git log --oneline -n
-   <count>`).
+<count>`).
 
 ## Notes
 
