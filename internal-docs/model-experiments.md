@@ -27,8 +27,12 @@ architecture family as HyperSTARCOP. `hls4ml==1.3.0`, `torch==2.12.1+cu130`.
 
 **Packages installed for this probe** (`uv pip install`, research env
 `.venv` — transient, **not** added to `pyproject.toml`/lock, so they won't survive
-a `uv sync`): `onnx`, `onnxscript`, `onnxruntime`, `hls4ml`, `qonnx`. Reinstall the
-same way to reproduce.
+a `uv sync`): `onnx`, `onnxscript`, `onnxruntime`, `hls4ml` (`==1.3.0`, per above),
+`qonnx`. Exact resolved versions for the other four weren't captured at probe
+time (no `pip freeze`/lockfile from that install survives) — `uv pip install
+onnx onnxscript onnxruntime qonnx` pulls whatever's current, which may not
+match this run; if a retry behaves differently, that drift is the first thing
+to suspect.
 
 **Attempt 1 — legacy `torch.onnx.export` (TorchScript-based, `dynamo=False`) → hls4ml ONNX import**:
 Export itself succeeded (15 op types, `onnx.checker` passed) — the architecture
