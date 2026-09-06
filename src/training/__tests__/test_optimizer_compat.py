@@ -2,11 +2,11 @@
 (Test Size: Small, no mocking, a plain fake object standing in for
 ModelModule): torch removed the `verbose` kwarg from
 torch.optim.lr_scheduler.ReduceLROnPlateau in a later release than the
-Environment A pin (torch==1.13.1) targets. STARCOP's own ModelModule
+baseline env pin (torch==1.13.1) targets. STARCOP's own ModelModule
 (vendor/starcop/starcop/models/model_module.py, imported unmodified) still
 passes `verbose=True` in configure_optimizers() -- see TASK-3.1 in
 mlops-methane-detection-plan.md, found running a real training job on
-Environment B (torch 2.12.1) on the RTX 5070: `TypeError:
+research env (torch 2.12.1) on the RTX 5070: `TypeError:
 ReduceLROnPlateau.__init__() got an unexpected keyword argument 'verbose'`.
 
 Detection is via real introspection of the installed

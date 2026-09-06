@@ -1,5 +1,5 @@
 site_name: Methane Detection
-site_url: https://douglas-martins.github.io/methane-detection/ # TODO confirm exact GH Pages URL once Step 9.6 deploys
+site_url: https://douglas-martins.github.io/methane-detection/
 repo_url: https://github.com/douglas-martins/methane-detection
 theme:
   name: material

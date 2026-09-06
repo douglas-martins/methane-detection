@@ -4,9 +4,9 @@ Kept at the repo root (rather than under ``tests/``) so fixtures are visible
 to both co-located suites (e.g. ``src/data/__tests__/``) and the mirrored
 ``tests/vendor_starcop/`` suite, which live in separate subtrees.
 
-Fixtures that need the STARCOP package (Environment A only) import it lazily
+Fixtures that need the STARCOP package (baseline env only) import it lazily
 inside the fixture body via ``pytest.importorskip``, so this file can still
-be collected without error by a pytest run under Environment B, which does
+be collected without error by a pytest run under research env, which does
 not have ``starcop`` installed.
 """
 

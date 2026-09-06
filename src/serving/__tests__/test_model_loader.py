@@ -5,7 +5,7 @@ store (Test Size: Medium, mirrors src/registry/__tests__/test_mlflow_registry.py
 own precedent) with a tiny real torch.nn.Module standing in for the model --
 no Mock(). This proves the real wiring end to end: resolve_stage_version ->
 version.source (a runs:/<run_id>/<artifact_path> URI) -> mlflow.pytorch.load_model,
-all under Environment B. Loading an actual STARCOP checkpoint (which
+all under research env. Loading an actual STARCOP checkpoint (which
 additionally needs vendor/starcop importable at unpickle time, handled by
 this module's _vendor_starcop_serving import) is SDK/network glue validated
 by an actual run against the live server instead, same Test Size: Large

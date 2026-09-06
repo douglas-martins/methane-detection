@@ -8,7 +8,7 @@
 # against the real mac-mps worker at least once, since this flow calls
 # real training, real MLflow promotion, and a real production CD trigger.
 #
-# Deploy with (Environment B):
+# Deploy with (research env):
 #   .venv/bin/prefect deploy --all
 #
 # Prerequisites this flow's run environment needs (see

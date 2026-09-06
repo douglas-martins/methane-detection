@@ -2,7 +2,7 @@
 
 Fetches the same mini dataset and pretrained checkpoints that
 `vendor/starcop/notebooks/model_demos_AVIRIS.ipynb` downloads on Google Colab,
-so the notebook can run locally against Environment A
+so the notebook can run locally against baseline env
 (`vendor/starcop/.venv`, Python 3.10) without any Colab-specific setup.
 
 Usage:

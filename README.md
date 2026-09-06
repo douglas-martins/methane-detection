@@ -1,113 +1,50 @@
-# Methane Detection — MLOps Pipeline
+# Methane Detection — end-to-end deep learning pipeline
 
-![tests (env A)](docs/badges/tests-env-a.svg)
-![coverage (env A)](docs/badges/coverage-env-a.svg)
-![tests (env B)](docs/badges/tests-env-b.svg)
-![coverage (env B)](docs/badges/coverage-env-b.svg)
+![tests (baseline)](docs/badges/tests-baseline.svg)
+![coverage (baseline)](docs/badges/coverage-baseline.svg)
+![tests (research)](docs/badges/tests-research.svg)
+![coverage (research)](docs/badges/coverage-research.svg)
 [![codecov](https://codecov.io/gh/douglas-martins/methane-detection/graph/badge.svg)](https://codecov.io/gh/douglas-martins/methane-detection)
 [![Lint](https://github.com/douglas-martins/methane-detection/actions/workflows/lint.yml/badge.svg)](https://github.com/douglas-martins/methane-detection/actions/workflows/lint.yml)
+[![Docs](https://github.com/douglas-martins/methane-detection/actions/workflows/docs.yml/badge.svg)](https://github.com/douglas-martins/methane-detection/actions/workflows/docs.yml)
 
-Master's Final Project — Semantic Segmentation of Methane Plumes using CNN on Hyperspectral Imagery.
+> **[Master's Final Project]** — Semantic Segmentation of Methane Plumes using CNN on
+> Hyperspectral Imagery. [TODO: institution / advisor / one-line paper citation.]
 
-## Overview
+A methane plume detector, built on the STARCOP baseline and targeting
+**on-board/embedded deployment** — the model is the deliverable, with the final
+architecture still being finalized to meet on-board constraints. (FPGA-style
+acceleration via [hls4ml](https://fastmachinelearning.org/hls4ml/), alongside
+Xilinx's Vitis AI toolchain, is the working deployment direction — see the
+documentation site for details.) This repo also carries the full MLOps pipeline
+(DVC, MLflow, CI/CD, BentoML serving, Prometheus/Grafana monitoring, Prefect
+retraining) that makes iterating toward it fast and reproducible: candidates
+are proven out cheaply on a small dataset before a full-scale training run.
 
-An end-to-end MLOps pipeline for detecting methane plumes from hyperspectral satellite imagery (AVIRIS-NG, EMIT). Built on top of the [STARCOP](https://github.com/spaceml-org/STARCOP) baseline, with production-grade ML engineering: data versioning (DVC), experiment tracking (MLflow), CI/CD (GitHub Actions), model serving (BentoML/FastAPI), and monitoring (Prometheus + Grafana).
+## 📖 Documentation
 
-## Repository Structure
+Full documentation — methodology, dataset, results, architecture, model registry policy —
+lives at **[the MkDocs site](https://douglas-martins.github.io/methane-detection/)**.
 
-```
-├── vendor/starcop/     # STARCOP reference implementation (git submodule)
-├── src/
-│   ├── data/           # Dataset loaders, preprocessing
-│   ├── models/         # Architecture definitions
-│   ├── training/       # Training scripts (updated Lightning 2.x stack)
-│   └── serving/        # Inference API
-├── tests/              # Unit and integration tests
-├── configs/            # Hydra configuration files
-├── notebooks/          # Exploratory analysis
-├── docker/             # Dockerfiles for serving and CI
-├── docs/               # Project documentation and reports
-├── data/               # DVC-tracked — not committed to Git
-└── models/             # DVC-tracked — not committed to Git
-```
-
-## Getting Started
-
-### Clone (includes STARCOP submodule)
+## Quick Start
 
 ```bash
-git clone --recurse-submodules https://github.com/ghostface/methane-detection-mlops
-```
+git clone --recurse-submodules https://github.com/douglas-martins/methane-detection
+cd methane-detection
 
-If you already cloned without `--recurse-submodules`:
-
-```bash
-git submodule update --init
-```
-
-### Environment A — STARCOP original (Python 3.10, torch 1.13.1)
-
-For running and inspecting the original STARCOP baseline:
-
-```bash
-cd vendor/starcop
-uv venv --python 3.10
-uv pip install -r requirements.txt
-uv pip install -e .
-```
-
-### Environment B — MLOps project (Python 3.12, torch ≥ 2.5)
-
-For active development on the pipeline:
-
-```bash
+# Research env — active development (Python 3.12)
 uv venv --python 3.12
 uv sync
 ```
 
-## Testing
+The original STARCOP baseline stack (Python 3.10, reference-only) and everything
+beyond this — testing, architecture, the never-edit `vendor/starcop/` rule — are
+covered in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Unit tests live in `__tests__/` folders next to the module they cover (e.g. `src/data/download/__tests__/`, `src/data/preprocessing/__tests__/`), plus a mirrored `tests/vendor_starcop/` tree for STARCOP submodule scripts, which are never modified in place. Shared fixtures live in the project-root `conftest.py`.
+## Contributing
 
-```bash
-make test-env-a       # run the Environment A suite (vendor/starcop/.venv)
-make coverage         # run env A with coverage, writes junit.xml + coverage.xml
-make badges           # regenerate docs/badges/{tests,coverage}-env-a.svg from the latest env A run
-
-make test-env-b       # run the Environment B suite (.venv, src/data/preprocessing/)
-make coverage-env-b   # run env B with coverage, writes junit-env-b.xml + coverage-env-b.xml
-make badges-env-b     # regenerate docs/badges/{tests,coverage}-env-b.svg from the latest env B run
-```
-
-New Environment A test dependencies (pytest, gdown, genbadge, …) are layered on top of `vendor/starcop/requirements.txt` via `requirements/env-a-dev.txt`, without editing the submodule's own file:
-
-```bash
-uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/env-a-dev.txt
-```
-
-Environment B's test dependencies (pytest, genbadge, …) are ordinary `[dependency-groups] dev` entries in the root `pyproject.toml`, installed by `uv sync`.
-
-## Dataset
-
-Primary dataset: [STARCOP](https://zenodo.org/record/7863350) (AVIRIS-NG + EMIT hyperspectral scenes with pixel-wise methane annotations). Managed with DVC — see Phase 1 of the implementation plan.
-
-Mini dataset for development: `huggingface-cli download previtus/starcop_allbands_mini`
-
-## Implementation Plan
-
-See [`mlops-methane-detection-plan.md`](mlops-methane-detection-plan.md) for the full phase-by-phase task list.
-
-## Infrastructure
-
-| Component | Tool | Location |
-|---|---|---|
-| Experiment tracking | MLflow | Hostinger KVM 4 VPS (Coolify) |
-| Pipeline orchestration | Prefect | Hostinger KVM 4 VPS (Coolify) |
-| Model serving | BentoML / FastAPI | Hostinger KVM 4 VPS (Coolify) |
-| Monitoring | Prometheus + Grafana | Hostinger KVM 4 VPS (Coolify) |
-| Data versioning | DVC | Google Drive remote |
-| CI/CD | GitHub Actions | ghcr.io (Docker images) |
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

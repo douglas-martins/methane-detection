@@ -8,8 +8,8 @@ required.
 
 ## Prerequisites
 
-- Environment A set up (`vendor/starcop/.venv`, Python 3.10) per TASK-0.2/0.3.
-- MLflow client installed: `uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/env-a-mlflow.txt`
+- baseline env set up (`vendor/starcop/.venv`, Python 3.10) per TASK-0.2/0.3.
+- MLflow client installed: `uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/baseline-mlflow.txt`
 - The dataset already processed by the DVC pipeline (TASK-1.2) —
   `data/processed/<dataset_name>/{patches,splits}/` must exist.
 
@@ -18,10 +18,10 @@ locally: `pytorch_lightning==1.6.4`/`wandb==0.13.3` (both pinned in
 `vendor/starcop/requirements.txt`, both 2022-era) only import cleanly under
 `setuptools<81` (84+ removed `pkg_resources`, which 1.6.4 still imports
 unconditionally) and `numpy<2` (wandb uses the removed `np.float_` alias).
-`requirements/env-a-mlflow.txt` pins both, but only a **fresh** venv install
+`requirements/baseline-mlflow.txt` pins both, but only a **fresh** venv install
 actually re-resolves them — an existing `.venv` set up before these pins
 were added will silently already have a working (older) setuptools/numpy and
-never notice. If Environment A works locally but fails on a clean checkout
+never notice. If baseline env works locally but fails on a clean checkout
 or in CI, re-run the install command above against a fresh
 `vendor/starcop/.venv` first.
 
@@ -83,9 +83,9 @@ Hydra overrides can be passed after the dataset name, e.g.
 arg-building logic lives in `src/training/launch_profiles.py` (unit-tested;
 see `test_launch_profiles.py`), so both `.sh` files stay thin.
 
-**Important divergence**: `train_mac.sh` runs under Environment A
+**Important divergence**: `train_mac.sh` runs under baseline env
 (`vendor/starcop/.venv/bin/python`), but `train_desktop.sh` runs under
-**Environment B** (`.venv/bin/python`) — Environment A's stock
+**research env** (`.venv/bin/python`) — baseline env's stock
 `torch==1.13.1` silently corrupts compute on the RTX 5070's Blackwell
 architecture rather than erroring (see TASK-3.1 in
 `internal-docs/setup/environment-notes.md` for the full spike). Colab
@@ -93,7 +93,7 @@ architecture rather than erroring (see TASK-3.1 in
 for understanding exactly what each script does under the hood.
 
 ```bash
-# M4 Pro (Environment A):
+# M4 Pro (baseline env):
 cd /path/to/methane-detection
 set -a; source .env.mlflow; set +a
 vendor/starcop/.venv/bin/python src/training/train.py \
@@ -103,7 +103,7 @@ vendor/starcop/.venv/bin/python src/training/train.py \
 ```
 
 ```bash
-# RTX 5070 desktop (Environment B -- see the divergence above):
+# RTX 5070 desktop (research env -- see the divergence above):
 cd /path/to/methane-detection
 set -a; source .env.mlflow; set +a
 .venv/bin/python src/training/train.py \
@@ -147,7 +147,7 @@ with `resolved_device`, so check that tag in the MLflow UI rather than
 trusting a `FINISHED` status alone.
 
 On the RTX 5070 desktop (Arch Linux, native CUDA — TASK-3.1),
-`training.accelerator=gpu training.devices=1` under **Environment B**
+`training.accelerator=gpu training.devices=1` under **research env**
 gives a real ~2.3x speedup over the CPU baseline and ~1.16x over MPS (see
 TASK-3.1 in `internal-docs/setup/environment-notes.md` for the full spike,
 the four composition-only fixes needed, and benchmark numbers). Nothing

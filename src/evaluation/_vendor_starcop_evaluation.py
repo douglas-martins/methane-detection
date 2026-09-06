@@ -3,7 +3,7 @@
 Mirrors src/training/_vendor_starcop_training.py's approach (own file per
 consuming package, not a shared import -- pytest's flat/prepend import mode
 caches by bare module name, and multiple packages can end up on sys.path
-simultaneously under `make test-env-b`). Puts vendor/starcop on sys.path and
+simultaneously under `make test-research`). Puts vendor/starcop on sys.path and
 re-exports the real, unmodified objects this package composes around (see
 mlops-methane-detection-plan.md TASK-2.2 decision 0 / track-a plan's
 [[feedback-vendor-starcop-composition-only]]: nothing under vendor/starcop/

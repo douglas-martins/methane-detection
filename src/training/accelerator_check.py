@@ -1,6 +1,6 @@
 """Guards against pytorch-lightning silently resolving an unrecognized
 accelerator string to CPU instead of raising -- see TASK-3.2 in
-mlops-methane-detection-plan.md. Versions before 1.7.0 (Environment A
+mlops-methane-detection-plan.md. Versions before 1.7.0 (baseline env
 originally pinned pytorch-lightning==1.6.4) have no MPSAccelerator at all,
 so `Trainer(accelerator="mps")` resolves to CPUAccelerator without error.
 
@@ -16,8 +16,8 @@ _EXPECTED_RESOLVED_DEVICE_TYPE = {
 }
 
 # Per-accelerator remediation text -- mps and gpu point at different
-# environments/fixes on this project (mps: Environment A's pinned Lightning
-# version; gpu: Environment B's interpreter and real CUDA/Blackwell support,
+# environments/fixes on this project (mps: baseline env's pinned Lightning
+# version; gpu: research env's interpreter and real CUDA/Blackwell support,
 # see TASK-3.1 in mlops-methane-detection-plan.md), so they must not share
 # one blurb.
 _REMEDIATION = {
@@ -27,7 +27,7 @@ _REMEDIATION = {
         "falls back to CPU instead of erroring)."
     ),
     "gpu": (
-        "check that training is running under Environment B's interpreter "
+        "check that training is running under research env's interpreter "
         "(.venv/bin/python) and that CUDA is actually available/functional "
         "on this machine."
     ),

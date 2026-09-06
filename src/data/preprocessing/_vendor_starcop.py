@@ -1,11 +1,11 @@
 """Single seam for importing vendor/starcop's data-handling modules.
 
 vendor/starcop is pinned to a separate uv environment (Python 3.10 / torch
-1.13.1, "Environment A") for exact reproducibility of the original paper's
+1.13.1, "baseline env") for exact reproducibility of the original paper's
 checkpoints (TASK-0.3). That pin is unrelated to the pure numpy/pandas/
 rasterio/torch data-handling modules re-exported below -- their imports
 (warnings, numpy, torch, pandas, rasterio, and pytorch_lightning/kornia via
-Environment B's `lightning` wheel, which ships a pytorch_lightning compat
+research env's `lightning` wheel, which ships a pytorch_lightning compat
 shim) are already satisfied by this project's own environment ("Environment
 B"). So instead of duplicating STARCOP's normalization table or tiling
 logic, this module puts vendor/starcop on sys.path and re-exports the real

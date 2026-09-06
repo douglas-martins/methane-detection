@@ -1,6 +1,6 @@
-# MLflow client dependencies for Environment A (vendor/starcop/.venv, Python 3.10).
+# MLflow client dependencies for baseline env (vendor/starcop/.venv, Python 3.10).
 # Layered on top of vendor/starcop/requirements.txt via:
-#   uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/env-a-mlflow.txt
+#   uv pip install --python vendor/starcop/.venv/bin/python -r vendor/starcop/requirements.txt -r requirements/baseline-mlflow.txt
 # vendor/starcop/requirements.txt is submodule-owned and must never be edited directly.
 # See mlops-methane-detection-plan.md TASK-2.2.
 #
@@ -9,7 +9,7 @@
 # the function body (mlflow/pytorch/__init__.py) — not gated behind the
 # opt-in `export_model` flag, so it breaks *every* call to
 # mlflow.pytorch.log_model(), not just export-format ones. `torch.export`
-# doesn't exist before torch 2.1; Environment A pins torch==1.13.1
+# doesn't exist before torch 2.1; baseline env pins torch==1.13.1
 # (vendor/starcop/requirements.txt), so any unpinned resolve landing on
 # mlflow>=3.10 makes every training run fail at the model-logging step with
 # `ModuleNotFoundError: No module named 'torch.export'` — found live while
@@ -20,7 +20,7 @@ mlflow<3.7
 
 # Required client-side for any MLflow client writing artifacts to the B2-backed
 # (S3-compatible) artifact store on the tracking server — same reason boto3 was
-# added to Environment B's pyproject.toml in TASK-2.1.
+# added to research env's pyproject.toml in TASK-2.1.
 boto3
 
 # NOTE on pytorch-lightning (MPS, TASK-3.2): vendor/starcop/requirements.txt
@@ -31,7 +31,7 @@ boto3
 # exact (==), it can't be overridden from a second -r file in the same
 # resolve (uv/pip combine constraints across -r files rather than letting
 # the later file win) -- so this is NOT listed here. Instead, run this as a
-# separate command *after* the install above, on Environment A / macOS
+# separate command *after* the install above, on baseline env / macOS
 # only, before using accelerator=mps:
 #   uv pip install --python vendor/starcop/.venv/bin/python \
 #     "pytorch-lightning>=1.7.0,<2.0" "torch==1.13.1"

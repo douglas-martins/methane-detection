@@ -1,7 +1,7 @@
 # STARCOP Baseline Validation
 
 > Confirms the original STARCOP pretrained models produce valid segmentation masks
-> under Environment A (`vendor/starcop/.venv`, Python 3.10.19, torch 1.13.1,
+> under baseline env (`vendor/starcop/.venv`, Python 3.10.19, torch 1.13.1,
 > pytorch-lightning 1.6.4) on the MacBook M4 Pro (CPU — torch 1.13.1 has no stable
 > MPS support). Ran 2026-07-22.
 

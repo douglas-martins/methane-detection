@@ -20,15 +20,15 @@ composed with new behavior from outside:
   - Lightning 2.x compat: ModelModule's pre-2.0 validation_epoch_end/
     test_epoch_end hooks rebound to on_validation_epoch_end/on_test_epoch_end
     via lightning2_compat.py (TASK-3.1) -- a no-op under Lightning <2.0, so
-    Environment A's older pytorch-lightning pin is unaffected.
+    baseline env's older pytorch-lightning pin is unaffected.
   - torch ReduceLROnPlateau compat: ModelModule.configure_optimizers's
-    verbose=True kwarg (removed by a later torch release than Environment A's
+    verbose=True kwarg (removed by a later torch release than baseline env's
     pin) rebound via optimizer_compat.py (TASK-3.1) -- a no-op wherever torch
     still accepts it.
 
-Run with (Environment A, Mac/MPS and Windows-Desktop-Blackwell-pending
-machines) or Environment B (this project's own Desktop/RTX 5070, per
-TASK-3.1 -- Environment A's exact-pinned torch==1.13.1 has no working CUDA
+Run with (baseline env, Mac/MPS and Windows-Desktop-Blackwell-pending
+machines) or research env (this project's own Desktop/RTX 5070, per
+TASK-3.1 -- baseline env's exact-pinned torch==1.13.1 has no working CUDA
 kernels for Blackwell/sm_120 on this GPU):
     vendor/starcop/.venv/bin/python src/training/train.py \\
         +machine=macbook +dataset_name=starcop_mini

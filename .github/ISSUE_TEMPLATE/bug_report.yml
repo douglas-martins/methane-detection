@@ -24,8 +24,8 @@ body:
       label: Which environment?
       description: See CONTRIBUTING.md for the two-environment setup.
       options:
-        - Environment A (vendor/starcop/.venv, Python 3.10, torch 1.13.1)
-        - Environment B (.venv, Python 3.12, torch >=2.5)
+        - Baseline env (vendor/starcop/.venv, Python 3.10, torch 1.13.1)
+        - Research env (.venv, Python 3.12, torch >=2.5)
         - CI (GitHub Actions)
         - Serving (BentoML deployment)
         - Not code — documentation

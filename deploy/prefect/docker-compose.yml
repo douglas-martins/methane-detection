@@ -21,7 +21,7 @@ services:
 
   prefect:
     # Pinned to the exact prefect version already locked in this repo's
-    # root uv.lock (Environment B) so the server and every client
+    # root uv.lock (research env) so the server and every client
     # (CLI, workers, flow runs) speak the same API version.
     image: prefecthq/prefect:3.7.7-python3.12
     restart: unless-stopped

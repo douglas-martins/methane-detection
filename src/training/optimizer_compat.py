@@ -1,7 +1,7 @@
 """Composition-only fix for torch removing the `verbose` kwarg from
 torch.optim.lr_scheduler.ReduceLROnPlateau -- see TASK-3.1 in
 mlops-methane-detection-plan.md, found running a real training job on
-Environment B (torch 2.12.1) on the RTX 5070: `TypeError:
+research env (torch 2.12.1) on the RTX 5070: `TypeError:
 ReduceLROnPlateau.__init__() got an unexpected keyword argument 'verbose'`.
 STARCOP's own ModelModule.configure_optimizers (vendor/starcop/starcop/
 models/model_module.py, imported unmodified) still passes `verbose=True`.

@@ -69,7 +69,7 @@ class TestVerifyCheckpointDigest:
             hf_baseline_import.verify_checkpoint_digest("mag1c_only", checkpoint_path)
 
     def test_computes_the_correct_digest_without_hashlib_file_digest(self, monkeypatch, tmp_path):
-        """hashlib.file_digest was only added in Python 3.11 -- Environment A
+        """hashlib.file_digest was only added in Python 3.11 -- baseline env
         (vendor/starcop/.venv) is Python 3.10, so this function must not
         depend on it. Multi-chunk content (bigger than one read buffer)
         catches a chunk-boundary bug a naive single-read fallback wouldn't."""
@@ -225,10 +225,10 @@ class TestResolveCheckpoint:
 @pytest.mark.skipif(
     int(torch.__version__.split(".")[0]) < 2,
     reason="mlflow.pytorch.log_model(..., serialization_format='pickle') needs "
-    "torch>=2.4 (see import_variant's own comment on that call); Environment A "
+    "torch>=2.4 (see import_variant's own comment on that call); baseline env "
     "pins torch==1.13.1 and never runs import_variant for real -- "
     "flows/eval_baseline.py, the only real caller, is itself a `.venv/bin/python` "
-    "(Environment B) script.",
+    "(research env) script.",
 )
 class TestImportVariant:
     """import_variant is SDK glue (a real MLflow run, a real model artifact)

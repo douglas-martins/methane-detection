@@ -138,7 +138,7 @@ def _run_uv_pip_freeze(python_executable) -> str:
 
 def dependency_manifest(python_executable, run_freeze_fn: Callable = _run_uv_pip_freeze) -> str:
     """Returns a frozen dependency manifest for `python_executable` via
-    `uv pip freeze` -- plain `pip freeze` doesn't work in Environment A at all
+    `uv pip freeze` -- plain `pip freeze` doesn't work in baseline env at all
     (its venv has no `pip` module installed), but `uv pip freeze` works
     against any venv regardless of how it was created (verified live)."""
     return run_freeze_fn(python_executable)

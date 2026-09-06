@@ -1,7 +1,7 @@
 """Tests for src/data/preprocessing/_vendor_starcop.py.
 
 The shim's only job is to make vendor/starcop's pure numpy/pandas/rasterio/
-torch data-handling modules importable from Environment B without a
+torch data-handling modules importable from research env without a
 sys.path-independent install. This test proves it reaches the *real*
 vendored module (not a stub) by asserting on a known constant.
 """

@@ -15,13 +15,16 @@ comment:
   layout: "reach, diff, flags, files"
   require_changes: false
 flags:
-  env-a:
+  baseline:
     paths:
       - src/data/download/
       - vendor/starcop/scripts/preprocessing/
       - src/training/
-  env-b:
+  research:
     paths:
       - src/data/preprocessing/
       - src/training/
       - src/registry/
+      - src/serving/
+      - src/evaluation/
+      - flows/

@@ -4,7 +4,7 @@ Composes promotion_criteria.py (pure decision logic) and mlflow_registry.py
 (MLflow SDK glue) into the experiment -> staging -> production ladder: a run
 is only considered for Production once it has cleared Staging.
 
-Run with (Environment B):
+Run with (research env):
     .venv/bin/python src/registry/promote_model.py --run-id <run_id>
 
 Falls back to the latest run in the default MLflow experiment if --run-id is

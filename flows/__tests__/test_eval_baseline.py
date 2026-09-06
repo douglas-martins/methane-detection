@@ -171,9 +171,9 @@ class TestRunEvaluationForVariant:
         assert run_id == "abc123"
 
     def test_invokes_environment_as_python_not_root_venv(self):
-        # Phase 0 pinned the real 342-scene evaluation to Environment A
+        # Phase 0 pinned the real 342-scene evaluation to baseline env
         # (vendor/starcop/.venv, torch 1.13.1) -- the flow process itself
-        # runs under Environment B (root .venv, where prefect lives), so
+        # runs under research env (root .venv, where prefect lives), so
         # this subprocess call must cross environments explicitly, not
         # inherit whichever python happens to be on PATH.
         calls = []
