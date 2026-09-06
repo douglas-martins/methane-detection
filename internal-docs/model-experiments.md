@@ -85,8 +85,11 @@ frontend's `ReLU6` gap entirely.
 infeasible**, but is genuinely blocked today, for three distinct reasons depending
 on the path taken (a legacy-exporter shape bug, a dynamo-exporter/qonnx attribute
 bug, and a real missing-layer gap in hls4ml's native PyTorch frontend). Vitis AI
-remains the only toolchain proven end-to-end on this architecture (the
-collaborator's ZCU104 work).
+remains the only toolchain proven end-to-end on this architecture family — the
+collaborator's ZCU104 work targeted the HyperSTARCOP `mag1c + rgb` checkpoint
+(see Hardware Benchmark), not this probe's own `mag1c` + 3 TOA bands checkpoint,
+so it's evidence for the family, not a claim that this exact checkpoint was
+deployed there.
 
 **Not yet tried / options for a follow-up session**:
 - Patch/pre-process the dynamo-exported ONNX graph to inject explicit `kernel_shape`
