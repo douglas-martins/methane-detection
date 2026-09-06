@@ -27,8 +27,10 @@ the ZCU104's ARM CPU and on a notebook's x86 CPU.
 
 The INT8 model was quantization-calibrated separately with 200 images from the full
 STARCOP dataset (not the mini set, which has too few images for calibration). All
-three targets run the same input shape (`1×4×512×512`, batch = 1) and the same
-`sigmoid > 0.5` segmentation threshold.
+three targets run on the same logical input (batch = 1, 4 channels, 512×512), laid
+out per platform convention: NCHW `[1, 4, 512, 512]` for the CPU targets (PyTorch,
+ExecuTorch) and NHWC `[1, 512, 512, 4]` for the DPU (Vitis AI's expected layout).
+All three use the same `sigmoid > 0.5` segmentation threshold.
 
 ## Does INT8 quantization hurt segmentation quality?
 
