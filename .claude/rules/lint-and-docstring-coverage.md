@@ -1,0 +1,1 @@
+../../.agents/rules/lint-and-docstring-coverage.md
