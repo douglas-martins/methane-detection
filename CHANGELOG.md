@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.22.3 (2026-09-06)
+
+### Bug Fixes
+
+- **codecov**: Add missing paths to research coverage flag
+  ([`bc86c51`](https://github.com/douglas-martins/methane-detection/commit/bc86c5121bf8d2f25def39d2e1de41d603b69c9a))
+
+
 ## v0.22.2 (2026-08-25)
 
 ### Bug Fixes
