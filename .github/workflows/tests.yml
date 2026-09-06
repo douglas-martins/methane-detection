@@ -11,8 +11,8 @@ on:
       - "configs/training/**"
       - "vendor/starcop/**"
       - "tests/vendor_starcop/**"
-      - "requirements/env-a-dev.txt"
-      - "requirements/env-a-mlflow.txt"
+      - "requirements/baseline-dev.txt"
+      - "requirements/baseline-mlflow.txt"
       - "requirements/serving.txt"
       - "bentofile.yaml"
       - "conftest.py"
@@ -38,10 +38,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
-  environment-a-tests:
+  baseline-env-tests:
     # starcop_aviris_data_prep.py imports torch 1.13.1 + rasterio + georeader
     # + spectral + mag1c at module level, so even a fully-mocked unit test
-    # needs the complete Environment A stack installed just to import it.
+    # needs the complete baseline env stack installed just to import it.
     # Kept path-filtered above since this install is slow.
     runs-on: ubuntu-latest
     permissions:
@@ -60,7 +60,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
 
-      - name: Create Environment A venv (Python 3.10)
+      - name: Create baseline env venv (Python 3.10)
         run: uv venv --python 3.10 vendor/starcop/.venv
 
       - name: Install STARCOP + test dependencies
@@ -70,18 +70,18 @@ jobs:
         run: |
           uv pip install --python vendor/starcop/.venv/bin/python \
             -r vendor/starcop/requirements.txt \
-            -r requirements/env-a-dev.txt
+            -r requirements/baseline-dev.txt
           uv pip install --python vendor/starcop/.venv/bin/python -e vendor/starcop
 
       - name: Install MLflow client dependencies
         # src/training/'s composition-seam modules (_vendor_starcop_training.py)
-        # are the first thing in this repo's Environment A test suite to import
+        # are the first thing in this repo's baseline env test suite to import
         # starcop.data.data_logger/datamodule, which pull in pytorch_lightning
-        # and wandb -- requirements/env-a-mlflow.txt pins setuptools/numpy/protobuf
+        # and wandb -- requirements/baseline-mlflow.txt pins setuptools/numpy/protobuf
         # to versions those 2022-era packages actually still import under.
         run: |
           uv pip install --python vendor/starcop/.venv/bin/python \
-            -r requirements/env-a-mlflow.txt
+            -r requirements/baseline-mlflow.txt
 
       - name: Run tests with coverage
         run: make coverage
@@ -100,8 +100,8 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: coverage.xml
-          flags: env-a
-          name: env-a-coverage
+          flags: baseline
+          name: baseline-coverage
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: ${{ github.event_name == 'push' }}
 
@@ -111,7 +111,7 @@ jobs:
       - name: Upload test reports
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports-env-a
+          name: test-reports-baseline
           path: |
             junit.xml
             coverage.xml
@@ -123,7 +123,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
-          git add docs/badges/tests-env-a.svg docs/badges/coverage-env-a.svg
+          git add docs/badges/tests-baseline.svg docs/badges/coverage-baseline.svg
           if git diff --cached --quiet; then
             echo "No badge changes to commit."
             exit 0
@@ -131,7 +131,7 @@ jobs:
           git commit -m "chore(badges): update test/coverage badges [skip ci]"
           git remote set-url origin "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
-          # environment-b-tests runs as a separate job in this same workflow
+          # research-env-tests runs as a separate job in this same workflow
           # run and pushes its own badge commit to main independently -- both
           # can pull the same base and race to push. Retry with a fresh
           # rebase on rejection instead of failing the job outright. Pull and
@@ -150,13 +150,13 @@ jobs:
           echo "::error::failed to push badge commit after 5 attempts" >&2
           exit 1
 
-  environment-b-tests:
+  research-env-tests:
     # Covers src/data/preprocessing/__tests__ (the DVC pipeline stage scripts).
     # This is the project's main MLOps stack (torch>=2.5, rasterio,
     # georeader-spaceml, hydra-core, dvc) at the root pyproject.toml, not
     # STARCOP's original torch 1.13.1 environment -- see
     # src/data/preprocessing/_vendor_starcop.py for why it can still import
-    # vendor/starcop's data modules directly without Environment A installed.
+    # vendor/starcop's data modules directly without the baseline env installed.
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -174,7 +174,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
 
-      - name: Install Environment B dependencies
+      - name: Install research env dependencies
         # rasterio/georeader-spaceml usually resolve via prebuilt manylinux
         # wheels on ubuntu-latest. If this step fails on a GDAL build error,
         # add: sudo apt-get update && sudo apt-get install -y libgdal-dev gdal-bin
@@ -184,7 +184,7 @@ jobs:
         run: make docstring-coverage
 
       - name: Run tests with coverage
-        run: make coverage-env-b
+        run: make coverage-research
 
       - name: Verify CODECOV_TOKEN is set for push uploads
         if: github.event_name == 'push'
@@ -199,22 +199,22 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          files: coverage-env-b.xml
-          flags: env-b
-          name: env-b-coverage
+          files: coverage-research.xml
+          flags: research
+          name: research-coverage
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: ${{ github.event_name == 'push' }}
 
       - name: Generate badges
-        run: make badges-env-b
+        run: make badges-research
 
       - name: Upload test reports
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports-env-b
+          name: test-reports-research
           path: |
-            junit-env-b.xml
-            coverage-env-b.xml
+            junit-research.xml
+            coverage-research.xml
 
       - name: Commit updated badges
         if: github.event_name == 'push'
@@ -223,15 +223,15 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
-          git add docs/badges/tests-env-b.svg docs/badges/coverage-env-b.svg
+          git add docs/badges/tests-research.svg docs/badges/coverage-research.svg
           if git diff --cached --quiet; then
             echo "No badge changes to commit."
             exit 0
           fi
-          git commit -m "chore(badges): update env-b test/coverage badges [skip ci]"
+          git commit -m "chore(badges): update research env test/coverage badges [skip ci]"
           git remote set-url origin "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
-          # environment-a-tests runs as a separate job in this same workflow
+          # baseline-env-tests runs as a separate job in this same workflow
           # run and pushes its own badge commit to main independently -- both
           # can pull the same base and race to push. Retry with a fresh
           # rebase on rejection instead of failing the job outright. Pull and

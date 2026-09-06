@@ -100,7 +100,7 @@ jobs:
         if: steps.relevant.outputs.changed == 'true'
         uses: astral-sh/setup-uv@v3
 
-      - name: Install Environment B dependencies
+      - name: Install research env dependencies
         if: steps.relevant.outputs.changed == 'true'
         # bentoml build imports src/serving/service.py to introspect its API
         # schema (though it never instantiates the service class, so no live
