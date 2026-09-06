@@ -25,3 +25,6 @@ flags:
       - src/data/preprocessing/
       - src/training/
       - src/registry/
+      - src/serving/
+      - src/evaluation/
+      - flows/
