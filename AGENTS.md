@@ -39,6 +39,16 @@ vendor/starcop/.venv/bin/python -m pytest src/training/__tests__/test_dvc_datase
 
 Tests live in `__tests__/` folders next to the module they cover, named `test_*.py`; shared fixtures are in the root `conftest.py`. CI's `lint.yml` only lints the PR's *changed* Python files (main carries pre-existing ruff findings), so `make lint` running clean on your changed files is what matters, not a clean full-repo run.
 
+`make lint` and `make docstring-coverage` are a key validation step after
+any Python implementation, not an optional cleanup pass — the always-apply
+constraint is in
+[`.agents/rules/lint-and-docstring-coverage.md`](.agents/rules/lint-and-docstring-coverage.md),
+and the operational checklist (scoping lint to your diff, running the
+full-repo docstring gate, fixing rather than suppressing) is in
+[`.agents/skills/lint-and-docstring-coverage/SKILL.md`](.agents/skills/lint-and-docstring-coverage/SKILL.md)
+— `.claude/skills/lint-and-docstring-coverage` symlinks to it so Claude Code
+picks it up the same way.
+
 ## Architecture
 
 ### `vendor/starcop/` is never edited — compose from outside
