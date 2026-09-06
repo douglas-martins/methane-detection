@@ -43,7 +43,10 @@ nav:
   - Home: index.md
   - Methodology: methodology.md
   - Dataset: dataset.md
-  - Results: results.md
+  - Results:
+      - Overview: results/overview.md
+      - STARCOP Benchmark: results/starcop-benchmark.md
+      - Hardware Benchmark: results/hardware-benchmark.md
   - Pipeline:
       - Overview: pipeline/overview.md
       - Data Layer: pipeline/data-layer.md

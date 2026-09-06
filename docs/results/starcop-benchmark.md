@@ -1,4 +1,4 @@
-# Results
+# STARCOP Reproduction Results
 
 This project reproduces [STARCOP](https://www.nature.com/articles/s41598-023-44918-6)
 (Růžička et al., *Scientific Reports* 2023), a machine learning model that finds
@@ -22,7 +22,7 @@ sensor). Reproduction numbers below come straight from the evaluation pipeline's
 output, not retyped by hand, they regenerate automatically every time the benchmark
 is re-run.
 
-{% include-markdown "assets/paper_eval/paper_comparison.md" heading-offset=1 %}
+{% include-markdown "../assets/paper_eval/paper_comparison.md" heading-offset=1 %}
 
 > [!NOTE]
 > Every reproduction number lands close to the paper's own reported range, mostly
@@ -44,18 +44,18 @@ own highest-confidence pick in each category.
 > prediction, and a difference map (🟢 correctly found plume, ⚫ correctly
 > clear, 🔴 false alarm and 🟡 missed).
 
-![A large, unambiguous methane plume, correctly detected](assets/paper_eval/mag1c_rgb_ang20191018t165503_r2660_c460_w151_h151.png)
+![A large, unambiguous methane plume, correctly detected](../assets/paper_eval/mag1c_rgb_ang20191018t165503_r2660_c460_w151_h151.png)
 
 **A large plume, caught cleanly.** The predicted shape closely tracks the true
 plume boundary.
 
-![A small, weak methane plume, correctly detected](assets/paper_eval/mag1c_rgb_ang20191021t191828_r9920_c548_w151_h151.png)
+![A small, weak methane plume, correctly detected](../assets/paper_eval/mag1c_rgb_ang20191021t191828_r9920_c548_w151_h151.png)
 
 **A small plume, still caught.** Weak, low-concentration leaks are the harder
 case, easy to miss entirely, and this is exactly the kind of detection that
 matters most for catching leaks early.
 
-![A clean scene with no methane plume, correctly identified as such](assets/paper_eval/mag1c_rgb_ang20191018t141549_r18688_c0_w512_h512.png)
+![A clean scene with no methane plume, correctly identified as such](../assets/paper_eval/mag1c_rgb_ang20191018t141549_r18688_c0_w512_h512.png)
 
 **A clean scene, correctly cleared.** No plume in the label, none predicted,
 the entire frame reads as correct no-plume. Avoiding false alarms matters as
@@ -114,6 +114,10 @@ isn't served in production today.
 |---|---|---|---|---|
 | **HyperSTARCOP** (AVIRIS hyperspectral, 4ch: mag1c + 3 TOA bands) | 0.9965 | 0.9594 | 0.9065 | 0.8290 |
 | **MultiSTARCOP** (WorldView-3 multispectral ratio bands) | 0.9844 | 0.6504 | 0.4197 | 0.2656 |
+
+This same 9-scene FP32 baseline is also the CPU reference point the
+[hardware benchmark](hardware-benchmark.md) compares against when checking whether
+INT8 quantization for embedded deployment hurts segmentation quality.
 
 ## Under the hood
 
