@@ -103,7 +103,7 @@ line.
 
 ### 1. Format
 
-```
+```text
 <type>(<scope>)!: <description>
 
 [optional body]
