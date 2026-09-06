@@ -11,13 +11,14 @@ directly into version bumps and `CHANGELOG.md` entries.*
 
 ### Environments
 
-- **Environment A** (`vendor/starcop/.venv`, Python 3.10, torch 1.13.1) — the
+- **Baseline env** (`vendor/starcop/.venv`, Python 3.10, torch 1.13.1) — the
   original STARCOP stack, reference-only.
-- **Environment B** (`.venv`, Python 3.12, torch ≥2.5) — active development.
-- **[TODO] Environment C** — may be needed if FPGA-style on-board work (see the
-  MkDocs site's roadmap; `hls4ml` is one candidate approach, not the only one)
-  moves forward: `hls4ml` requires Linux and does not support Windows/macOS
-  natively. Not designed yet; flagged here so it isn't a surprise later.
+- **Research env** (`.venv`, Python 3.12, torch ≥2.5) — active development;
+  where the actual thesis solution is built.
+- **No separate third environment** — `hls4ml`/Vitis AI on-board-deployment
+  work (see the MkDocs site's roadmap) requires Linux and does not support
+  Windows/macOS natively, but folds into whichever Linux setup D-07 resolves
+  to rather than a dedicated environment.
 
 ```bash
 # Clone (includes STARCOP submodule)
@@ -25,14 +26,14 @@ git clone --recurse-submodules https://github.com/douglas-martins/methane-detect
 # or, if you already cloned without --recurse-submodules:
 git submodule update --init
 
-# Environment A — STARCOP original
+# Baseline env — STARCOP original
 cd vendor/starcop
 uv venv --python 3.10
 uv pip install -r requirements.txt
 uv pip install -e .
 cd ../..
 
-# Environment B — MLOps project
+# Research env — MLOps project
 uv venv --python 3.12
 uv sync
 ```
@@ -41,13 +42,13 @@ uv sync
 
 | Command | What it does |
 |---|---|
-| `make test-env-a` | Run the Environment A suite |
-| `make test-env-b` | Run the Environment B suite |
-| `make test` | Run both suites (`test-env-a` + `test-env-b`) |
-| `make coverage` / `make coverage-env-b` | Run with coverage, write junit + coverage XML |
-| `make badges` / `make badges-env-b` | Regenerate `docs/badges/*.svg` |
-| `make lint` | `ruff check` + `ruff format --check` (Environment B) |
-| `make docstring-coverage` | `interrogate` docstring-coverage check (Environment B) |
+| `make test-baseline` | Run the baseline env suite |
+| `make test-research` | Run the research env suite |
+| `make test` | Run both suites (`test-baseline` + `test-research`) |
+| `make coverage` / `make coverage-research` | Run with coverage, write junit + coverage XML |
+| `make badges` / `make badges-research` | Regenerate `docs/badges/*.svg` |
+| `make lint` | `ruff check` + `ruff format --check` (research env) |
+| `make docstring-coverage` | `interrogate` docstring-coverage check (research env) |
 | `make test-scripts` | Run the `bats` suite for `scripts/` in Docker |
 | `make docs-serve` | Serve the MkDocs site locally |
 | `make docs-build` | Build the MkDocs site (`--strict`) |

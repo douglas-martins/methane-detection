@@ -6,7 +6,7 @@ Estimate from that run: **~15 minutes** for the full DAG end-to-end (both datase
 
 ## 1. Kick off the real run, in the background
 
-From the repo root, with Environment B's venv:
+From the repo root, with research env's venv:
 
 ```bash
 nohup .venv/bin/dvc repro > /tmp/dvc-repro-raw.log 2>&1 & echo PID: $!

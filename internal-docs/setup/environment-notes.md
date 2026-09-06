@@ -1,29 +1,29 @@
 # Environment Notes
 
-## Environment A — MLflow client (TASK-2.2)
+## baseline env — MLflow client (TASK-2.2)
 
-`src/training/train.py` (Environment A, `vendor/starcop/.venv`) logs
+`src/training/train.py` (baseline env, `vendor/starcop/.venv`) logs
 every training run to the MLflow server deployed in TASK-2.1
 (`https://methane-detection-mlflow.ghostface.tech`).
 
 ### Install
 
 The MLflow client is layered on top of the submodule's own pinned
-dependencies, same pattern as `requirements/env-a-dev.txt`:
+dependencies, same pattern as `requirements/baseline-dev.txt`:
 
 ```bash
 uv pip install --python vendor/starcop/.venv/bin/python \
   -r vendor/starcop/requirements.txt \
-  -r requirements/env-a-mlflow.txt
+  -r requirements/baseline-mlflow.txt
 ```
 
-`requirements/env-a-mlflow.txt` pins `protobuf<4` — `mlflow-skinny` accepts
+`requirements/baseline-mlflow.txt` pins `protobuf<4` — `mlflow-skinny` accepts
 `protobuf>=3.12,<8`, but `wandb==0.13.3` (pinned in
 `vendor/starcop/requirements.txt`, kept alongside MLflow per TASK-0.2) ships
 protobuf-generated files that only load under `protobuf<4`. An unpinned
 install resolves to the newest protobuf satisfying mlflow alone (6.x) and
 breaks wandb at import time (`TypeError: Descriptors cannot be created
-directly`). Installing `requirements/env-a-mlflow.txt` keeps both loggers
+directly`). Installing `requirements/baseline-mlflow.txt` keeps both loggers
 importable together.
 
 ### Required environment variables
@@ -91,7 +91,7 @@ bucket server-side).
   replacement key and restore `.env.mlflow` on the trusted machines
   afterward.
 
-## Environment A — Apple MPS training (TASK-3.2)
+## baseline env — Apple MPS training (TASK-3.2)
 
 Real 5-epoch `starcop_mini` training on Apple Silicon (M4 Pro), verified end
 to end. Three real, unrelated blockers were found and fixed getting there —
@@ -108,7 +108,7 @@ complete `FINISHED` with real metrics while never touching the GPU.
 
 Fix: upgrade to `pytorch-lightning==1.9.5` (highest 1.x compatible with the
 pinned `torch==1.13.1` — an unconstrained resolve wants to bump torch too).
-Can't be pinned inside `requirements/env-a-mlflow.txt` alongside vendor's
+Can't be pinned inside `requirements/baseline-mlflow.txt` alongside vendor's
 own exact `==1.6.4` pin (uv/pip combine constraints across `-r` files rather
 than letting a later file win), so run as a **separate command** after the
 normal install, only needed for `accelerator=mps` runs:
@@ -162,18 +162,18 @@ export PYTORCH_ENABLE_MPS_FALLBACK=1
 
 Found while validating the MPS run above, but affects **every** accelerator
 equally — it's an environment drift bug, not an MPS-specific one.
-`requirements/env-a-mlflow.txt` pinned `mlflow` with no version bound at
+`requirements/baseline-mlflow.txt` pinned `mlflow` with no version bound at
 all; a fresh resolve landed on `mlflow==3.15.1`, whose
 `mlflow.pytorch.save_model()` does `from torch.export import Dim as
 ExportDim` **unconditionally at the top of the function body** — not gated
 behind the opt-in `export_model` flag, so it breaks every call to
 `mlflow.pytorch.log_model()`, not just export-format ones. `torch.export`
-doesn't exist before torch 2.1; Environment A pins `torch==1.13.1`. Any run
+doesn't exist before torch 2.1; baseline env pins `torch==1.13.1`. Any run
 (CPU or MPS) that reached the model-logging step would fail with
 `ModuleNotFoundError: No module named 'torch.export'`, marking the MLflow
 run `FAILED` even though training itself completed successfully.
 
-Fix: `requirements/env-a-mlflow.txt` now pins `mlflow<3.7` (verified 3.7.0
+Fix: `requirements/baseline-mlflow.txt` now pins `mlflow<3.7` (verified 3.7.0
 and below have no `torch.export` reference in `mlflow/pytorch/__init__.py`;
 3.10.0+ does — resolved to `mlflow==3.6.0`).
 
@@ -198,20 +198,20 @@ new issue).
 | Per-epoch | ~104.0s | ~51.7s |
 | Speedup | — | **~2.0x** |
 
-## Desktop — RTX 5070 CUDA training, and why it runs under Environment B (TASK-3.1)
+## Desktop — RTX 5070 CUDA training, and why it runs under research env (TASK-3.1)
 
-**This machine's training runs under Environment B (`.venv`), not Environment
+**This machine's training runs under research env (`.venv`), not Environment
 A** (`vendor/starcop/.venv`) — the one deliberate deviation from every other
 machine's launch script. Reason, found by actually spiking it (2026-08-23),
 not assumed:
 
-### The blocker: Environment A's stock torch silently corrupts Blackwell compute
+### The blocker: baseline env's stock torch silently corrupts Blackwell compute
 
 `vendor/starcop/requirements.txt` pins `torch==1.13.1` exactly (submodule-
 owned, composition-only — not editable). Official 1.13.1 wheels were built
 against CUDA 11.6/11.7 and contain no compiled kernels for Blackwell's
 `sm_120` compute capability (PyTorch added Blackwell kernel support around
-the 2.7 line). Real spike result, under Environment A on this machine:
+the 2.7 line). Real spike result, under baseline env on this machine:
 
 - `torch.cuda.is_available()` → `True`
 - `torch.cuda.get_device_capability(0)` → `(12, 0)` (sm_120)
@@ -227,19 +227,19 @@ TASK-3.2 found for MPS. The device tag stays `cuda:0` throughout, so neither
 `accelerator_check.assert_resolved_accelerator` nor a `FINISHED` MLflow run
 would catch it — a real training run under this exact torch build could
 complete with plausible-looking-but-wrong metrics. **Do not run training
-under Environment A's stock torch on this GPU, for any reason.**
+under baseline env's stock torch on this GPU, for any reason.**
 
-Upgrading torch inside Environment A to fix this was considered and rejected:
+Upgrading torch inside baseline env to fix this was considered and rejected:
 it would cascade into `pytorch-lightning`, `torchmetrics`,
 `segmentation-models-pytorch`, and `kornia` all needing bumps too, at which
-point Environment A's venv would no longer resemble "the original 2022
+point baseline env's venv would no longer resemble "the original 2022
 STARCOP paper stack" (its entire reason for existing, TASK-0.2/TASK-0.3) —
 on this one machine only, undermining the whole point of a separate
-Environment A.
+baseline env.
 
-### The fix: Environment B already works, confirmed real
+### The fix: research env already works, confirmed real
 
-Environment B (`torch==2.12.1+cu130` on this machine) passed the identical
+research env (`torch==2.12.1+cu130` on this machine) passed the identical
 tensor-corruption check cleanly (values survive `.to('cuda')`/`+1`
 unchanged), plus three escalating real tests: the full import chain
 (`pytorch_lightning`, `torchmetrics`, `segmentation_models_pytorch`,
@@ -267,7 +267,7 @@ genuine Environment-B-vs-vendor-code version mismatch:
    called. Fixed via composition: `src/training/lightning2_compat.py`
    shadows the old names and binds `on_validation_epoch_end`/
    `on_test_epoch_end` instead — version-gated (no-op under Lightning
-   <2.0), so Environment A is unaffected.
+   <2.0), so baseline env is unaffected.
 3. **`ReduceLROnPlateau` dropped `verbose`** — `ModelModule.
    configure_optimizers` still passes `verbose=True`; a later torch release
    removed the kwarg. `TypeError: ReduceLROnPlateau.__init__() got an
@@ -298,7 +298,7 @@ TASK-2.2's documented skewed-split `KeyError`), same non-fatal handling.
 **Benchmark vs TASK-2.2's CPU baseline and TASK-3.2's MPS baseline** (same
 `starcop_mini` config, same 5 epochs):
 
-| Metric | CPU (M4 Pro) | MPS (M4 Pro) | CUDA (RTX 5070, Environment B) |
+| Metric | CPU (M4 Pro) | MPS (M4 Pro) | CUDA (RTX 5070, research env) |
 | --- | --- | --- | --- |
 | Total wall-clock (5 epochs) | 519.8s | 258.4s | ~222.7s |
 | Per-epoch | ~104.0s | ~51.7s | ~44.5s |
@@ -325,12 +325,12 @@ Driver requirement (≥ 570 for Blackwell/CUDA 12.8+) is separate from the
 toolkit and was already satisfied on this machine (driver `610.57.04`,
 `nvidia-smi`).
 
-## Colab — Environment A on a free-tier T4 (TASK-3.3c spike, 2026-08-24)
+## Colab — baseline env on a free-tier T4 (TASK-3.3c spike, 2026-08-24)
 
 Manual spike run interactively in a Colab notebook (not scripted yet — this
 records what `notebooks/train_colab.ipynb`'s install cells need to do).
-**Outcome: Environment A's exact pinned stack runs correctly on Colab's free
-T4 runtime, no Environment B pivot needed** (unlike TASK-3.1's Desktop
+**Outcome: baseline env's exact pinned stack runs correctly on Colab's free
+T4 runtime, no research env pivot needed** (unlike TASK-3.1's Desktop
 case) — three real, fixable blockers along the way, none of them a hardware
 compute-correctness problem like the Desktop's Blackwell issue.
 
@@ -383,7 +383,7 @@ UserWarning: Failed to initialize NumPy: _ARRAY_API not found
 ```
 
 Same root cause as the existing `numpy<2` pin in
-`requirements/env-a-mlflow.txt` (found there via `wandb==0.13.3`'s
+`requirements/baseline-mlflow.txt` (found there via `wandb==0.13.3`'s
 `np.float_` usage) — install `numpy<2` explicitly rather than trusting an
 unpinned resolve, and do it **before** any cell that imports `torch` and
 touches a real tensor, since a mid-session numpy downgrade after torch has
@@ -405,7 +405,7 @@ extension state doesn't hot-swap.
 #    2.6.0 and unrelated to this project; harmless noise in this session)
 !pip install -q torch==1.13.1
 
-# 4. rest of Environment A's pinned stack
+# 4. rest of baseline env's pinned stack
 !pip install -q \
   "pytorch-lightning==1.6.4" \
   "torchmetrics==0.10.0" \
@@ -440,7 +440,7 @@ no Lightning version upgrade needed (GPU/CUDA support long predates 1.6.4,
 unlike `MPSAccelerator` which was added in 1.7.0). And unlike TASK-3.1's
 Desktop/Blackwell case, no silent tensor corruption — T4 (Turing, compute
 capability 7.5) is well inside the range torch 1.13.1's bundled CUDA 11.7
-runtime supports, so this isn't expected to need an Environment B pivot the
+runtime supports, so this isn't expected to need an research env pivot the
 way the RTX 5070 did.
 
 **Not yet done**: this was a toy model/dataset, the same scope TASK-3.2 used
@@ -687,7 +687,7 @@ comes from `uv sync` against `pyproject.toml`, not a manual copy of
 `"georeader-spaceml==2.3.4"` (matching `uv.lock`) to section 3's package
 install cell.
 
-### `train.py`'s own `serialization_format="pickle"` fix breaks under Environment A's pinned mlflow (2026-08-24)
+### `train.py`'s own `serialization_format="pickle"` fix breaks under baseline env's pinned mlflow (2026-08-24)
 
 With everything above fixed, a real 5-epoch `starcop_mini` run completed on
 Colab — real metrics, checkpoints saved on `val_loss` improvements, an MLflow
@@ -700,11 +700,11 @@ TypeError: save() got an unexpected keyword argument 'serialization_format'
 ```
 
 `train.py`'s `mlflow.pytorch.log_model(model, artifact_path="model",
-serialization_format="pickle")` call was added for TASK-3.1 (Environment B,
+serialization_format="pickle")` call was added for TASK-3.1 (research env,
 Desktop) — mlflow's default there is `"pt2"` (`torch.export` tracing), which
 needs an `input_example` this call doesn't provide, so `serialization_format=
-"pickle"` opts back into plain `torch.save()`. But Environment A pins
-`mlflow<3.7` for the *opposite* reason (`requirements/env-a-mlflow.txt`:
+"pickle"` opts back into plain `torch.save()`. But baseline env pins
+`mlflow<3.7` for the *opposite* reason (`requirements/baseline-mlflow.txt`:
 unpinned mlflow's `save_model()` does an unconditional `from torch.export
 import Dim`, which crashes outright since `torch==1.13.1` has no
 `torch.export` at all — see the "unpinned mlflow" note above). mlflow<3.7
@@ -713,7 +713,7 @@ all, so passing it anyway falls through `**kwargs` straight into
 `torch.save()`, which rejects it — same underlying `torch.export` gap,
 opposite failure mode depending on which side of the mlflow pin you're on.
 Confirmed via `inspect.signature(mlflow.pytorch.log_model)`: present on
-mlflow 3.14.0 (Environment B), absent on Environment A's pinned range.
+mlflow 3.14.0 (research env), absent on baseline env's pinned range.
 
 Fix, in `src/training/train.py`: detect support instead of assuming either
 mlflow line —
@@ -726,4 +726,4 @@ mlflow.pytorch.log_model(model, **log_model_kwargs)
 ```
 
 `src/registry/hf_baseline_import.py` has the same unconditional pattern but
-is only ever run under Environment B's newer mlflow, so left as-is.
+is only ever run under research env's newer mlflow, so left as-is.

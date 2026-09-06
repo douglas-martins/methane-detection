@@ -19,7 +19,7 @@ TASK-7.1](../../mlops-methane-detection-plan.md).
 - `docker-compose.yml` — `postgres` (own instance, not shared with
   `deploy/mlflow/`'s) + `prefect` (pinned to `3.7.7-python3.12`, exactly
   matching the `prefect` version already locked in the repo's root
-  `uv.lock`/Environment B, so the server and every client — CLI, workers,
+  `uv.lock`/research env, so the server and every client — CLI, workers,
   flow runs — speak the same API version).
 - `.env.example` — credentials and domain, see comments for where each
   value comes from.
@@ -153,7 +153,7 @@ process's memory isn't automatically an environment variable in another's.
 
 **One-time setup**, once this resource is live in Coolify:
 
-1. `.venv` (Environment B, Python 3.12) already has `prefect==3.7.7`
+1. `.venv` (research env, Python 3.12) already has `prefect==3.7.7`
    installed — same version this resource's `docker-compose.yml` pins the
    server image to.
 2. Create `.env.prefect` at the repo root (git-ignored, same pattern as
