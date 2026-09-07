@@ -39,7 +39,9 @@ uv sync
 
 The original STARCOP baseline stack (Python 3.10, reference-only) and everything
 beyond this — testing, architecture, the never-edit `vendor/starcop/` rule — are
-covered in [CONTRIBUTING.md](CONTRIBUTING.md).
+covered in [CONTRIBUTING.md](CONTRIBUTING.md). The
+[`src/` architecture map](src/README.md) identifies baseline adapters, shared
+infrastructure, candidate-model homes, and comparison ownership.
 
 ## Contributing
 

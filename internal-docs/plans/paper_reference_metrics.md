@@ -35,7 +35,7 @@ Three variants reported; this project's released checkpoint
 ## Machine-readable form
 
 The prose tables above are for human reading and citation; the block below is
-what `src/evaluation/paper_eval_mlflow.py::load_paper_reference_metrics` parses
+what `src/baselines/starcop/evaluation/paper_eval_mlflow.py::load_paper_reference_metrics` parses
 (kept redundant with the tables on purpose — a mismatch between the two is a
 signal this file was hand-edited incorrectly, not something to silently trust
 one side of). Values are fractions (0-1), matching this project's own metric

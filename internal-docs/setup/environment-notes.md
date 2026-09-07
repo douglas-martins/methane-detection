@@ -2,7 +2,7 @@
 
 ## baseline env — MLflow client (TASK-2.2)
 
-`src/training/train.py` (baseline env, `vendor/starcop/.venv`) logs
+`src/baselines/starcop/training/train.py` (baseline env, `vendor/starcop/.venv`) logs
 every training run to the MLflow server deployed in TASK-2.1
 (`https://methane-detection-mlflow.ghostface.tech`).
 
@@ -118,10 +118,10 @@ uv pip install --python vendor/starcop/.venv/bin/python \
   "pytorch-lightning>=1.7.0,<2.0" "torch==1.13.1"
 ```
 
-`src/training/train.py` also guards against this class of bug going
+`src/baselines/starcop/training/train.py` also guards against this class of bug going
 forward: after constructing the `Trainer`, it asserts the resolved
 `trainer.strategy.root_device` is actually `mps` when `accelerator=mps` was
-requested (`src/training/accelerator_check.py`), raising instead of
+requested (`src/baselines/starcop/training/accelerator_check.py`), raising instead of
 trusting the request matches what Lightning resolved, and tags every run
 with `resolved_device` so it's visible in the MLflow UI without digging
 through logs.
@@ -138,7 +138,7 @@ input; **MPS's clamp kernel cannot broadcast a dtype-mismatched pair and
 aborts the whole process** (`LLVM ERROR: Failed to infer result type(s)`,
 not a catchable Python exception — the process dies with SIGABRT).
 
-Fix (composition, no vendor edit): `src/training/normalizer_dtype_fix.py`
+Fix (composition, no vendor edit): `src/baselines/starcop/training/normalizer_dtype_fix.py`
 casts those Parameters to float32 in place after model construction. This
 is numerically a no-op (same values, wider dtype — `int64` bounds already
 implicitly promote to float in the clamp computation itself) and safe on
@@ -264,7 +264,7 @@ genuine research-env-vs-vendor-code version mismatch:
    implements `validation_epoch_end`/`test_epoch_end` (removed in Lightning
    2.0); its own configuration validator raises `NotImplementedError`
    merely because the method is *present*, regardless of whether it's
-   called. Fixed via composition: `src/training/lightning2_compat.py`
+   called. Fixed via composition: `src/baselines/starcop/training/lightning2_compat.py`
    shadows the old names and binds `on_validation_epoch_end`/
    `on_test_epoch_end` instead — version-gated (no-op under Lightning
    <2.0), so baseline env is unaffected.
@@ -272,12 +272,12 @@ genuine research-env-vs-vendor-code version mismatch:
    configure_optimizers` still passes `verbose=True`; a later torch release
    removed the kwarg. `TypeError: ReduceLROnPlateau.__init__() got an
    unexpected keyword argument 'verbose'`. Fixed via composition:
-   `src/training/optimizer_compat.py`, gated by introspecting the installed
+   `src/baselines/starcop/training/optimizer_compat.py`, gated by introspecting the installed
    `ReduceLROnPlateau` signature (not a hardcoded torch version).
 4. **mlflow's `log_model` default changed** — this mlflow version (3.14.0)
    defaults `serialization_format` to `'pt2'` (torch.export tracing,
    requires `input_example`) instead of `'pickle'`. `train.py` already had
-   this exact fix in one other place (`src/registry/hf_baseline_import.py`)
+   this exact fix in one other place (`src/baselines/starcop/registry/hf_baseline_import.py`)
    — just never carried into `train.py` itself since it had never run under
    torch≥2.1 before. One-line fix: `serialization_format="pickle"`.
 
@@ -654,7 +654,7 @@ cache too — never generated on that machine, dangling `dvc.lock` entries
 pointing at objects that exist nowhere.
 
 Checked what `train.py`'s actual import chain reads
-(`grep -rl` across `src/training/` and the vendored STARCOP datamodule):
+(`grep -rl` across baseline training and the vendored STARCOP datamodule):
 only `normalize`'s output (`selected/` — the real raster files the
 patches/splits CSVs' `folder` column resolves into), `split`'s output
 (`splits/*.csv`), and `patch_extract`'s output (`patches/*.csv`) are ever
@@ -715,7 +715,7 @@ opposite failure mode depending on which side of the mlflow pin you're on.
 Confirmed via `inspect.signature(mlflow.pytorch.log_model)`: present on
 mlflow 3.14.0 (research env), absent on baseline env's pinned range.
 
-Fix, in `src/training/train.py`: detect support instead of assuming either
+Fix, in `src/baselines/starcop/training/train.py`: detect support instead of assuming either
 mlflow line —
 
 ```python
@@ -725,5 +725,5 @@ if "serialization_format" in inspect.signature(mlflow.pytorch.log_model).paramet
 mlflow.pytorch.log_model(model, **log_model_kwargs)
 ```
 
-`src/registry/hf_baseline_import.py` has the same unconditional pattern but
+`src/baselines/starcop/registry/hf_baseline_import.py` has the same unconditional pattern but
 is only ever run under research env's newer mlflow, so left as-is.

@@ -1,16 +1,17 @@
 # BentoML Inference API — Coolify Deployment
 
-Deploys the STARCOP methane-plume segmentation service (`src/serving/`, TASK-5.1) as a
+Deploys the STARCOP methane-plume segmentation service
+(`src/baselines/starcop/serving/`, TASK-5.1) as a
 Coolify-managed Docker Compose resource, mirroring [`deploy/mlflow/`](../mlflow/)'s
 established pattern (TASK-2.1). Full task spec and rationale:
 [`mlops-methane-detection-plan.md`, TASK-5.2](../../mlops-methane-detection-plan.md).
 
 ## Prerequisites
 
-- TASK-5.1 complete (✅ — `src/serving/` built and live-validated).
+- TASK-5.1 complete (✅ — `src/baselines/starcop/serving/` built and live-validated).
 - A real image at `ghcr.io/douglas-martins/methane-detection:<tag>`. TASK-4.3's `cd.yml`
-  publishes this on an ongoing basis, but **the very first import needs a bootstrap
-  image** since `cd.yml` doesn't exist until this resource's webhook secrets do (see
+  publishes `latest` only after an explicit workflow dispatch, but **the very first
+  import needs a bootstrap image** since `cd.yml` doesn't exist until this resource's webhook secrets do (see
   "Bootstrapping" below).
 - Backblaze B2 application key with read access to the same bucket
   `deploy/mlflow/`'s MLflow server uses for artifacts (`mlflow-artifacts/` prefix).
@@ -39,7 +40,7 @@ own architecture, producing an image the VPS (`linux/amd64`) can't pull at all (
 matching manifest for linux/amd64 in the manifest list entries`).
 
 Set `IMAGE_TAG=bootstrap` in Coolify's env vars for the first import (see below), then
-switch it to `latest` once TASK-4.3's `cd.yml` is publishing real tags.
+switch it to `latest` once TASK-4.3's `cd.yml` has published it through an explicit dispatch.
 
 ## GHCR image visibility
 

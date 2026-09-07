@@ -19,7 +19,7 @@ this mapping, so it's pinned here:
 
 | Criteria name | Staging metric key | Production metric key | Source |
 |---|---|---|---|
-| OA (overall accuracy) | `val_accuracy` | `test_accuracy` | `starcop.metrics.accuracy`, logged by `model_module.py`'s `val_epoch_end` (`prefix_accuracy`) / by `run_validation`'s test-set pass (`src/training/validation_metrics.py`, `prefix="test"`) |
+| OA (overall accuracy) | `val_accuracy` | `test_accuracy` | `starcop.metrics.accuracy`, logged by `model_module.py`'s `val_epoch_end` (`prefix_accuracy`) / by `run_validation`'s test-set pass (`src/baselines/starcop/training/validation_metrics.py`, `prefix="test"`) |
 | F1 (methane class) | `val_f1score` | `test_f1score` | `starcop.metrics.f1score` (methane is the positive class), same logging paths |
 
 `val_*` metrics are logged once per validation epoch during training (the

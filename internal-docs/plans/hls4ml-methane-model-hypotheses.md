@@ -899,9 +899,11 @@ Thus, a tiny student changes the bottleneck from weight memory to pixels, FIFOs,
 
 ### Phase 1 — Conversion spike
 
-Implement a new local model rather than modifying vendor code. Use one folder
-per model, with uniquely prefixed module and test filenames to preserve the repo's
-flat-import convention without module-cache or pytest collection collisions:
+Implement a new local model rather than modifying vendor code. The current
+baseline/shared/candidate boundaries are defined in
+[`../../src/README.md`](../../src/README.md). Use one folder per model, with
+uniquely prefixed module and test filenames to preserve the repo's flat-import
+convention without module-cache or pytest collection collisions:
 
 ```text
 src/models/
@@ -1089,8 +1091,8 @@ A network-only speedup is not a deployment result.
 
 ### Internal project evidence
 
-- [`dataset_report.md`](dataset_report.md)
-- [`baseline_metrics.md`](baseline_metrics.md)
-- [`../configs/dataset/starcop_raw.yaml`](../configs/dataset/starcop_raw.yaml)
-- [`../src/training/train.py`](../src/training/train.py)
-- [`../src/serving/inference.py`](../src/serving/inference.py)
+- [`dataset_report.md`](../../docs/dataset_report.md)
+- [`baseline_metrics.md`](../../docs/baseline_metrics.md)
+- [`configs/dataset/starcop_raw.yaml`](../../configs/dataset/starcop_raw.yaml)
+- [`../../src/baselines/starcop/training/train.py`](../../src/baselines/starcop/training/train.py)
+- [`../../src/baselines/starcop/serving/inference.py`](../../src/baselines/starcop/serving/inference.py)
