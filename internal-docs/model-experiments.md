@@ -8,6 +8,43 @@
 > [Hardware Benchmark](../docs/results/hardware-benchmark.md) page (a collaborator's
 > completed Vitis AI + ZCU104 feasibility test on the same model family).
 
+## Hypothesis backlog
+
+Research rationale and hypothesis definitions live in
+[the model hypotheses document](plans/hls4ml-methane-model-hypotheses.md#10-falsifiable-model-hypotheses).
+This table is the living status source. The
+[implementation layout](plans/hls4ml-methane-model-hypotheses.md#phase-1--conversion-spike)
+defines the per-model structure; only placeholder directories exist so far, not
+model implementations. “Unassigned” means the portfolio does not specify a
+priority. Training strategies and variants reuse candidate folders rather than
+becoming independent architecture packages.
+
+| ID | Candidate / strategy | Priority | Target folder | Dependencies / blockers | Status |
+| --- | --- | --- | --- | --- | --- |
+| H0 | MF threshold + morphology | Control | TBD — no folder created | Pin MF input contract, threshold/morphology rules, and event evaluation protocol | 🔲 Not started |
+| H1 | TinyDS-4 | P0 | `src/models/tiny_ds/` | Versioned four-channel input contract and matching STARCOP evaluation | 🔲 Not started |
+| H2 | TinyU-4 | P1 | `src/models/tiny_u/` | Four-channel evaluation contract; validate skip/resize conversion and buffering | 🔲 Not started |
+| H3 | SpectralTiny-86 | P0 | `src/models/spectral_tiny/` | Blocked on suitable spectral datasets, licensing, and versioned input contracts; matching baseline evaluation required | 🔲 Not started |
+| H4 | Physical spectral projection | Unassigned | `src/models/spectral_tiny/` | H3 data/backbone and physical templates; fixed/learned/hybrid ablation | 🔲 Not started |
+| H5 | Ensemble distillation | P1 | Chosen H1–H3 student folder | Validated teacher, student, and suitable full-granule distillation data | 🔲 Not started |
+| H6 | Hard-negative curriculum | Unassigned | Participating H1–H3 folders | Suitable full-scene hard-negative data and candidate error mining | 🔲 Not started |
+| H7 | Lower-resolution proposals | Unassigned | Chosen H1–H3 candidate folder | Candidate backbone, host postprocessing, and size/strength-stratified event evaluation | 🔲 Not started |
+| H8 | Two-head confidence ranking | Unassigned | Chosen H1–H3 candidate folder | Candidate backbone and ranking protocol; validate static pooling/multi-output conversion | 🔲 Not started |
+| H9 | On-board retrainable head | P2 / exploratory | TBD — no folder created | Validated frozen H1–H3 encoder; separate H9.1 protocol and H9.2 gates; feasible CPU/VPU adaptation path | 🔲 Not started |
+
+The [2026-09-06 conversion probe](#hls4ml-onnxpytorch-conversion--first-probe-2026-09-06)
+is shared toolchain reconnaissance on **STARCOP's U-Net/MobileNetV2**, not H1/TinyDS
+conversion progress or validation. All hypotheses therefore remain not started.
+
+Future promotion comparisons use STARCOP quality metrics and separately measured
+inference times on CPU, GPU, and the dedicated target hardware's CPU, under
+matching evaluation conditions. Unmeasured devices remain “not measured”; any
+accelerator timing is reported separately. The recommendation must explain whether
+the candidate is worth promoting, not merely list scores. CI/coverage and
+deployment integration will be decided when the first completed model is prepared
+for its first deployment; candidate tests must still be written and run directly
+through TDD before that milestone.
+
 ## Toolchain investigations
 
 ### hls4ml ONNX/PyTorch conversion — first probe, 2026-09-06
