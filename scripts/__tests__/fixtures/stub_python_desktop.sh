@@ -6,7 +6,7 @@
 # output (looping over required vars, building the LAUNCH_ARGS array); the
 # real output shape/correctness of launch_profiles.required_env_vars/
 # build_launch_args is covered separately by
-# src/training/__tests__/test_launch_profiles.py under pytest.
+# the baseline training test_launch_profiles.py module under pytest.
 set -euo pipefail
 
 if [ "$#" -eq 2 ]; then

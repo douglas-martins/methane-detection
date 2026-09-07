@@ -1,4 +1,4 @@
-"""CLI for src/evaluation/run_baseline_eval.py -- evaluates a paper-baseline
+"""CLI for src/baselines/starcop/evaluation/run_baseline_eval.py -- evaluates a paper-baseline
 checkpoint against the full STARCOP paper test set. All logic lives in
 run_baseline_eval.py (unit tested); this file is argparse glue only, same
 split as scripts/import_starcop_hf_baseline.py.
@@ -14,7 +14,10 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "evaluation"))
+sys.path.insert(
+    0,
+    str(Path(__file__).resolve().parents[1] / "src" / "baselines" / "starcop" / "evaluation"),
+)
 
 import paper_eval_mlflow  # noqa: E402
 import run_baseline_eval  # noqa: E402

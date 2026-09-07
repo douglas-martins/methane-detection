@@ -3,7 +3,7 @@
 # https://dvc.org/doc/user-guide/dvcignore
 
 # MultiSTARCOP/varon evaluation computes these Varon ratio-band features
-# on the fly (src/evaluation/dataset_wiring.py -> feature_extration.
+# on the fly (src/baselines/starcop/evaluation/dataset_wiring.py -> feature_extration.
 # extract_features) and writes them directly into data/starcop_raw/, a
 # DVC-tracked directory -- not tracked content, regenerated every varon
 # run. Without this, `dvc pull` refuses with "Can't remove the following

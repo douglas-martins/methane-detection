@@ -342,6 +342,7 @@ class TestStartBentomlServe:
         eval_baseline.start_bentoml_serve(Path("/repo"), "mag1c_rgb", 3005, popen=fake_popen)
 
         [cmd] = calls
+        assert "src.baselines.starcop.serving.service:MethaneDetectionService" in cmd
         assert "3005" in cmd
 
 

@@ -9,7 +9,7 @@ import math
 from collections import deque
 
 import drift
-from band_baseline import BandStats
+from band_statistics import BandStats
 
 
 class TestUpdateRollingStats:

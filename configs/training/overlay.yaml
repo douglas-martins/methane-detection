@@ -1,5 +1,5 @@
 # Composed on top of vendor/starcop/scripts/configs/config.yaml (unmodified)
-# by src/training/train.py -- see mlops-methane-detection-plan.md TASK-2.2.
+# by src/baselines/starcop/training/train.py.
 # Merged as OmegaConf.merge(overlay, hydra_settings): hydra_settings (which
 # already carries Hydra's own CLI-applied overrides, e.g. `+machine=desktop`)
 # wins on any key collision, so overlay values here are defaults only.

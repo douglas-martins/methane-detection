@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Launches an MLflow-tracked STARCOP training run on the M4 Pro (Apple MPS),
 # reproducing TASK-3.2's proven run (71e388fabefd40e892483f552a97efbb) via
-# src/training/train.py. See mlops-methane-detection-plan.md TASK-3.3a and
-# training-runbook.md for the underlying command this transcribes.
+# src/baselines/starcop/training/train.py. See internal-docs/runbooks/training.md
+# for the underlying command this transcribes.
 #
 # Usage: ./scripts/train_mac.sh [dataset_name] [extra hydra overrides...]
 #   dataset_name defaults to starcop_mini.
@@ -55,7 +55,7 @@ fi
 
 REQUIRED_VARS=$("$PYTHON_BIN" -c "
 import sys
-sys.path.insert(0, 'src/training')
+sys.path.insert(0, 'src/baselines/starcop/training')
 import launch_profiles
 print('\n'.join(launch_profiles.required_env_vars('macbook')))
 ")
@@ -71,10 +71,10 @@ while IFS= read -r arg; do
   LAUNCH_ARGS+=("$arg")
 done < <("$PYTHON_BIN" -c "
 import sys
-sys.path.insert(0, 'src/training')
+sys.path.insert(0, 'src/baselines/starcop/training')
 import launch_profiles
 for arg in launch_profiles.build_launch_args('macbook', sys.argv[1]):
     print(arg)
 " "$DATASET_NAME")
 
-exec "$TRAIN_PYTHON_BIN" src/training/train.py "${LAUNCH_ARGS[@]}" "$@"
+exec "$TRAIN_PYTHON_BIN" src/baselines/starcop/training/train.py "${LAUNCH_ARGS[@]}" "$@"
