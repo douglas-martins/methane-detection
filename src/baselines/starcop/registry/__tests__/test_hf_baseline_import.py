@@ -7,12 +7,26 @@ import_variant against a real local sqlite MLflow store (Test Size: Medium,
 real fixtures over mocks, same convention as test_mlflow_registry.py).
 """
 
+import importlib
+import sys
 from pathlib import Path
 
 import hf_baseline_import
 import pytest
 import torch
 from _vendor_starcop_baseline import ModelModule, ModelModuleRegression
+
+
+def test_reload_restores_shared_registry_and_training_paths(monkeypatch):
+    expected_paths = {
+        str(hf_baseline_import._SHARED_REGISTRY_DIR),
+        str(hf_baseline_import._SHARED_TRAINING_DIR),
+    }
+    monkeypatch.setattr(sys, "path", [path for path in sys.path if path not in expected_paths])
+
+    importlib.reload(hf_baseline_import)
+
+    assert expected_paths.issubset(sys.path)
 
 
 class TestVariantSubfolder:

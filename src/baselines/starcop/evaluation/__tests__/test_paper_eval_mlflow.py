@@ -7,10 +7,27 @@ unit test -- same pattern as hf_baseline_import.import_variant(). See
 track-a-paper-benchmark-reproduction-plan.md Phase 3.
 """
 
+import importlib
+import sys
+
 import mlflow_registry
 import paper_eval_mlflow
 import pytest
 from mlflow.tracking import MlflowClient
+
+
+def test_reload_restores_relocated_registry_and_training_paths(monkeypatch):
+    expected_paths = {
+        paper_eval_mlflow._SHARED_REGISTRY_DIR,
+        paper_eval_mlflow._BASELINE_REGISTRY_DIR,
+        paper_eval_mlflow._SHARED_TRAINING_DIR,
+        paper_eval_mlflow._BASELINE_TRAINING_DIR,
+    }
+    monkeypatch.setattr(sys, "path", [path for path in sys.path if path not in expected_paths])
+
+    importlib.reload(paper_eval_mlflow)
+
+    assert expected_paths.issubset(sys.path)
 
 
 class TestIsGitDirty:

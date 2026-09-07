@@ -5,10 +5,21 @@ channel *count* at runtime, not band identity (see
 vendor/starcop/starcop/models/model_module.py's __init__).
 """
 
+import importlib
 import pickle
+import sys
 
 import band_baseline
 from band_statistics import BandStats
+
+
+def test_reload_restores_shared_serving_path(monkeypatch):
+    expected_path = band_baseline._SHARED_SERVING_DIR
+    monkeypatch.setattr(sys, "path", [path for path in sys.path if path != expected_path])
+
+    importlib.reload(band_baseline)
+
+    assert expected_path in sys.path
 
 
 class TestBandNamesForModel:

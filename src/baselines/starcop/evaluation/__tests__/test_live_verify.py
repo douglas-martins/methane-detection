@@ -9,11 +9,26 @@ track-a-paper-benchmark-reproduction-plan.md Phase 5.
 """
 
 import json
+import runpy
+import sys
 
 import live_verify
 import numpy as np
 import pytest
 from mlflow.tracking import MlflowClient
+
+
+def test_reload_restores_relocated_evaluation_and_registry_paths(monkeypatch):
+    expected_paths = {
+        live_verify._EVAL_DIR,
+        live_verify._SHARED_REGISTRY_DIR,
+        live_verify._BASELINE_REGISTRY_DIR,
+    }
+    monkeypatch.setattr(sys, "path", [path for path in sys.path if path not in expected_paths])
+
+    runpy.run_path(live_verify.__file__, run_name="_live_verify_path_wiring_test")
+
+    assert expected_paths.issubset(sys.path)
 
 
 class TestMaskSha256:
