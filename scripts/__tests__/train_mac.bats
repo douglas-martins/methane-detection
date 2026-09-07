@@ -5,7 +5,7 @@
 # fixtures/stub_python.sh (canned output, no python needed in this
 # bats-only container) so these tests don't depend on and don't re-validate
 # launch_profiles.py's own logic -- that's covered by
-# src/training/__tests__/test_launch_profiles.py under pytest. The actual
+# src/baselines/starcop/training/__tests__/test_launch_profiles.py under pytest. The actual
 # training invocation is stubbed with fixtures/stub_train_python.sh, which
 # captures argv/env instead of running real training.
 #
@@ -98,7 +98,7 @@ setup() {
 
   assert_success
   run head -n 1 "${STUB_CAPTURE_DIR}/argv"
-  assert_output "src/training/train.py"
+  assert_output "src/baselines/starcop/training/train.py"
 }
 
 @test "defaults WANDB_MODE=disabled when WANDB_API_KEY is not set" {

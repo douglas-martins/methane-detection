@@ -2,15 +2,15 @@
 drift detection (TASK-6.2).
 
 Tracks whether incoming scenes' per-band value distribution has drifted
-from the training baseline (band_baseline.py), using a parametric
-(Gaussian) comparison rather than a full histogram -- consistent with
-tracking mean+std per band rather than raw per-pixel distributions.
+from a supplied reference, using a parametric (Gaussian) comparison rather
+than a full histogram -- consistent with tracking mean+std per band rather
+than raw per-pixel distributions.
 """
 
 import math
 from collections import deque
 
-from band_baseline import BandStats
+from band_statistics import BandStats
 
 # Floor for the rolling window's std in the KL divergence's ln(sigma_q /
 # sigma_p) term -- a short window of near-identical values can compute
