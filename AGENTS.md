@@ -32,9 +32,9 @@ make docs-serve               # serve MkDocs site locally
 Run a single test directly with the environment's own interpreter, e.g.:
 
 ```bash
-.venv/bin/python -m pytest src/serving/__tests__/test_inference.py -v
-.venv/bin/python -m pytest src/serving/__tests__/test_inference.py::test_name -v
-vendor/starcop/.venv/bin/python -m pytest src/training/__tests__/test_dvc_dataset_version.py -v
+.venv/bin/python -m pytest src/baselines/starcop/serving/__tests__/test_inference.py -v
+.venv/bin/python -m pytest src/baselines/starcop/serving/__tests__/test_inference.py::test_name -v
+vendor/starcop/.venv/bin/python -m pytest src/baselines/starcop/training/__tests__/test_model_forward.py -v
 ```
 
 Tests live in `__tests__/` folders next to the module they cover, named `test_*.py`; shared fixtures are in the root `conftest.py`. CI's `lint.yml` only lints the PR's *changed* Python files (main carries pre-existing ruff findings), so `make lint` running clean on your changed files is what matters, not a clean full-repo run.
@@ -51,13 +51,16 @@ picks it up the same way.
 
 ## Architecture
 
+[`src/README.md`](src/README.md) is the contributor-facing ownership map for
+baseline adapters, shared infrastructure, candidate models, and comparisons.
+
 ### `vendor/starcop/` is never edited — compose from outside
 
 It's a pinned git submodule (the original STARCOP paper code). Nothing under it is ever changed, not even transiently. Everything that needs different behavior does it from outside: subclassing (e.g. `starcop_datamodule.py`'s `ProcessedDatasetDataModule` subclasses `Permian2019DataModule`, overriding only `prepare_data()`), runtime attribute overrides, or `types.MethodType` monkeypatching on one instance (e.g. `train.py` rebinding `model.val_epoch_end`). `pyproject.toml`'s ruff config excludes `vendor/` entirely for the same reason.
 
 ### Per-package `_vendor_starcop*.py` seam files
 
-Each consuming package under `src/` has its **own** `_vendor_starcop*.py` module (`src/data/preprocessing/_vendor_starcop.py`, `src/training/_vendor_starcop_training.py`, `src/evaluation/_vendor_starcop_evaluation.py`, `src/registry/_vendor_starcop_baseline.py`, `src/serving/_vendor_starcop_serving.py`) rather than one shared import. Each puts `vendor/starcop` on `sys.path` and re-exports the specific STARCOP objects that package composes around. This is deliberately duplicated per-package: pytest's flat/prepend import mode caches modules by bare name, and multiple packages land on `sys.path` simultaneously under `make test-research`, so a single shared `_vendor_starcop.py` would collide in `sys.modules`. Every other file in a package imports STARCOP objects from its own local seam file, never from `starcop.*` directly.
+Each consuming package under `src/` has its **own** `_vendor_starcop*.py` module (`src/data/preprocessing/_vendor_starcop.py`, `src/baselines/starcop/training/_vendor_starcop_training.py`, `src/baselines/starcop/evaluation/_vendor_starcop_evaluation.py`, `src/baselines/starcop/registry/_vendor_starcop_baseline.py`, `src/baselines/starcop/serving/_vendor_starcop_serving.py`) rather than one shared import. Each puts `vendor/starcop` on `sys.path` and re-exports the specific STARCOP objects that package composes around. This is deliberately duplicated per-package: pytest's flat/prepend import mode caches modules by bare name, and multiple packages land on `sys.path` simultaneously under `make test-research`, so a single shared `_vendor_starcop.py` would collide in `sys.modules`. Every other file in a package imports STARCOP objects from its own local seam file, never from `starcop.*` directly.
 
 ### No `__init__.py` in `src/` — flat import convention throughout.
 
@@ -65,17 +68,34 @@ Each consuming package under `src/` has its **own** `_vendor_starcop*.py` module
 
 `dvc.yaml` defines per-dataset stages (`starcop_mini`, `starcop_raw`): `normalize → split → patch_extract`, plus `stats` and `coordinates`. Each stage is a Hydra-configured script under `src/data/preprocessing/`, with base config in `configs/data.yaml` and per-dataset overrides in `configs/dataset/*.yaml` (selected via `dataset=starcop_mini|starcop_raw` on the CLI).
 
-### Training entrypoint (`src/training/train.py`)
+### STARCOP training entrypoint (`src/baselines/starcop/training/train.py`)
 
-Not a modification of `vendor/starcop/scripts/train.py` — a separate entrypoint that imports every STARCOP building block unmodified and composes new behavior around it: Hydra config merges STARCOP's own `vendor/starcop/scripts/configs/config.yaml` with `configs/training/overlay.yaml` (`settings_overlay.py`); data loading subclasses `Permian2019DataModule` to read this project's `data/processed/<dataset>/{patches,splits}/` layout instead of STARCOP's own file-discovery convention; Lightning 2.x / torch compat shims (`lightning2_compat.py`, `optimizer_compat.py`) rebind STARCOP's pre-2.0 hooks as no-ops under newer versions, so baseline env's older pins are unaffected. Run with either environment's interpreter depending on machine/GPU — see the module's own docstring and `internal-docs/setup/environment-notes.md` for which machines need which environment (e.g. Blackwell GPUs need research env; baseline env's exact-pinned torch has no working CUDA kernels for `sm_120`).
+Baseline-specific orchestration lives under `src/baselines/starcop/training/`; the generic MLflow and DVC lineage helpers remain under `src/training/`. The entrypoint is not a modification of `vendor/starcop/scripts/train.py` — it imports every STARCOP building block unmodified and composes new behavior around it: Hydra config merges STARCOP's own `vendor/starcop/scripts/configs/config.yaml` with `configs/training/overlay.yaml` (`settings_overlay.py`); data loading subclasses `Permian2019DataModule` to read this project's `data/processed/<dataset>/{patches,splits}/` layout instead of STARCOP's own file-discovery convention; Lightning 2.x / torch compat shims (`lightning2_compat.py`, `optimizer_compat.py`) rebind STARCOP's pre-2.0 hooks as no-ops under newer versions, so baseline env's older pins are unaffected. Run with either environment's interpreter depending on machine/GPU — see the module's own docstring and `internal-docs/setup/environment-notes.md` for which machines need which environment (e.g. Blackwell GPUs need research env; baseline env's exact-pinned torch has no working CUDA kernels for `sm_120`).
 
-### Serving (`src/serving/`)
+### STARCOP evaluation (`src/baselines/starcop/evaluation/`)
 
-`service.py` is a thin BentoML wrapper (env var reads, exception→HTTP translation) that loads a model from the MLflow registry at startup and exposes `POST /predict`, `GET /health` (`GET /metrics` is BentoML's own built-in Prometheus endpoint). The actual predict logic (assemble → infer → shape response) lives in `inference.py::predict_response` and is unit tested directly; `service.py` itself is exercised via a real `bentoml serve` + curl run, not unit tests — this "thin glue vs. tested logic" split recurs elsewhere (`train.py`, `hf_baseline_import.py`, `launch_profiles.py`, `promotion_criteria.py`) and explains why some files are intentionally excluded from the coverage gate (see `pyproject.toml`'s `[tool.coverage.report].omit`).
+Paper-metric evaluation and local live-verification logic live with the baseline.
+The stable wrappers remain `scripts/run_starcop_baseline_evaluation.py` and
+`scripts/run_live_verify.py`; repo-owned direct imports must use the relocated
+baseline path.
 
-### Registry (`src/registry/`)
+### STARCOP serving (`src/baselines/starcop/serving/`)
 
-MLflow model registry wiring (`mlflow_registry.py`) plus promotion criteria (`promotion_criteria.py`) that gate a candidate model's move between MLflow stages.
+`service.py` is a thin BentoML wrapper (env var reads, exception→HTTP translation) that loads a model from the MLflow registry at startup and exposes `POST /predict`, `POST /health` (`GET /metrics` is BentoML's own built-in Prometheus endpoint). The actual predict logic (assemble → infer → shape response) lives in `inference.py::predict_response` and is unit tested directly; `service.py` itself is exercised via a real `bentoml serve` + curl run, not unit tests — this "thin glue vs. tested logic" split recurs elsewhere (`train.py`, `hf_baseline_import.py`, `launch_profiles.py`, `promotion_criteria.py`) and explains why some files are intentionally excluded from the coverage gate (see `pyproject.toml`'s `[tool.coverage.report].omit`). Shared rolling drift mathematics and the `BandStats` value type remain under `src/serving/`; shared code does not import the baseline adapter.
+
+### Registry
+
+Shared MLflow registry wiring and promotion policy remain under `src/registry/`.
+The STARCOP checkpoint importer and its vendor seam live under
+`src/baselines/starcop/registry/`; baseline adapters may depend on shared registry
+infrastructure, never the reverse.
+
+### Candidate models and comparison
+
+Independent research models belong under `src/models/<candidate>/`; they do not
+modify or hide inside the STARCOP baseline. Cross-model quality and inference-time
+reports belong under `src/comparison/`, while STARCOP paper-metric evaluation stays
+under `src/baselines/starcop/evaluation/`.
 
 ### Retraining loop (`flows/retrain.py`)
 
