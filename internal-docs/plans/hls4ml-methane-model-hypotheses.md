@@ -899,15 +899,32 @@ Thus, a tiny student changes the bottleneck from weight memory to pixels, FIFOs,
 
 ### Phase 1 — Conversion spike
 
-Implement a new local model rather than modifying vendor code:
+Implement a new local model rather than modifying vendor code. Use one folder
+per model, with uniquely prefixed module and test filenames to preserve the repo's
+flat-import convention without module-cache or pytest collection collisions:
 
 ```text
-src/models/hls/
-  tiny_ds.py
-  tiny_u.py
-  spectral_tiny.py
-  export.py
-  equivalence.py
+src/models/
+  tiny_ds/
+    tiny_ds_model.py
+    tiny_ds_train.py
+    tiny_ds_evaluate.py
+    tiny_ds_export.py
+    __tests__/test_tiny_ds_*.py
+  tiny_u/
+    tiny_u_model.py
+    tiny_u_train.py
+    tiny_u_evaluate.py
+    tiny_u_export.py
+    __tests__/test_tiny_u_*.py
+  spectral_tiny/
+    spectral_tiny_model.py
+    spectral_tiny_train.py
+    spectral_tiny_evaluate.py
+    spectral_tiny_export.py
+    __tests__/test_spectral_tiny_*.py
+src/comparison/
+  (model-agnostic baseline/candidate and numerical-equivalence comparisons)
 configs/model/
   tiny_ds_4ch.yaml
   tiny_u_4ch.yaml
@@ -915,6 +932,14 @@ configs/model/
 configs/hardware/
   <board>.yaml
 ```
+
+These are **future implementation files**, created through TDD, not empty Python
+stubs. The initial scaffold creates only `.gitkeep` files in the new directories;
+see the [hypothesis backlog](../model-experiments.md#hypothesis-backlog) for status,
+dependencies, comparison intent, and deferred integration. Hardware benchmark CLI glue
+will live under `scripts/hardware/`; tested logic stays with the candidate or in
+`src/comparison/`. This per-model layout supersedes the earlier shared
+`src/models/hls/` proposal and does not select a hardware toolchain.
 
 Requirements:
 
