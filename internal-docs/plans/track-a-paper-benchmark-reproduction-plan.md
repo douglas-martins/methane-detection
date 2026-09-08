@@ -5,6 +5,11 @@
 > **Target project:** `methane-detection`
 > **Scope:** evaluation-only reproduction of the STARCOP paper's Table 1 (MultiSTARCOP) and Table 2 (HyperSTARCOP) numbers, using the paper's own released checkpoints and full held-out test set — wired through MLflow, Prefect, and BentoML, and published as a public, image-led page at `docs/results.md`.
 > **Out of scope:** from-scratch retraining reproduction ("Track B"), EMIT zero-shot Table 3 reproduction, wiring MultiSTARCOP into the *production* BentoML deployment.
+>
+> **Path note:** implementation entries retain the paths that were current when
+> each phase ran. The evaluation and serving slices now live under
+> `src/baselines/starcop/`; see [`../../src/README.md`](../../src/README.md) for
+> current ownership and entrypoints.
 
 ## Context
 
@@ -99,7 +104,7 @@ benchmark's AUPRC number is shown, not silently reported as-is.
   "proven working code" assumption for that call site.
 - Two real, in-scope bugs found and fixed as part of getting the dry pass to run
   (both in this project's own code, not `vendor/starcop/`, so composition-only
-  wasn't at stake): (1) `src/registry/hf_baseline_import.py::verify_checkpoint_digest`
+  wasn't at stake): (1) `src/baselines/starcop/registry/hf_baseline_import.py::verify_checkpoint_digest`
   used `hashlib.file_digest`, added in Python 3.11 — Environment A is Python
   3.10, so every call there raised `AttributeError`; fixed to a portable
   chunked `hashlib.sha256().update()` loop, with a regression test
@@ -115,7 +120,7 @@ benchmark's AUPRC number is shown, not silently reported as-is.
 
 `train.py` already calls this exact same unmodified `run_validation` function today,
 in **Environment B** (`.venv`, Python 3.12, MPS-capable), via the
-`src/training/_vendor_starcop_training.py` shim — this is proven working code, not
+`src/baselines/starcop/training/_vendor_starcop_training.py` shim — this is proven working code, not
 speculative. Environment A (`vendor/starcop/.venv`) is CPU-only (torch 1.13.1 has no
 MPS support) and was only used before because the mini-set script never needed
 Environment B's newer tooling. For 342 scenes at up to 512×512, Environment B/MPS is
@@ -253,7 +258,7 @@ the project's existing vendor-import-seam pattern).
   lines (`vendor/starcop/starcop/data/datamodule.py:104`): read `test.csv`, rebuild
   `folder` as `root_folder/id`, rebuild the `window` from the CSV's
   `window_col_off`/`window_row_off`/`window_width`/`window_height` columns (same
-  pattern `src/training/starcop_datamodule.py::_load_dataframe` already uses).
+  pattern `src/baselines/starcop/training/starcop_datamodule.py::_load_dataframe` uses).
   **`root_folder = data/starcop_raw/STARCOP_test`** — verified against the real data:
   `test.csv`'s own `folder` column is a stale absolute path from the original
   authors' machine (`/AVIRISNG/Permian2019/...`) and unusable as-is, but with this
@@ -345,7 +350,7 @@ the project's existing vendor-import-seam pattern).
   standard segmentation-quality metric and per-scene IoU is already produced by
   `paper_metrics.py`'s per-bucket pass, so this needs no extra computation.
 - **`run_baseline_eval.py`** (thin glue, Large-boundary, real-run validated) —
-  loads a checkpoint via `src/registry/hf_baseline_import.py::load_model()` (reused,
+  loads a checkpoint via `src/baselines/starcop/registry/hf_baseline_import.py::load_model()` (reused,
   not duplicated). **`load_model()` always returns a CPU model**
   (`torch.load(..., map_location="cpu")`) and never moves it — `run_validation`
   derives its device purely from `model.device`, so this function must call
@@ -615,7 +620,7 @@ One run per variant, e.g. `starcop-baseline-mag1c-rgb-paper-eval-<date>`:
 - **Metrics**: the corrected `strong_f1score`/`weak_f1score`/`no_plume_FPR`/`auprc`
   (the real Table 1/2 headline numbers — explicitly distinguished by name from
   `run_validation`'s own uncorrected `easy_*`/`hard_*` keys) plus the full aggregate
-  metrics via the existing `src/training/validation_metrics.py::extract_scalar_metrics`
+  metrics via the existing `src/baselines/starcop/training/validation_metrics.py::extract_scalar_metrics`
   helper.
 - **Artifacts**: per-scene results CSV (with the corrected bucket column), the full
   `run_validation` metrics JSON, the curated sample-mask PNGs (filenames prefixed
@@ -1163,7 +1168,7 @@ questions left unresolved going into implementation):
   installed `prefect==3.7.7` client schema.
 
 - **Idempotent MultiSTARCOP-registered check.** No such check exists yet in
-  `src/registry/hf_baseline_import.py` (verified — `import_variant` always
+  `src/baselines/starcop/registry/hf_baseline_import.py` (verified — `import_variant` always
   registers a new version unconditionally, there's no "is this already
   registered" guard anywhere in that module). New small function, same
   reuse-not-reinvent spirit as the rest of this plan: resolve the checkpoint
@@ -1524,7 +1529,7 @@ preview.
   works around.
 - `vendor/starcop/starcop/data/datamodule.py` — the `folder = root_folder/id` join
   logic `dataset_wiring.py` must replicate.
-- `src/registry/hf_baseline_import.py` — reused for checkpoint loading/digest
+- `src/baselines/starcop/registry/hf_baseline_import.py` — reused for checkpoint loading/digest
   pinning; extended in Phase 2 with a source-dispatching `resolve_checkpoint`
   (HF vs. local) that both the registry import and the eval run call.
 - `src/evaluation/run_baseline_eval.py` — `evaluate_variant()`'s checkpoint-loading

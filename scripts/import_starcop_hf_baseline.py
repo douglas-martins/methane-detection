@@ -1,7 +1,7 @@
-"""CLI for src/registry/hf_baseline_import.py -- imports a pretrained STARCOP
+"""CLI for src/baselines/starcop/registry/hf_baseline_import.py -- imports a pretrained STARCOP
 checkpoint from HuggingFace (isp-uv-es/starcop) into MLflow as a comparison
 baseline. All logic lives in hf_baseline_import.py (unit tested); this file
-is argparse glue only, same split as src/training/train.py vs mlflow_utils.py.
+is argparse glue only, like baseline training's train.py versus shared mlflow_utils.py.
 
 Run with (same credentials as scripts/train_mac.sh):
     set -a; source .env.mlflow; set +a
@@ -14,7 +14,10 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "registry"))
+sys.path.insert(
+    0,
+    str(Path(__file__).resolve().parents[1] / "src" / "baselines" / "starcop" / "registry"),
+)
 
 import hf_baseline_import  # noqa: E402
 

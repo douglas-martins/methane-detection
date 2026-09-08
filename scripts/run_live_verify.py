@@ -1,4 +1,4 @@
-"""CLI for src/evaluation/live_verify.py -- verifies a live BentoML
+"""CLI for src/baselines/starcop/evaluation/live_verify.py -- verifies a live BentoML
 `/predict` endpoint agrees with Phase 1/3's offline predictions for a
 variant's curated scenes. All logic lives in live_verify.py (unit tested);
 this file is argparse glue only, same split as
@@ -10,7 +10,7 @@ process whose MODEL_NAME/MODEL_STAGE env vars match the variant being
 verified, e.g.:
 
     MODEL_NAME=starcop-baseline-mag1c-only MODEL_STAGE=Staging \\
-        .venv/bin/bentoml serve src.serving.service:MethaneDetectionService
+        .venv/bin/bentoml serve src.baselines.starcop.serving.service:MethaneDetectionService
     .venv/bin/python scripts/run_live_verify.py mag1c_only
 
 Exits 0 if every curated scene passed, 1 otherwise (or on any error) --
@@ -23,7 +23,10 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "evaluation"))
+sys.path.insert(
+    0,
+    str(Path(__file__).resolve().parents[1] / "src" / "baselines" / "starcop" / "evaluation"),
+)
 
 import live_verify  # noqa: E402
 

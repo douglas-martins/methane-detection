@@ -1,6 +1,6 @@
 """Puts src/serving/ on sys.path so tests can import modules directly.
 
-Mirrors src/registry/__tests__/conftest.py and src/training/__tests__/conftest.py
+Mirrors the registry and shared training test conftests
 -- pytest's default import mode only adds the test file's own directory to
 sys.path, not its parent.
 """

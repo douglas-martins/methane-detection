@@ -5,9 +5,9 @@ on:
     paths: &test-paths
       - "src/data/**"
       - "src/training/**"
+      - "src/baselines/starcop/**"
       - "src/registry/**"
       - "src/serving/**"
-      - "src/evaluation/**"
       - "configs/training/**"
       - "vendor/starcop/**"
       - "tests/vendor_starcop/**"
@@ -74,8 +74,8 @@ jobs:
           uv pip install --python vendor/starcop/.venv/bin/python -e vendor/starcop
 
       - name: Install MLflow client dependencies
-        # src/training/'s composition-seam modules (_vendor_starcop_training.py)
-        # are the first thing in this repo's baseline env test suite to import
+        # Baseline training's composition seam (_vendor_starcop_training.py)
+        # is the first thing in this repo's baseline env test suite to import
         # starcop.data.data_logger/datamodule, which pull in pytorch_lightning
         # and wandb -- requirements/baseline-mlflow.txt pins setuptools/numpy/protobuf
         # to versions those 2022-era packages actually still import under.

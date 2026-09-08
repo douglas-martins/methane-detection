@@ -94,7 +94,8 @@ from the repo.
 ## A real code prerequisite, not just infra
 
 The dashboard's "Prediction class distribution" panel and the alert rule both read a
-custom `methane_prediction_total` counter added to `src/serving/service.py` (TASK-6.1)
+custom `methane_prediction_total` counter added to
+`src/baselines/starcop/serving/service.py` (TASK-6.1)
 — BentoML's own built-in `/metrics` covers request count/latency/error rate but has no
 visibility into what `/predict` actually returned. This is already implemented and
 live-validated (`bentoml serve` + curl against a real running instance confirmed the

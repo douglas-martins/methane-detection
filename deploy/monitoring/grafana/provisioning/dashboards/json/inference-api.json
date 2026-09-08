@@ -58,7 +58,7 @@
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "methane_prediction_total -- a custom counter (src/serving/service.py), not part of BentoML's own built-in metrics. Labeled by whether /predict's response mask contained any positive (plume) pixel.",
+      "description": "methane_prediction_total -- a custom counter (src/baselines/starcop/serving/service.py), not part of BentoML's own built-in metrics. Labeled by whether /predict's response mask contained any positive (plume) pixel.",
       "targets": [
         {
           "refId": "A",

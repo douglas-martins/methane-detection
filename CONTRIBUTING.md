@@ -75,8 +75,16 @@ uv sync
 > for the full rationale (once that page's content lands).
 
 - No `__init__.py` in `src/` — flat import convention throughout.
-- `_vendor_starcop*.py` shim modules are the only files allowed to
-  `sys.path.insert(0, "vendor/starcop")`; everything else imports from the shim.
+- `_vendor_starcop*.py` seam modules are the only files allowed to configure the
+  upstream checkout on `sys.path`; each consuming directory has its own uniquely
+  named seam.
+- Read [`src/README.md`](src/README.md) for the complete ownership map. In short:
+  project-owned STARCOP integration lives under `src/baselines/starcop/`, reusable
+  MLflow/DVC/registry/drift helpers remain in top-level shared directories,
+  independent models belong under `src/models/<candidate>/`, and cross-model
+  reports belong under `src/comparison/`.
+- `src/serving/` contains shared drift statistics only; the BentoML inference
+  service is baseline-owned at `src/baselines/starcop/serving/`.
 
 ## Documentation
 
@@ -128,6 +136,8 @@ gitGraph
 
 ## Publishing
 
-Both the Docker image (`cd.yml` → `ghcr.io` → Coolify deploy) and this
-documentation site (`docs.yml` → GitHub Pages) deploy automatically on merge to
-`main`. No manual publish steps.
+The documentation site (`docs.yml` → GitHub Pages) publishes automatically from
+`main`. Application deployment is deliberately separate: `.github/workflows/cd.yml`
+runs only through an explicit `workflow_dispatch`, then builds and pushes the Bento
+image and calls the Coolify deploy webhook. A merge or semantic-release tag does
+not authorize or trigger application deployment.
