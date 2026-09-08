@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.22.5 (2026-09-08)
+
+### Bug Fixes
+
+- **cd**: Require explicit deployment dispatch
+  ([`1c8b5ac`](https://github.com/douglas-martins/methane-detection/commit/1c8b5ac7172876925fef1a46140a3a3d1d17b612))
+
+### Refactoring
+
+- **starcop**: Separate baseline adapters from shared infrastructure
+  ([`17202ed`](https://github.com/douglas-martins/methane-detection/commit/17202edcba9a02ae987376c1f239ceb832d8424e))
+
+
 ## v0.22.4 (2026-09-06)
 
 ### Bug Fixes
