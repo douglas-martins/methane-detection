@@ -18,7 +18,7 @@
 | TASK-1.2 | Build Preprocessing Pipeline | ✅ Complete | 2026-08-09 | 5-stage `dvc.yaml`, validated on both datasets |
 | TASK-1.3 | Validate Dataset Statistics | ✅ Complete | 2026-08-09 | `docs/dataset_report.md`; imbalance ~87:1 (mini) vs ~314:1 (raw) |
 | TASK-2.1 | Deploy MLflow on VPS | ✅ Complete | 2026-08-10 | Live at `methane-detection-mlflow.ghostface.tech` |
-| TASK-2.2 | Integrate MLflow into Training | ✅ Complete | 2026-08-10 | Composition-only, `src/training/train.py` + 8 modules |
+| TASK-2.2 | Integrate MLflow into Training | ✅ Complete | 2026-08-10 | Composition-only; now under `src/baselines/starcop/training/` |
 | TASK-2.3 | Define Registry Promotion Workflow | ✅ Complete | 2026-08-11 | `src/registry/promote_model.py` live and tested |
 | TASK-3.1 | RTX 5070 Training Setup (WSL2) | 🔲 Not started | — | Blocked by D-06, D-07 |
 | TASK-3.2 | M4 Pro Training Setup (MPS) | ✅ Complete | 2026-08-12 | ~2× speedup vs CPU; `resolved_device=mps:0` confirmed |
@@ -30,10 +30,10 @@
 | TASK-4.2 | Create CI Workflow | 🟡 Substantially complete | — | `tests.yml`+`commitlint.yml`+`lint.yml` live; PR coverage comment pending |
 | TASK-4.3 | Create CD Workflow | 🟡 Implemented, not live-validated | 2026-08-15 | `.github/workflows/cd.yml` written, never exercised by a real run |
 | TASK-4.4 | Automated Release Workflow | ✅ Complete | 2026-07-06 | Live through v0.9.1+; not gated on CI passing (design gap) |
-| TASK-5.1 | Build Inference API | ✅ Core complete | 2026-08-15 | `src/serving/` (BentoML), live-validated. ENVI input not implemented |
+| TASK-5.1 | Build Inference API | ✅ Core complete | 2026-08-15 | `src/baselines/starcop/serving/` (BentoML), live-validated. ENVI input not implemented |
 | TASK-5.2 | Deploy API to VPS | ✅ Complete | 2026-08-15 | Live at `https://api-methane-detection.ghostface.tech` |
 | TASK-6.1 | Deploy Prometheus + Grafana | ✅ Complete | 2026-08-16 | `deploy/monitoring/` live, carrying real traffic |
-| TASK-6.2 | Input Data Drift Detection | ✅ Complete | 2026-08-16 | `src/serving/{band_baseline,drift}.py`, proven to fire a real alert |
+| TASK-6.2 | Input Data Drift Detection | ✅ Complete | 2026-08-16 | Baseline statistics in `src/baselines/starcop/serving/band_baseline.py`; shared drift in `src/serving/drift.py`; proven to fire a real alert |
 | TASK-7.1 | Deploy Prefect Server | ✅ Complete | 2026-08-17 | Live at `https://methane-detection-prefect.ghostface.tech` |
 | TASK-7.2 | Build Retraining Flow | 🟢 Functionally complete | — | Live-validated end-to-end except the CD-trigger call itself |
 

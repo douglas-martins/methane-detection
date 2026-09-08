@@ -1,7 +1,7 @@
 """Pure helpers for MLflow run tagging/param-logging.
 
 Kept free of any `mlflow` SDK calls so they're testable without a live
-tracking server -- src/training/train.py does the thin SDK glue
+tracking server -- baseline training's train.py does the thin SDK glue
 (mlflow.set_tags(build_run_tags(...)), mlflow.log_params(flatten_hydra_params(...)))
 around these.
 """

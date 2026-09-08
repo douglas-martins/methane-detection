@@ -1,6 +1,6 @@
 # Training Runbook (TASK-2.2)
 
-How to actually run `src/training/train.py` — the MLflow-tracked STARCOP
+How to run `src/baselines/starcop/training/train.py` — the MLflow-tracked STARCOP
 training entrypoint built in TASK-2.2. Full design rationale lives in
 `internal-docs/plan.md` (Phase 2); this doc is the practical
 "how do I run it" companion, written from what running it for real actually
@@ -80,7 +80,7 @@ flags — into one command, plus a pre-flight check that fails loudly if a
 required credential is missing rather than failing deep into the run. Extra
 Hydra overrides can be passed after the dataset name, e.g.
 `./scripts/train_desktop.sh starcop_mini training.max_epochs=5`. The
-arg-building logic lives in `src/training/launch_profiles.py` (unit-tested;
+arg-building logic lives in `src/baselines/starcop/training/launch_profiles.py` (unit-tested;
 see `test_launch_profiles.py`), so both `.sh` files stay thin.
 
 **Important divergence**: `train_mac.sh` runs under baseline env
@@ -96,7 +96,7 @@ for understanding exactly what each script does under the hood.
 # M4 Pro (baseline env):
 cd /path/to/methane-detection
 set -a; source .env.mlflow; set +a
-vendor/starcop/.venv/bin/python src/training/train.py \
+vendor/starcop/.venv/bin/python src/baselines/starcop/training/train.py \
   +machine=macbook \
   +dataset_name=starcop_mini \
   experiment_name=my-run-name
@@ -106,7 +106,7 @@ vendor/starcop/.venv/bin/python src/training/train.py \
 # RTX 5070 desktop (research env -- see the divergence above):
 cd /path/to/methane-detection
 set -a; source .env.mlflow; set +a
-.venv/bin/python src/training/train.py \
+.venv/bin/python src/baselines/starcop/training/train.py \
   +machine=desktop \
   +dataset_name=starcop_mini \
   experiment_name=my-run-name

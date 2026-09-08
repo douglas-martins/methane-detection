@@ -1,4 +1,4 @@
-# Runtime dependencies for the BentoML inference service (src/serving/,
+# Runtime dependencies for the STARCOP BentoML service,
 # TASK-5.1). research env versions (torch>=2.5 stack) -- proven to load and
 # run a real baseline-env-trained STARCOP checkpoint via mlflow.pytorch,
 # see mlops-methane-detection-plan.md TASK-5.1's 2026-08-15 readiness audit
@@ -15,7 +15,7 @@ mlflow
 boto3
 numpy
 bentoml
-# Never imported by src/serving/ itself -- required because
+# Never imported by the serving adapter itself -- required because
 # mlflow.pytorch.load_model unpickles the checkpoint into a real
 # vendor/starcop/starcop/models/model_module.py ModelModule instance, which
 # imports wandb at module level (STARCOP's own training-era code, composition-
@@ -27,5 +27,5 @@ bentoml
 wandb
 # Same category as wandb above: starcop.utils (imported by model_module.py)
 # imports rasterio at module level, needed to reconstruct the pickled model
-# class, never called by src/serving/'s own inference path.
+# class, never called by the serving adapter's own inference path.
 rasterio

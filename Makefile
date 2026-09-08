@@ -1,14 +1,14 @@
 ENV_BASELINE_PYTHON := vendor/starcop/.venv/bin/python
 ENV_BASELINE_GENBADGE := vendor/starcop/.venv/bin/genbadge
-ENV_BASELINE_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop src/training/__tests__ src/registry/__tests__ src/evaluation/__tests__
-ENV_BASELINE_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preprocessing --cov=src/training
+ENV_BASELINE_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop src/training/__tests__ src/baselines/starcop/training/__tests__ src/registry/__tests__ src/baselines/starcop/registry/__tests__ src/baselines/starcop/evaluation/__tests__
+ENV_BASELINE_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preprocessing --cov=src/training --cov=src/baselines/starcop/training
 
 ENV_RESEARCH_PYTHON := .venv/bin/python
 ENV_RESEARCH_GENBADGE := .venv/bin/genbadge
 ENV_RESEARCH_INTERROGATE := .venv/bin/interrogate
 ENV_RESEARCH_RUFF := .venv/bin/ruff
-ENV_RESEARCH_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/registry/__tests__ src/serving/__tests__ src/evaluation/__tests__ flows/__tests__
-ENV_RESEARCH_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/registry --cov=src/serving --cov=src/evaluation --cov=flows
+ENV_RESEARCH_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/baselines/starcop/training/__tests__ src/registry/__tests__ src/baselines/starcop/registry/__tests__ src/serving/__tests__ src/baselines/starcop/serving/__tests__ src/baselines/starcop/evaluation/__tests__ flows/__tests__
+ENV_RESEARCH_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/baselines/starcop/training --cov=src/registry --cov=src/baselines/starcop/registry --cov=src/serving --cov=src/baselines/starcop/serving --cov=src/baselines/starcop/evaluation --cov=flows
 
 BATS_IMAGE := bats/bats:latest
 SCRIPTS_TEST_PATHS := scripts/__tests__

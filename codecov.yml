@@ -20,11 +20,15 @@ flags:
       - src/data/download/
       - vendor/starcop/scripts/preprocessing/
       - src/training/
+      - src/baselines/starcop/training/
   research:
     paths:
       - src/data/preprocessing/
       - src/training/
+      - src/baselines/starcop/training/
       - src/registry/
+      - src/baselines/starcop/registry/
+      - src/baselines/starcop/evaluation/
+      - src/baselines/starcop/serving/
       - src/serving/
-      - src/evaluation/
       - flows/

@@ -1,6 +1,6 @@
 """Puts flows/ on sys.path so tests can import retrain directly.
 
-Mirrors src/training/__tests__/conftest.py -- pytest's default import mode
+Mirrors the shared training test conftest -- pytest's default import mode
 only adds the test file's own directory to sys.path, not its parent.
 """
 

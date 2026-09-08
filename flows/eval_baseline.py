@@ -28,8 +28,9 @@ from mlflow.tracking import MlflowClient
 from prefect import flow, task
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO_ROOT / "src" / "evaluation"))
+sys.path.insert(0, str(_REPO_ROOT / "src" / "baselines" / "starcop" / "evaluation"))
 sys.path.insert(0, str(_REPO_ROOT / "src" / "registry"))
+sys.path.insert(0, str(_REPO_ROOT / "src" / "baselines" / "starcop" / "registry"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import hf_baseline_import  # noqa: E402
@@ -170,7 +171,7 @@ def start_bentoml_serve(
             "-m",
             "bentoml",
             "serve",
-            "src.serving.service:MethaneDetectionService",
+            "src.baselines.starcop.serving.service:MethaneDetectionService",
             "--port",
             str(port),
         ],
