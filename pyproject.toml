@@ -53,7 +53,10 @@ target-version = "py312"
 line-length = 100
 # vendor/starcop is a git submodule, composition-only -- never linted or
 # reformatted, even by an autofix. See vendor-starcop-composition-only.
-extend-exclude = ["vendor"]
+# coursework/ is the DL course final project (see the untracked
+# dl-course-final-project-plan.md) -- deliberately isolated from this
+# repo's lint gate; use `make coursework-lint` for it instead.
+extend-exclude = ["vendor", "coursework"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
@@ -64,7 +67,10 @@ select = ["E", "F", "I", "W"]
 # spec, so a docstring on top would just restate the name. Private/magic
 # methods are exempted for the same reason: they're implementation detail
 # the class docstring already covers.
-exclude = ["*/__tests__/*", "vendor", ".venv"]
+# coursework/ (DL course final project) is excluded for the same
+# isolation reason as vendor -- see the [tool.ruff] extend-exclude comment
+# above; use `make coursework-lint`/its own conventions instead.
+exclude = ["*/__tests__/*", "vendor", ".venv", "coursework"]
 ignore-private = true
 ignore-magic = true
 ignore-nested-functions = true

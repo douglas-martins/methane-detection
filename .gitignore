@@ -5,6 +5,16 @@
 # JetBrains IDE project files
 /.idea/
 
+# Root-level scratch planning docs (e.g. dl-course-final-project-plan.md,
+# mlops-methane-detection-plan.md) -- working plans whose content gets
+# folded into real tracked docs (internal-docs/, docs/) later, not meant to
+# be committed themselves. Root-scoped (leading slash) so it does NOT catch
+# docs/**/*.md, internal-docs/**/*.md, or any package's own README.md --
+# those stay tracked normally. Already-tracked root .md files (README.md,
+# CLAUDE.md, AGENTS.md, CONTRIBUTING.md, CHANGELOG.md) are unaffected, since
+# gitignore never hides files git already tracks.
+/*.md
+
 # Node (commitlint CI tooling only -- package.json/package-lock.json ARE
 # committed for reproducible, lockfile-pinned installs; only the installed
 # tree is ignored. See .github/workflows/commitlint.yml)

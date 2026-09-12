@@ -13,6 +13,29 @@ ENV_RESEARCH_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=
 BATS_IMAGE := bats/bats:latest
 SCRIPTS_TEST_PATHS := scripts/__tests__
 
+# --- Coursework (DL course final project) -----------------------------
+# Isolated targets for coursework/dl-final-project/ (see the untracked
+# dl-course-final-project-plan.md, Section 0/15). Deliberately NOT wired
+# into `test`, `test-research`, `lint`, or `docstring-coverage` -- the
+# coursework grade doesn't need this repo's thesis-scale gates, and this
+# folder is deleted (along with this whole block) once the course is
+# graded and any reusable pieces have been promoted into src/ per the
+# plan's Section 15.
+ENV_COURSEWORK_PYTHON := .venv/bin/python
+COURSEWORK_PATH := coursework/dl-final-project
+
+.PHONY: coursework-test coursework-lint coursework-train
+
+coursework-test:
+	$(ENV_COURSEWORK_PYTHON) -m pytest $(COURSEWORK_PATH) -v
+
+coursework-lint:
+	$(ENV_RESEARCH_RUFF) check $(COURSEWORK_PATH)
+	$(ENV_RESEARCH_RUFF) format --check $(COURSEWORK_PATH)
+
+coursework-train:
+	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/train.py
+
 .PHONY: test-baseline coverage test-research coverage-research badges badges-research test docstring-coverage test-scripts lint docs-serve docs-build
 
 test-baseline:
