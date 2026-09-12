@@ -39,8 +39,12 @@ jobs:
           # changed Python files instead, the same base/head-diff approach
           # commitlint.yml already uses for commit messages. vendor/starcop
           # is excluded from ruff entirely (composition-only submodule, see
-          # pyproject.toml's [tool.ruff] extend-exclude).
-          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- '*.py' | grep -v '^vendor/' || true)
+          # pyproject.toml's [tool.ruff] extend-exclude). coursework/ (DL
+          # course final project, see the untracked
+          # dl-course-final-project-plan.md) is excluded the same way --
+          # isolated on its own branch and never expected to open a PR
+          # against main, but excluded here too for robustness.
+          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- '*.py' | grep -v -E '^(vendor|coursework)/' || true)
           {
             echo "files<<PYFILES_EOF"
             echo "$FILES"
