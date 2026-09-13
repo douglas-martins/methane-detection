@@ -34,9 +34,13 @@ def compute_band_stats(dataframe: pd.DataFrame, bands: list[str]) -> dict:
 
     # mininterval=5: redirected (non-tty) output writes one line per refresh
     # instead of overwriting in place, so a low interval would flood a log file.
-    for idx in tqdm(
+    # These kwargs are progress-bar display only and cannot affect the returned stats.
+    # pragma: no mutate start
+    progress = tqdm(
         range(len(dataset)), total=len(dataset), desc="Computing band stats", mininterval=5.0
-    ):
+    )
+    # pragma: no mutate end
+    for idx in progress:
         input_tensor = dataset[idx]["input"].numpy()
         for band_idx, band in enumerate(bands):
             arr = input_tensor[band_idx]
@@ -69,12 +73,16 @@ def compute_class_distribution(dataframe: pd.DataFrame, bands: list[str]) -> dic
     dataset = STARCOPDataset(dataframe, input_products=[], output_products=bands)
     running = {band: {"positive": 0, "total": 0} for band in bands}
 
-    for idx in tqdm(
+    # These kwargs are progress-bar display only and cannot affect the returned counts.
+    # pragma: no mutate start
+    progress = tqdm(
         range(len(dataset)),
         total=len(dataset),
         desc="Computing class distribution",
         mininterval=5.0,
-    ):
+    )
+    # pragma: no mutate end
+    for idx in progress:
         output_tensor = dataset[idx]["output"].numpy()
         for band_idx, band in enumerate(bands):
             arr = output_tensor[band_idx]
