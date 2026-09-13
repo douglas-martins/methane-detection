@@ -53,7 +53,8 @@ def find_scene_folder(raw_root: Path, scene_id: str) -> Path:
 
     if len(matches) == 1:
         return matches[0]
-    if len(matches) > 1:
+    if len(matches) > 1:  # pragma: no mutate - equivalent to >=1: the ==1 case above
+        # already returned, so only 0 or >=2 remain here
         raise ValueError(
             f"Scene '{scene_id}' found in multiple locations under {raw_root}: {matches}"
         )

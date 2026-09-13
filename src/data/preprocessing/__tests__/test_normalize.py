@@ -226,10 +226,16 @@ def test_run_writes_range_check_json_only_for_flagged_scenes(tmp_path, tiny_geot
 
     normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
 
-    report = json.loads((processed_root / "selected" / "range_check.json").read_text())
-    assert report == {"scene_flagged": ["TOA_AVIRIS_640nm"]}
-    assert (processed_root / "selected" / "scene_ok" / "TOA_AVIRIS_640nm.tif").exists()
-    assert (processed_root / "selected" / "scene_flagged" / "TOA_AVIRIS_640nm.tif").exists()
+    # exact filename/case and iterdir() (not .exists(), which is case-insensitive on macOS)
+    # catch a mutated "SELECTED"/"RANGE_CHECK.JSON" literal that .exists() would miss.
+    assert sorted(p.name for p in processed_root.iterdir()) == ["selected"]
+    selected_root = processed_root / "selected"
+    assert "range_check.json" in {p.name for p in selected_root.iterdir()}
+    assert (selected_root / "range_check.json").read_text() == json.dumps(
+        {"scene_flagged": ["TOA_AVIRIS_640nm"]}, indent=2
+    )
+    assert (selected_root / "scene_ok" / "TOA_AVIRIS_640nm.tif").exists()
+    assert (selected_root / "scene_flagged" / "TOA_AVIRIS_640nm.tif").exists()
 
 
 def test_run_discovers_scenes_from_nested_subfolders(tmp_path, tiny_geotiff_factory):
@@ -259,9 +265,14 @@ def test_run_logs_missing_scenes_instead_of_crashing(tmp_path, tiny_geotiff_fact
 
     normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
 
-    missing = json.loads((processed_root / "selected" / "missing_scenes.json").read_text())
-    assert missing == ["scene_missing"]
-    assert (processed_root / "selected" / "scene_present" / "TOA_AVIRIS_640nm.tif").exists()
+    selected_root = processed_root / "selected"
+    # exact filename/case via iterdir() -- a mutated "MISSING_SCENES.JSON" literal would
+    # still resolve through .read_text() on macOS's case-insensitive filesystem.
+    assert "missing_scenes.json" in {p.name for p in selected_root.iterdir()}
+    assert (selected_root / "missing_scenes.json").read_text() == json.dumps(
+        ["scene_missing"], indent=2
+    )
+    assert (selected_root / "scene_present" / "TOA_AVIRIS_640nm.tif").exists()
 
 
 def test_run_produces_byte_identical_output_across_two_runs(
@@ -281,6 +292,124 @@ def test_run_produces_byte_identical_output_across_two_runs(
     normalize.run(_cfg(raw_root, processed_root_b, ["TOA_AVIRIS_640nm"], []))
 
     assert_trees_identical(processed_root_a / "selected", processed_root_b / "selected")
+
+
+def test_run_creates_deeply_nested_processed_root_when_all_scenes_missing(tmp_path):
+    """When no scene is ever selected, selected_root's own parents must not exist yet either --
+    the final mkdir(parents=True) is exercised end to end, not made a no-op by an
+    already-existing directory from an earlier select_scene() call."""
+    raw_root = tmp_path / "raw"
+    raw_root.mkdir()
+    _write_manifest_csvs(raw_root, train_ids=["scene_missing"])
+    processed_root = tmp_path / "not_yet_created" / "processed"
+    assert not processed_root.parent.exists()
+
+    normalize.run(_cfg(raw_root, processed_root, ["TOA_AVIRIS_640nm"], []))
+
+    missing = json.loads((processed_root / "selected" / "missing_scenes.json").read_text())
+    assert missing == ["scene_missing"]
+
+
+def test_select_scene_is_idempotent_on_an_already_existing_output_folder(
+    tmp_path, tiny_geotiff_factory
+):
+    """A second call into the same output_folder must not raise -- select_scene() may be
+    invoked again for a scene whose folder a previous run already created."""
+    scene = tmp_path / "raw" / "scene1"
+    band = np.array([[1.0, 1.0]], dtype="float32")
+    tiny_geotiff_factory(scene / "TOA_AVIRIS_640nm.tif", band)
+    output = tmp_path / "selected" / "scene1"
+    output.mkdir(parents=True)
+
+    normalize.select_scene(scene, output, input_products=["TOA_AVIRIS_640nm"], output_products=[])
+
+
+def test_select_scene_uses_the_configured_bands_offset_sign_correctly(
+    tmp_path, tiny_geotiff_factory
+):
+    """offset must be subtracted, not added -- the only BAND_NORMALIZATION entry with a nonzero
+    offset (ratio_wv3_B8_B8MLR_SanchezGarcia22_simplediv: offset=-0.5, clip=(-2.0, 2.0)) is the
+    one place a sign flip is observable: 2.3 - (-0.5) = 2.8 is flagged, 2.3 + (-0.5) = 1.8 isn't.
+    """
+    band_name = "ratio_wv3_B8_B8MLR_SanchezGarcia22_simplediv"
+    scene = tmp_path / "raw" / "scene1"
+    tiny_geotiff_factory(scene / f"{band_name}.tif", np.array([[2.3]], dtype="float32"))
+
+    flagged = normalize.select_scene(
+        scene, tmp_path / "selected" / "scene1", input_products=[band_name], output_products=[]
+    )
+
+    assert flagged == [band_name]
+
+
+def test_select_scene_does_not_flag_value_exactly_at_the_clip_min_boundary(
+    tmp_path, tiny_geotiff_factory
+):
+    """normalized == clip_min is inside the accepted range -- the check is strict '<', not '<='."""
+    scene = tmp_path / "raw" / "scene1"
+    # TOA_AVIRIS_640nm: offset=0, factor=60, clip=(0, 2) -> normalized 0/60 == clip_min exactly.
+    tiny_geotiff_factory(scene / "TOA_AVIRIS_640nm.tif", np.array([[0.0]], dtype="float32"))
+
+    flagged = normalize.select_scene(
+        scene,
+        tmp_path / "selected" / "scene1",
+        input_products=["TOA_AVIRIS_640nm"],
+        output_products=[],
+    )
+
+    assert flagged == []
+
+
+def test_select_scene_does_not_flag_value_exactly_at_the_clip_max_boundary(
+    tmp_path, tiny_geotiff_factory
+):
+    """normalized == clip_max is inside the accepted range -- the check is strict '>', not '>='."""
+    scene = tmp_path / "raw" / "scene1"
+    # TOA_AVIRIS_640nm: offset=0, factor=60, clip=(0, 2) -> normalized 120/60 == clip_max exactly.
+    tiny_geotiff_factory(scene / "TOA_AVIRIS_640nm.tif", np.array([[120.0]], dtype="float32"))
+
+    flagged = normalize.select_scene(
+        scene,
+        tmp_path / "selected" / "scene1",
+        input_products=["TOA_AVIRIS_640nm"],
+        output_products=[],
+    )
+
+    assert flagged == []
+
+
+def test_select_scene_validates_only_band_1_of_a_multi_band_tif(tmp_path):
+    """select_scene() reads band 1 only -- a wildly out-of-range value in a second band must
+    not affect the range check, matching STARCOP's one-variable-per-file convention."""
+    import rasterio
+    from rasterio.transform import from_origin
+
+    scene = tmp_path / "raw" / "scene1"
+    scene.mkdir(parents=True)
+    path = scene / "TOA_AVIRIS_640nm.tif"
+    # band 1 in range (1.0 / 60 << 2), band 2 wildly out of range if it were ever read.
+    data = np.array([[[1.0]], [[1.0e6]]], dtype="float32")
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=1,
+        width=1,
+        count=2,
+        dtype=data.dtype,
+        crs="EPSG:4326",
+        transform=from_origin(0, 0, 1, 1),
+    ) as dst:
+        dst.write(data)
+
+    flagged = normalize.select_scene(
+        scene,
+        tmp_path / "selected" / "scene1",
+        input_products=["TOA_AVIRIS_640nm"],
+        output_products=[],
+    )
+
+    assert flagged == []
 
 
 def test_run_removes_stale_missing_scenes_json_when_no_longer_missing(
