@@ -49,8 +49,8 @@ class TestBindNewStyleEpochEndHooks:
 
         lightning2_compat.bind_new_style_epoch_end_hooks(model)
 
-        assert not callable(getattr(model, "validation_epoch_end", None))
-        assert not callable(getattr(model, "test_epoch_end", None))
+        assert model.validation_epoch_end is None
+        assert model.test_epoch_end is None
 
     def test_on_validation_epoch_end_calls_val_epoch_end_with_val_prefix(self, monkeypatch):
         monkeypatch.setattr(pytorch_lightning, "__version__", "2.6.5")
