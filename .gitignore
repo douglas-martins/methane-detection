@@ -205,6 +205,11 @@ mlruns/
 # already covers this project's SQLite MLflow tracking store.
 coursework/dl-final-project/checkpoints/
 
+# DL course final project (plan Section 7.2) -- per-run training logs
+# (tee'd stdout from train.py), regenerable output, same category as
+# checkpoints/ above.
+coursework/dl-final-project/logs/
+
 ENV/
 env.bak/
 venv.bak/
