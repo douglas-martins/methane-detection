@@ -501,6 +501,92 @@ MLflow gravado.
 preenchido antes da submissão; ver `mlflow.db` para o histórico completo
 por época assim que concluído.)*
 
+### Comparação E1 / E2 / E3 — `mini` (Seção 7, Fase C)
+
+Primeira comparação três-vias sob semente fixa (`seed=42`, todas as três
+configurações), treinamento completo em `starcop_mini` (392 patches de
+treino), schedule fixo idêntico às três (máx. 50 épocas, paciência 10 em
+`val_loss`, mesmo otimizador/perda). Números lidos diretamente de
+`mlflow.db` (experimento `dl-final-project`, execuções `E1-mini`,
+`E2-mini`, `E3-mini`, parâmetro `seed=42`), não dos logs de terminal:
+
+| Configuração | Parâmetros | Melhor época / total | `val_loss` (melhor) | `val_f1` (melhor) | Degenerado? |
+| --- | ---: | ---: | ---: | ---: | :---: |
+| E1 (do zero) | 487.361 | 47/50 | 0,0142 | 0,4455 | Não |
+| E2 (U-Net + MobileNetV2) | 6.629.233 | 50/50 (ainda melhorando no limite) | 0,0300 | 0,2618 | Não |
+| E3 (LinkNet + MobileNetV3-small) | 856.635 | 50/50 (ainda melhorando no limite) | 0,4849 | 0,0194 | Não |
+
+**Ordem por `val_f1`: E1 > E2 > E3** — a mesma ordem seria surpreendente
+sob a hipótese H1.5 (E3 deveria se aproximar de E2 apesar de ser ~7,7×
+menor), e o resultado observado aqui é o oposto: E3 fica muito atrás dos
+outros dois neste schedule fixo de 50 épocas.
+
+Isso não é um colapso do modelo (`degenerate=False` nas três) nem uma
+falha do laço de treino — a curva de `val_loss` de E3 cai de forma
+monotônica e consistente a cada época (1,13 → 0,48), sem estagnar, apenas
+mais devagar que E1/E2: enquanto E1/E2 já mostram sinais de platô por
+volta da época 30–40, E3 ainda está em queda acentuada na época 50. Isso
+sugere que E3 simplesmente não convergiu dentro do orçamento fixo de 50
+épocas usado pelas três configurações — não que a arquitetura seja
+inadequada. O schedule é deliberadamente **fixo entre as três
+configurações** (Seção 7 do plano: "tudo exceto o dataset permanece fixo
+entre camadas... contagem de épocas é a única exceção permitida", e essa
+exceção é entre *camadas* do mesmo modelo, não entre modelos), então essa
+diferença de velocidade de convergência é, ela mesma, um resultado válido
+sob as regras do experimento — não um artefato a ser corrigido re-rodando
+E3 com mais épocas apenas para esta tabela.
+
+Este é exatamente o tipo de achado que a Seção 7 do plano identifica como
+o mais interessante que este projeto pode produzir: **a confirmação em
+`starcop_raw` (R2/R3, mais dados de treino) é o que decide se essa ordem
+se mantém ou se inverte** — com ~15× mais patches de treino (R2) ou a
+escala completa (R3), E3 pode ter passos suficientes para convergir dentro
+do mesmo número de épocas. Este resultado de `mini` fica registrado aqui
+como a linha de base a ser confrontada pela Fase D (R2), não como a
+palavra final sobre H1.5.
+
+### Comparação E1 / E2 / E3 — `r2` (Seção 7, Fase D)
+
+Mesma semente (`seed=42`), mesmo schedule (máx. 50 épocas, paciência 10),
+agora no subconjunto amostrado de `starcop_raw` (manifesto de 6.076
+patches de treino / 3.136 de validação, ~15,5× mais dados de treino que
+`mini`, Seção 0.1). Números lidos diretamente de `mlflow.db` (execuções
+`E1-r2`, `E2-r2`, `E3-r2`, parâmetro `seed=42`):
+
+| Configuração | Parâmetros | Melhor época / total | `val_loss` (melhor) | `val_f1` (melhor) | Degenerado? |
+| --- | ---: | ---: | ---: | ---: | :---: |
+| E1 (do zero) | 487.361 | 11/21 (early stop) | 0,1685 | 0,2529 | Não |
+| E2 (U-Net + MobileNetV2) | 6.629.233 | 24/34 (early stop) | 0,1883 | 0,3825 | Não |
+| E3 (LinkNet + MobileNetV3-small) | 856.635 | 39/49 (early stop) | 0,2013 | 0,3625 | Não |
+
+**Ordem por `val_f1` em `r2`: E2 (0,3825) > E3 (0,3625) > E1 (0,2529).**
+
+**A ordem se inverteu em relação a `mini` (E1 > E2 > E3 → E2 > E3 > E1),
+e este é o achado mais importante deste projeto.** O motivo aparece
+diretamente na curva: em `mini`, E3 mal havia começado a convergir depois
+de 50 épocas (`val_f1`=0,0194); em `r2`, com ~15,5× mais patches de
+treino — portanto ~15,5× mais passos de gradiente por época no mesmo
+número de épocas — E3 teve passos suficientes para convergir de fato, e
+seu `val_f1` salta para 0,3625, ficando a apenas 0,02 do valor de E2
+(0,3825) e superando E1 (0,2529) com folga. Isso é evidência direta a
+favor da leitura da Seção 7 do plano: a comparação de `mini` isolada não
+media a qualidade relativa das três arquiteturas — media, em boa parte,
+qual delas convergia mais rápido dado um orçamento fixo de 50 épocas e
+392 patches. Assim que o orçamento de dados deixa de ser o fator
+limitante, E3 (um modelo ~7,7× menor que E2) se aproxima da qualidade de
+E2, exatamente a leitura otimista de H1.5 (um modelo bem menor sustenta a
+maior parte da qualidade do modelo grande) — e supera claramente E1, que
+por sua vez teve o pior resultado em `r2` apesar de ter sido o melhor em
+`mini`.
+
+Não há colapso em nenhuma das três (`degenerate=False`), e `pos_weight`
+(269,73) é idêntico nas três execuções — confirmando que todas leram o
+mesmo manifesto R2, não uma amostra redesenhada por execução (checklist
+de validação da Seção 7). As três pararam por early stopping, não por
+esgotar o limite de 50 épocas, então a comparação não está sendo cortada
+artificialmente por um teto de época — cada uma parou quando de fato
+deixou de melhorar dentro da paciência de 10 épocas.
+
 ## Resultados
 
 *(pendente — Seções 8–9 do plano)*
