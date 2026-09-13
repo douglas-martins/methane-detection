@@ -275,7 +275,7 @@ def import_variant(
     import mlflow_utils
     from mlflow.tracking import MlflowClient
 
-    log = logging.getLogger(__name__)
+    log = logging.getLogger(__name__)  # pragma: no mutate - logger identity is diagnostics only
     mlflow_utils.require_mlflow_tracking_env()
     mlflow.set_experiment("starcop-baselines")
 
@@ -304,11 +304,17 @@ def import_variant(
             # doesn't have.
             mlflow.pytorch.log_model(model, artifact_path="model", serialization_format="pickle")
 
+        # This logging is diagnostics only and cannot affect the import outcome.
+        # pragma: no mutate start
         log.info("Logged %s as MLflow run %s", variant, run.info.run_id)
+        # pragma: no mutate end
 
         if stage is not None:
             client = MlflowClient()
             version = mlflow_registry.register_and_promote(
                 client, run_id=run.info.run_id, model_name=model_name, stage=stage
             )
+            # This logging is diagnostics only and cannot affect registration.
+            # pragma: no mutate start
             log.info("Registered %s version %s at stage %s", model_name, version.version, stage)
+            # pragma: no mutate end
