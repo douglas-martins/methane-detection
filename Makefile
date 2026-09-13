@@ -26,7 +26,7 @@ SCRIPTS_TEST_PATHS := scripts/__tests__
 ENV_COURSEWORK_PYTHON := .venv/bin/python
 COURSEWORK_PATH := coursework/dl-final-project
 
-.PHONY: coursework-test coursework-lint coursework-train
+.PHONY: coursework-test coursework-lint coursework-train coursework-confirm-raw
 
 coursework-test:
 	$(ENV_COURSEWORK_PYTHON) -m pytest $(COURSEWORK_PATH) -v
@@ -36,7 +36,17 @@ coursework-lint:
 	$(ENV_RESEARCH_RUFF) format --check $(COURSEWORK_PATH)
 
 coursework-train:
-	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/train.py
+	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/train.py dataset=starcop_mini
+
+# R1 contract confirmation (plan Section 0.1): runs the coursework's own
+# preprocessing, loader, model and metric code against real starcop_raw
+# patches -- shapes, band order, dtypes, post-normalization ranges, NaN/
+# nodata handling. Minutes, not hours; no training. This is the one bar
+# the coursework branch's gate isolation does NOT relax, so keep it a
+# single command. Requires data/processed/starcop_raw/ to exist:
+#   dvc repro normalize@starcop_raw split@starcop_raw patch_extract@starcop_raw
+coursework-confirm-raw:
+	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/confirm_raw.py dataset=starcop_raw
 
 .PHONY: test-baseline coverage test-research coverage-research badges badges-research test docstring-coverage test-scripts lint docs-serve docs-build mutation-research mutation-baseline mutation-gate
 
