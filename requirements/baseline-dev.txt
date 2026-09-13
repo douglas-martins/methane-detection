@@ -6,6 +6,7 @@ pytest
 pytest-cov
 gdown
 genbadge[tests,coverage]
+mutmut==3.8.0
 
 # Not a test tool — process_aviris.py imports it at module level but it's
 # missing from vendor/starcop/requirements.txt (an upstream gap, surfaced by
