@@ -51,10 +51,9 @@ picks it up the same way. Claude Code additionally has a
 `lint-and-docstring-coverage` **subagent**
 ([`.claude/agents/lint-and-docstring-coverage.md`](.claude/agents/lint-and-docstring-coverage.md))
 carrying the same procedure, run on a cheaper model since running the gates
-and adding one-line docstrings is mechanical, rule-following work —
-subagents are a Claude Code-specific mechanism (unlike skills/rules), so
-this file lives only under `.claude/`, with no `.agents/` counterpart to
-mirror.
+and adding one-line docstrings is mechanical, rule-following work. Pi mirrors
+this definition under `.pi/agents/`; there is no `.agents/` counterpart
+because subagent formats are client-specific.
 
 ## Architecture
 
@@ -126,10 +125,9 @@ Code picks it up the same way. Claude Code additionally has a
 ([`.claude/agents/test-driven-development.md`](.claude/agents/test-driven-development.md))
 carrying the same cycle, run on `sonnet` — this is core engineering
 judgment, not mechanical rule-following, so it stays on the same
-capability tier as the default session rather than a cheaper model.
-Subagents are a Claude Code-specific mechanism (unlike skills/rules), so
-this file lives only under `.claude/`, with no `.agents/` counterpart to
-mirror.
+capability tier as the default session rather than a cheaper model. Pi
+mirrors this definition under `.pi/agents/`; there is no `.agents/`
+counterpart because subagent formats are client-specific.
 
 ### Mutation testing (rolling out)
 
@@ -154,9 +152,8 @@ up the same way. Claude Code additionally has a `mutation-testing`
 carrying the same procedure, run on `sonnet` — triaging survivors is
 TDD-shaped judgment work, not mechanical rule-following, so it stays on
 the same capability tier as the default session rather than a cheaper
-model. Subagents are a Claude Code-specific mechanism (unlike
-skills/rules), so this file lives only under `.claude/`, with no
-`.agents/` counterpart to mirror.
+model. Pi mirrors this definition under `.pi/agents/`; there is no
+`.agents/` counterpart because subagent formats are client-specific.
 
 ## Commit Guidelines
 
@@ -177,9 +174,9 @@ picks it up the same way. Claude Code additionally has a
 `conventional-commit` **subagent**
 ([`.claude/agents/conventional-commit.md`](.claude/agents/conventional-commit.md))
 carrying the same procedure, run on a cheaper model since splitting a diff
-into typed commits is mechanical, rule-following work — subagents are a
-Claude Code-specific mechanism (unlike skills/rules), so this file lives
-only under `.claude/`, with no `.agents/` counterpart to mirror.
+into typed commits is mechanical, rule-following work. Pi mirrors this
+definition under `.pi/agents/`; there is no `.agents/` counterpart because
+subagent formats are client-specific.
 
 This repo enforces [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
 via commitlint (`commitlint.config.cjs`) and drives versioning + `CHANGELOG.md`
