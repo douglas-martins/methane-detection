@@ -17,16 +17,22 @@ pre-existing root-level `mlruns/` (real thesis experiment data).
 """
 
 import sys
+import time
+from functools import partial
 from pathlib import Path
 
 import mlflow
+import numpy as np
 import pandas as pd
+import segmentation_models_pytorch as smp
 import torch
 from architectures import build_e1, build_e2, build_e3
 from dataset import PatchDataset
 from early_stopping import EarlyStopper
 from losses import build_loss, compute_pos_weight
 from torch.utils.data import DataLoader
+
+_DEFAULT_SEED = 42
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _COURSEWORK_ROOT = Path(__file__).resolve().parent
@@ -49,7 +55,66 @@ def augment_for(architecture: str) -> bool:
     return architecture != "E1"
 
 
-def evaluate(model: torch.nn.Module, loader, loss_fn: torch.nn.Module, device: str) -> dict:
+def set_seed(seed: int) -> None:
+    """Seed every RNG `fit()` draws from -- torch (CPU + CUDA) and numpy.
+
+    Plan Section 7.1 Phase A1: `train.py` seeded nothing before this, so
+    two runs of the same configuration (weight init via the caller's own
+    pre-`fit()` seeding, kornia augmentation, `DataLoader` shuffling --
+    all of which read from these same global generators) could not be
+    reproduced. Call this before building the model too, not only inside
+    `fit()`, so weight initialization is also covered.
+    """
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+
+
+def count_parameters(model: torch.nn.Module) -> int:
+    """Return the total element count across all of `model`'s parameter tensors.
+
+    Plan Section 7.1 Phase A2: logged as the `param_count` MLflow param so
+    Section 9's parameter-count column doesn't have to be recomputed or
+    retyped from `architectures.py`'s own docstrings later.
+    """
+    return sum(p.numel() for p in model.parameters())
+
+
+def library_versions() -> dict[str, str]:
+    """Return `{torch_version, smp_version, cuda_version}` for MLflow params.
+
+    Plan Section 7.1 Phase A2: "record exact library versions, not just
+    'torch' without a version pin" -- read directly from the imported
+    modules so this can't drift out of sync with what actually ran.
+    `cuda_version` is `"cpu"` on a build with no CUDA support.
+    """
+    return {
+        "torch_version": torch.__version__,
+        "smp_version": smp.__version__,
+        "cuda_version": torch.version.cuda or "cpu",
+    }
+
+
+def _seed_worker(worker_id: int, base_seed: int) -> None:
+    """`DataLoader` `worker_init_fn`: reseed numpy/torch per worker off `base_seed`.
+
+    Each worker process needs its own deterministic-but-distinct seed --
+    without this, workers otherwise fall back to arbitrary per-process RNG
+    state, and augmentation draws would no longer be reproducible under
+    `num_workers>0` even with the main process's RNGs seeded.
+    """
+    worker_seed = base_seed + worker_id
+    np.random.seed(worker_seed)
+    torch.manual_seed(worker_seed)
+
+
+def evaluate(
+    model: torch.nn.Module,
+    loader,
+    loss_fn: torch.nn.Module,
+    device: str,
+    max_batches: int | None = None,
+) -> dict:
     """Run `model` in eval mode over `loader`; return loss/F1/degeneracy metrics.
 
     Accumulates true/false positive/negative counts (and an all-zero/
@@ -59,6 +124,13 @@ def evaluate(model: torch.nn.Module, loader, loss_fn: torch.nn.Module, device: s
     incremental-accumulation reasoning as `stats.py`'s own
     `compute_band_stats`/`compute_class_distribution` (Section 0.1): O(1)
     memory per batch, not O(dataset size).
+
+    `max_batches` (plan Section 7.1 Phase A4, default `None` = every
+    batch) stops after that many batches -- for Phase B's dry runs, where
+    `max_steps=2` on `tier=raw-full` would otherwise still walk all 26,607
+    val patches every "epoch" before the loop even reaches the cheap
+    part. Breaking out of the loop, not slicing `loader` beforehand, means
+    the un-visited patches are never read off disk at all.
     """
     model.eval()
     total_loss = 0.0
@@ -72,6 +144,8 @@ def evaluate(model: torch.nn.Module, loader, loss_fn: torch.nn.Module, device: s
 
     with torch.no_grad():
         for batch in loader:
+            if max_batches is not None and n_batches >= max_batches:
+                break
             x, y = batch["input"].to(device), batch["output"].to(device)
             logits = model(x)
             total_loss += loss_fn(logits, y).item()
@@ -113,8 +187,33 @@ def fit(
     log_to_mlflow: bool = True,
     num_workers: int = 0,
     verbose: bool = False,
+    seed: int = _DEFAULT_SEED,
+    max_val_batches: int | None = None,
 ) -> dict:
     """Train `model` on `train_df`, validate on `val_df`; return final metrics + run length.
+
+    `max_val_batches` (plan Section 7.1 Phase A4, default `None` = full
+    val split) is forwarded to every `evaluate()` call this makes -- for
+    dry-running a cell at `tier=raw-full` with `max_steps=2`, so the val
+    pass doesn't still walk all 26,607 patches every "epoch" (`raw-smoke`
+    already had its own escape hatch for this via a pre-sliced `val_df` in
+    `_load_split`; this is the general version for any tier).
+
+    `seed` (plan Section 7.1 Phase A1) is applied via `set_seed()` before
+    the loaders are built and threaded into each `DataLoader`'s `generator=`
+    / `worker_init_fn=`, so calling `fit()` twice with the same seed and the
+    same starting model weights reproduces the same shuffle order,
+    augmentation draws, and therefore the same metrics. It does **not**
+    seed the model's own weight initialization -- that already happened
+    before `model` was passed in; call `set_seed()` yourself before
+    building the model if that also needs to be reproducible (`main()`
+    does this).
+
+    `wall_clock_seconds` (total) and `seconds_per_epoch` (average; also
+    logged per-epoch to MLflow individually) are returned so Section 7's
+    R3 epoch-cap sizing can be based on a number this function actually
+    measured, not the `stats.py` I/O-timing estimate carried forward in
+    that section's own prose (plan Section 7.1 Phase A3).
 
     `num_workers=0` (the default) is right for tests -- worker-process
     startup is pure overhead against a handful of synthetic patches. Real
@@ -133,18 +232,28 @@ def fit(
     total) was verified fast for the same real workload. Keep
     `num_workers * 2` comfortably under the machine's thread count.
     """
+    set_seed(seed)
     model.to(device)
     pos_weight = compute_pos_weight(train_df)
     loss_fn = build_loss(pos_weight).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
+    generator = torch.Generator()
+    generator.manual_seed(seed)
     loader_kwargs = (
-        {"num_workers": num_workers, "persistent_workers": True} if num_workers > 0 else {}
+        {
+            "num_workers": num_workers,
+            "persistent_workers": True,
+            "worker_init_fn": partial(_seed_worker, base_seed=seed),
+        }
+        if num_workers > 0
+        else {}
     )
     train_loader = DataLoader(
         PatchDataset(train_df, dataset=dataset, augment=augment),
         batch_size=batch_size,
         shuffle=True,
+        generator=generator,
         **loader_kwargs,
     )
     val_loader = DataLoader(
@@ -161,8 +270,10 @@ def fit(
     best_metrics: dict = {}
     best_epoch = 0
     stop_early = False
+    fit_start = time.perf_counter()
 
     for epoch in range(1, max_epochs + 1):
+        epoch_start = time.perf_counter()
         model.train()
         for batch in train_loader:
             x, y = batch["input"].to(device), batch["output"].to(device)
@@ -174,15 +285,22 @@ def fit(
             if max_steps is not None and step_count >= max_steps:
                 break
 
-        val_metrics = evaluate(model, val_loader, loss_fn, device)
+        val_metrics = evaluate(model, val_loader, loss_fn, device, max_batches=max_val_batches)
+        epoch_seconds = time.perf_counter() - epoch_start
         if log_to_mlflow:
             mlflow.log_metrics(
-                {"val_loss": val_metrics["loss"], "val_f1": val_metrics["f1"]}, step=epoch
+                {
+                    "val_loss": val_metrics["loss"],
+                    "val_f1": val_metrics["f1"],
+                    "seconds_per_epoch": epoch_seconds,
+                },
+                step=epoch,
             )
         if verbose:
             print(
                 f"  epoch {epoch}/{max_epochs} step {step_count}: "
-                f"val_loss={val_metrics['loss']:.4f} val_f1={val_metrics['f1']:.4f}"
+                f"val_loss={val_metrics['loss']:.4f} val_f1={val_metrics['f1']:.4f} "
+                f"({epoch_seconds:.1f}s)"
             )
 
         should_stop = stopper.step(val_metrics["loss"])
@@ -203,6 +321,7 @@ def fit(
     # real: R2's baseline run peaked at epoch 8, stopped at epoch 18 with
     # a visibly worse loss). The saved checkpoint is the best epoch's
     # weights, so the reported number must match what was actually kept.
+    wall_clock_seconds = time.perf_counter() - fit_start
     return {
         **best_metrics,
         "best_epoch": best_epoch,
@@ -211,6 +330,13 @@ def fit(
         "steps_run": step_count,
         "pos_weight": pos_weight,
         "stopped_early": stop_early,
+        "wall_clock_seconds": wall_clock_seconds,
+        # Average over the run, not the last epoch's own time -- this is
+        # the number Section 7's R3 epoch-cap sizing is meant to read
+        # (plan Section 7.1 Phase A3), and per-epoch times are already
+        # visible individually via the `seconds_per_epoch` metric logged
+        # inside the loop above.
+        "seconds_per_epoch": wall_clock_seconds / epoch,
     }
 
 
@@ -248,22 +374,54 @@ def main() -> None:
     """CLI entry point -- see report.md's Metodologia section for the run log this produced.
 
     Usage: python train.py architecture=E1 dataset=starcop_mini tier=mini [max_steps=300]
+           [seed=42] [max_val_batches=2] [max_epochs=20] [patience=10]
     `tier` is one of 'mini' | 'raw-smoke' | 'r2' -- only affects which split is loaded and,
     for 'raw-smoke', how the run is labeled; `max_steps` (optional) caps step count,
     used for the R1 smoke-training run (a few hundred steps, no convergence expected).
+    `seed` (plan Section 7.1 Phase A1, default 42) is applied via `set_seed()` before
+    `build_model()` so weight initialization is reproducible too, then passed to `fit()`
+    for the loader/augmentation seeding described there.
+    `max_val_batches` (plan Section 7.1 Phase A4, optional, default no cap) caps how many
+    val batches `evaluate()` reads per epoch -- pair with a small `max_steps` for Phase
+    B's dry runs on `tier=raw-full`/`r2`, where a full val pass would otherwise dominate
+    the wall-clock time a "smoke test" is supposed to save.
+    `max_epochs` (optional, default 50, or 1 when `max_steps` is set) overrides the
+    schedule's epoch cap -- added for R3 (plan Section 7 Phase E), whose overnight
+    time budget needs a smaller cap than mini/r2's 50 (sized from measured per-step
+    cost, not the default). `patience` (optional, default 10) is exposed for
+    completeness but R3 keeps it at 10 deliberately -- Section 7's own rule holds
+    early-stopping patience fixed across tiers; only the epoch cap is the allowed
+    per-tier exception.
     """
     args = _parse_kv_args(sys.argv[1:])
     architecture = args.get("architecture", "E1")
     dataset = args.get("dataset", "starcop_mini")
     tier = args.get("tier", "mini")
     max_steps = int(args["max_steps"]) if "max_steps" in args else None
+    seed = int(args.get("seed", _DEFAULT_SEED))
+    max_val_batches = int(args["max_val_batches"]) if "max_val_batches" in args else None
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Named once here so the values logged as MLflow params are the exact
+    # same values `fit()` trains with -- not a second, hand-copied literal
+    # that could silently drift from what actually ran (plan Section 7.1
+    # Phase A2).
+    lr = 1e-3 if architecture == "E1" else 1e-4
+    batch_size = 16
+    default_max_epochs = 50 if max_steps is None else 1
+    max_epochs = int(args.get("max_epochs", default_max_epochs))
+    patience = int(args.get("patience", 10))
+    num_workers = 4
+    augment = augment_for(architecture)
+    loss_name = "BCEWithLogitsLoss+pos_weight"
+    optimizer_name = "Adam"
 
     train_df, val_df = _load_split(dataset, tier)
 
     mlflow.set_tracking_uri(_MLFLOW_TRACKING_URI)
     mlflow.set_experiment(_MLFLOW_EXPERIMENT)
 
+    set_seed(seed)
     model = build_model(architecture)
     with mlflow.start_run(run_name=f"{architecture}-{tier}"):
         mlflow.log_params(
@@ -272,8 +430,19 @@ def main() -> None:
                 "dataset": dataset,
                 "tier": tier,
                 "device": device,
+                "seed": seed,
                 "train_patches": len(train_df),
                 "val_patches": len(val_df),
+                "lr": lr,
+                "batch_size": batch_size,
+                "max_epochs": max_epochs,
+                "patience": patience,
+                "num_workers": num_workers,
+                "augment": augment,
+                "loss": loss_name,
+                "optimizer": optimizer_name,
+                "param_count": count_parameters(model),
+                **library_versions(),
             }
         )
         result = fit(
@@ -281,16 +450,18 @@ def main() -> None:
             train_df,
             val_df,
             dataset=dataset,
-            lr=1e-3 if architecture == "E1" else 1e-4,
-            batch_size=16,
-            max_epochs=50 if max_steps is None else 1,
-            patience=10,
+            lr=lr,
+            batch_size=batch_size,
+            max_epochs=max_epochs,
+            patience=patience,
             max_steps=max_steps,
-            augment=augment_for(architecture),
+            augment=augment,
             device=device,
             checkpoint_path=_CHECKPOINT_DIR / f"{architecture}-{tier}.pt",
-            num_workers=4,
+            num_workers=num_workers,
             verbose=True,
+            seed=seed,
+            max_val_batches=max_val_batches,
         )
         mlflow.log_metrics({k: v for k, v in result.items() if isinstance(v, int | float)})
         print(f"architecture={architecture} tier={tier} dataset={dataset}")

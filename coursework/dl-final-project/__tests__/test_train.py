@@ -1,9 +1,10 @@
 import numpy as np
 import pandas as pd
 import pytest
+import segmentation_models_pytorch as smp
 import torch
 from losses import build_loss
-from train import augment_for, evaluate, fit
+from train import augment_for, count_parameters, evaluate, fit, library_versions, set_seed
 
 
 class TestAugmentFor:
@@ -157,7 +158,7 @@ class TestFit:
         canned_losses = [0.5, 0.1, 0.4, 0.6]  # best is epoch 2 (index 1)
         calls = iter(canned_losses)
 
-        def _fake_evaluate(model, loader, loss_fn, device):
+        def _fake_evaluate(model, loader, loss_fn, device, max_batches=None):
             return {
                 "loss": next(calls),
                 "f1": 0.0,
@@ -207,3 +208,295 @@ class TestFit:
 
         assert result["steps_run"] == 3
         assert result["epochs_run"] < 50
+
+
+class TestSetSeed:
+    def test_sets_torch_and_numpy_rng_deterministically(self):
+        # Plan Section 7.1 Phase A1: `set_seed` is the single call site that
+        # has to cover every RNG source `fit()` touches (torch CPU, numpy --
+        # kornia augmentation and DataLoader shuffling draw from these), so
+        # that calling it twice with the same value reproduces the same
+        # draws from both.
+        set_seed(123)
+        first_torch = torch.rand(3)
+        first_numpy = np.random.rand(3)
+
+        set_seed(123)
+        second_torch = torch.rand(3)
+        second_numpy = np.random.rand(3)
+
+        assert torch.equal(first_torch, second_torch)
+        assert np.array_equal(first_numpy, second_numpy)
+
+
+class TestFitSeed:
+    def test_same_seed_produces_identical_metrics_across_runs(self, tmp_path, tiny_geotiff_factory):
+        # This is the literal Phase A1 gate (plan Section 7.0): "same cell
+        # run twice -> identical val_loss to 4 decimals." Augmentation is on
+        # (E2/E3's real setting) so the test also covers kornia's randomness,
+        # not just DataLoader shuffle order.
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=6, size=16)
+        val_df = _patches_df(folder, n_rows=4, size=16)
+
+        def _run():
+            torch.manual_seed(0)  # identical starting weights each call
+            model = torch.nn.Sequential(
+                torch.nn.Conv2d(4, 8, 3, padding=1),
+                torch.nn.ReLU(),
+                torch.nn.Conv2d(8, 1, 1),
+            )
+            return fit(
+                model,
+                train_df,
+                val_df,
+                dataset="starcop_mini",
+                lr=1e-3,
+                batch_size=2,
+                max_epochs=2,
+                patience=10,
+                seed=42,
+                augment=True,
+                log_to_mlflow=False,
+            )
+
+        first = _run()
+        second = _run()
+
+        assert first["loss"] == second["loss"]
+        assert first["f1"] == second["f1"]
+
+    def test_seed_is_wired_into_the_train_loaders_generator(
+        self, tmp_path, tiny_geotiff_factory, monkeypatch
+    ):
+        # `_patches_df` points every row at the same window, so patch
+        # *content* can't distinguish shuffle orders -- assert on the wiring
+        # instead: `fit(seed=N)` must construct its (shuffled) train loader
+        # with a generator seeded from that same N, per Phase A1's "add the
+        # DataLoader's generator=" requirement.
+        import train as train_module
+
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        real_data_loader = train_module.DataLoader
+        captured_generators = []
+
+        def _recording_data_loader(*args, **kwargs):
+            captured_generators.append(kwargs.get("generator"))
+            return real_data_loader(*args, **kwargs)
+
+        monkeypatch.setattr(train_module, "DataLoader", _recording_data_loader)
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=1,
+            patience=10,
+            max_steps=1,
+            seed=7,
+            log_to_mlflow=False,
+        )
+
+        train_generator = captured_generators[0]
+        assert train_generator is not None
+        assert train_generator.initial_seed() == 7
+
+
+class TestCountParameters:
+    def test_counts_every_parameter_tensor_element(self):
+        # Linear(4, 2): weight (4*2=8) + bias (2) = 10 -- a hand-computable
+        # case rather than a real architecture, so the test doesn't depend
+        # on `architectures.py`'s exact parameter counts staying fixed.
+        model = torch.nn.Linear(4, 2)
+        assert count_parameters(model) == 10
+
+    def test_matches_the_sum_of_numel_across_parameters(self):
+        # Cross-checks against the direct computation for a multi-layer
+        # model, so the helper isn't just right for the single-layer case.
+        model = torch.nn.Sequential(torch.nn.Conv2d(4, 8, 3), torch.nn.Conv2d(8, 1, 1))
+        expected = sum(p.numel() for p in model.parameters())
+        assert count_parameters(model) == expected
+
+
+class TestLibraryVersions:
+    def test_reports_torch_smp_and_cuda_versions_for_mlflow_params(self):
+        # Plan Section 7.1 Phase A2: these three go into every run's MLflow
+        # params so Section 9's numbers don't depend on retyping versions
+        # from memory later. Checked against the actual imported modules,
+        # not hardcoded strings, so this fails the day a version drifts.
+        versions = library_versions()
+
+        assert versions["torch_version"] == torch.__version__
+        assert versions["smp_version"] == smp.__version__
+        assert versions["cuda_version"] == (torch.version.cuda or "cpu")
+
+
+class TestFitTiming:
+    def test_returns_nonzero_wall_clock_and_seconds_per_epoch(self, tmp_path, tiny_geotiff_factory):
+        # Plan Section 7.1 Phase A3: R3's epoch-cap sizing has to come from
+        # a *measured* per-epoch time, not the `stats.py` I/O estimate
+        # carried forward in Section 7's own prose -- so these have to be
+        # real, non-zero numbers coming out of an actual `fit()` call.
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        result = fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=2,
+            patience=10,
+            log_to_mlflow=False,
+        )
+
+        assert result["wall_clock_seconds"] > 0
+        assert result["seconds_per_epoch"] > 0
+
+    def test_seconds_per_epoch_is_wall_clock_divided_by_epochs_run(
+        self, tmp_path, tiny_geotiff_factory
+    ):
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        result = fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=3,
+            patience=10,
+            log_to_mlflow=False,
+        )
+
+        assert result["seconds_per_epoch"] == pytest.approx(
+            result["wall_clock_seconds"] / result["epochs_run"]
+        )
+
+
+class TestEvaluateMaxBatches:
+    def test_stops_after_max_batches_and_ignores_the_rest(self):
+        # Plan Section 7.1 Phase A4: without this, a "2-step smoke test" on
+        # `raw-full` still runs a full 26,607-patch `evaluate()` pass every
+        # epoch. Three batches with distinguishable logits -- capping at 2
+        # must change the averaged loss, proving the third was never read.
+        batches = [
+            {"input": torch.zeros(1, 4, 2, 2), "output": torch.zeros(1, 1, 2, 2)},
+            {"input": torch.zeros(1, 4, 2, 2), "output": torch.zeros(1, 1, 2, 2)},
+            {"input": torch.zeros(1, 4, 2, 2), "output": torch.zeros(1, 1, 2, 2)},
+        ]
+        logits = [
+            torch.full((1, 1, 2, 2), -5.0),
+            torch.full((1, 1, 2, 2), 0.0),
+            torch.full((1, 1, 2, 2), 5.0),
+        ]
+        model = _FixedLogitModel(logits)
+        loss_fn = build_loss(pos_weight=1.0)
+
+        result = evaluate(model, batches, loss_fn, device="cpu", max_batches=2)
+
+        target = torch.zeros(1, 1, 2, 2)
+        expected_loss = (loss_fn(logits[0], target).item() + loss_fn(logits[1], target).item()) / 2
+        assert result["loss"] == pytest.approx(expected_loss)
+
+    def test_none_processes_every_batch_unchanged(self):
+        # Default behavior (no cap) must match the pre-A4 code exactly --
+        # regression guard against `max_batches` accidentally becoming a
+        # non-optional truncation.
+        batches = [
+            {"input": torch.zeros(1, 4, 2, 2), "output": torch.zeros(1, 1, 2, 2)},
+            {"input": torch.zeros(1, 4, 2, 2), "output": torch.zeros(1, 1, 2, 2)},
+        ]
+        model = _FixedLogitModel([torch.full((1, 1, 2, 2), -5.0), torch.full((1, 1, 2, 2), 5.0)])
+        loss_fn = build_loss(pos_weight=1.0)
+
+        result = evaluate(model, batches, loss_fn, device="cpu", max_batches=None)
+
+        target = torch.zeros(1, 1, 2, 2)
+        expected_loss = (
+            loss_fn(torch.full((1, 1, 2, 2), -5.0), target).item()
+            + loss_fn(torch.full((1, 1, 2, 2), 5.0), target).item()
+        ) / 2
+        assert result["loss"] == pytest.approx(expected_loss)
+
+
+class TestFitMaxValBatches:
+    def test_max_val_batches_is_threaded_through_to_evaluate(
+        self, tmp_path, tiny_geotiff_factory, monkeypatch
+    ):
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        captured_max_batches = []
+
+        def _recording_evaluate(model, loader, loss_fn, device, max_batches=None):
+            captured_max_batches.append(max_batches)
+            return {"loss": 0.0, "f1": 0.0, "degenerate": False, "positive_fraction": 0.0}
+
+        monkeypatch.setattr("train.evaluate", _recording_evaluate)
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=1,
+            patience=10,
+            max_val_batches=3,
+            log_to_mlflow=False,
+        )
+
+        assert captured_max_batches == [3]
+
+    def test_defaults_to_no_cap(self, tmp_path, tiny_geotiff_factory, monkeypatch):
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        captured_max_batches = []
+
+        def _recording_evaluate(model, loader, loss_fn, device, max_batches=None):
+            captured_max_batches.append(max_batches)
+            return {"loss": 0.0, "f1": 0.0, "degenerate": False, "positive_fraction": 0.0}
+
+        monkeypatch.setattr("train.evaluate", _recording_evaluate)
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=1,
+            patience=10,
+            log_to_mlflow=False,
+        )
+
+        assert captured_max_batches == [None]
