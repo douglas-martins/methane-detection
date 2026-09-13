@@ -1,0 +1,79 @@
+name: Mutation Testing
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  research-env-mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install research env dependencies
+        run: uv sync
+
+      - name: Run research mutation tests
+        run: make mutation-research
+
+      - name: Enforce mutation gate
+        run: make mutation-gate
+
+  baseline-env-mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect baseline mutation scope
+        id: baseline_scope
+        run: |
+          if grep -Fq '"src/data/download/download_mini_dataset.py"' pyproject.toml; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "No baseline-env module is in the mutation allowlist yet."
+          fi
+
+      - name: Install uv
+        if: steps.baseline_scope.outputs.enabled == 'true'
+        uses: astral-sh/setup-uv@v3
+
+      - name: Create baseline env venv (Python 3.10)
+        if: steps.baseline_scope.outputs.enabled == 'true'
+        run: uv venv --python 3.10 vendor/starcop/.venv
+
+      - name: Install STARCOP and baseline mutation dependencies
+        if: steps.baseline_scope.outputs.enabled == 'true'
+        run: |
+          uv pip install --python vendor/starcop/.venv/bin/python \
+            -r vendor/starcop/requirements.txt \
+            -r requirements/baseline-dev.txt \
+            -r requirements/baseline-mlflow.txt
+          uv pip install --python vendor/starcop/.venv/bin/python -e vendor/starcop
+
+      - name: Run baseline mutation tests
+        if: steps.baseline_scope.outputs.enabled == 'true'
+        run: make mutation-baseline
+
+      - name: Enforce mutation gate
+        if: steps.baseline_scope.outputs.enabled == 'true'
+        run: make mutation-gate

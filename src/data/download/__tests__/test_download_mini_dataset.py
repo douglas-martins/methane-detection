@@ -13,7 +13,7 @@ import download_mini_dataset
 
 def test_creates_target_dir_if_missing(tmp_path, fake_zip_factory, monkeypatch):
     """target_dir doesn't need to exist beforehand -- download_and_extract creates it."""
-    target_dir = tmp_path / "does_not_exist_yet"
+    target_dir = tmp_path / "missing_parent" / "does_not_exist_yet"
 
     def fake_download(output, quiet, **kwargs):
         """Stand in for gdown.download: write a fake zip instead of hitting the network.
@@ -126,7 +126,7 @@ def test_flatten_preserves_preexisting_files_in_target_dir(tmp_path, fake_zip_fa
     assert (tmp_path / "new_file.csv").read_bytes() == b"x"
 
 
-def test_main_calls_download_and_extract_for_each_asset(monkeypatch):
+def test_main_calls_download_and_extract_for_each_asset(monkeypatch, capsys):
     """main() dispatches download_and_extract once per entry in ASSETS, in order."""
     calls = []
     monkeypatch.setattr(
@@ -138,3 +138,8 @@ def test_main_calls_download_and_extract_for_each_asset(monkeypatch):
     download_mini_dataset.main()
 
     assert calls == download_mini_dataset.ASSETS
+    expected_output = "".join(
+        f"--- {filename} -> {target_dir} ---\n"
+        for _, filename, target_dir in download_mini_dataset.ASSETS
+    )
+    assert capsys.readouterr().out == f"{expected_output}Done.\n"

@@ -62,6 +62,11 @@ class TestKlDivergenceGaussian:
 
         assert math.isclose(result, -math.log(2) + 1.5)
 
+    def test_matches_closed_form_with_non_unit_baseline_and_nonzero_means(self):
+        result = drift.kl_divergence_gaussian(mu_p=3.0, sigma_p=2.0, mu_q=1.0, sigma_q=4.0)
+
+        assert math.isclose(result, math.log(2) - 0.25)
+
     def test_does_not_raise_or_return_inf_when_rolling_sigma_is_zero(self):
         # A short rolling window of literally identical values (e.g. a
         # handful of duplicate synthetic requests) computes sigma_p=0.0 --
@@ -88,9 +93,13 @@ class TestCheckDrift:
         assert drift.check_drift(rolling, baseline, threshold=0.5) is False
 
     def test_uses_a_default_threshold_of_one_half(self):
-        # Same case as test_true_when_kl_divergence_exceeds_the_threshold,
-        # relying on the default rather than passing threshold explicitly.
-        rolling = BandStats(mean=5.0, std=1.0)
+        rolling = BandStats(mean=1.1, std=1.0)
         baseline = BandStats(mean=0.0, std=1.0)
 
         assert drift.check_drift(rolling, baseline) is True
+
+    def test_false_when_divergence_exactly_equals_threshold(self):
+        rolling = BandStats(mean=1.0, std=1.0)
+        baseline = BandStats(mean=0.0, std=1.0)
+
+        assert drift.check_drift(rolling, baseline, threshold=0.5) is False

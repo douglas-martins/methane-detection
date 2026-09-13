@@ -84,5 +84,5 @@ def flatten_hydra_params(settings: DictConfig) -> Dict[str, str]:
         else:
             flat[prefix] = str(obj)
 
-    _walk("", container)
+    _walk("", container)  # pragma: no mutate - None is an equivalent falsey root prefix
     return flat
