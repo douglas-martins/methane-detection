@@ -79,6 +79,7 @@ only_mutate = [
     "src/baselines/starcop/serving/band_baseline.py",
     "src/baselines/starcop/evaluation/select_docs_examples.py",
     "src/baselines/starcop/registry/hf_baseline_import.py",
+    "src/data/download/download_mini_dataset.py",
 ]
 pytest_add_cli_args = ["-p", "_mutmut_pytest_plugin"]
 do_not_mutate = [
