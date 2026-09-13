@@ -46,6 +46,13 @@ mutation-research:
 		'serving.band_statistics.*' \
 		'serving.drift.*' \
 		'baselines.starcop.training.validation_metrics.*' \
+		'baselines.starcop.training.metrics_ext.*' \
+		'baselines.starcop.training.normalizer_dtype_fix.*' \
+		'baselines.starcop.training.lightning2_compat.*' \
+		'baselines.starcop.training.optimizer_compat.*' \
+		'baselines.starcop.training.starcop_datamodule.*' \
+		'baselines.starcop.training.plot_confusion_matrix.*' \
+		'baselines.starcop.training.mlflow_image_logger.*' \
 		'baselines.starcop.training.launch_profiles.*' \
 		'baselines.starcop.training.accelerator_check.*' \
 		'baselines.starcop.training.colab_bootstrap.*' \

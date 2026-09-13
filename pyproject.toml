@@ -68,6 +68,13 @@ only_mutate = [
     "src/serving/band_statistics.py",
     "src/serving/drift.py",
     "src/baselines/starcop/training/validation_metrics.py",
+    "src/baselines/starcop/training/metrics_ext.py",
+    "src/baselines/starcop/training/normalizer_dtype_fix.py",
+    "src/baselines/starcop/training/lightning2_compat.py",
+    "src/baselines/starcop/training/optimizer_compat.py",
+    "src/baselines/starcop/training/starcop_datamodule.py",
+    "src/baselines/starcop/training/plot_confusion_matrix.py",
+    "src/baselines/starcop/training/mlflow_image_logger.py",
     "src/baselines/starcop/training/launch_profiles.py",
     "src/baselines/starcop/training/accelerator_check.py",
     "src/baselines/starcop/training/colab_bootstrap.py",
@@ -100,6 +107,10 @@ do_not_mutate = [
     # sys.modules thereafter; mutmut generates zero mutants for it (P5.5) -- nothing to
     # kill-or-justify per mutant, so it's excluded rather than left an unexplained 0/0.
     "*/data/preprocessing/_vendor_starcop.py",
+    # Import-only sys.path + re-export seam, executed once at first import and cached in
+    # sys.modules thereafter; mutmut generates zero mutants for it (P6.7) -- nothing to
+    # kill-or-justify per mutant, so it's excluded rather than left an unexplained 0/0.
+    "*/baselines/starcop/training/_vendor_starcop_training.py",
 ]
 pytest_add_cli_args_test_selection = [
     "src/data/download/__tests__",
