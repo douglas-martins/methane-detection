@@ -76,12 +76,19 @@ only_mutate = [
     "src/training/mlflow_utils.py",
     "src/baselines/starcop/training/settings_overlay.py",
     "src/data/preprocessing/split.py",
+    "src/data/preprocessing/coordinates.py",
+    "src/data/preprocessing/normalize.py",
+    "src/data/preprocessing/patch_extract.py",
+    "src/data/preprocessing/stats.py",
     "src/baselines/starcop/serving/band_baseline.py",
     "src/baselines/starcop/evaluation/select_docs_examples.py",
     "src/baselines/starcop/registry/hf_baseline_import.py",
     "src/data/download/download_mini_dataset.py",
 ]
 pytest_add_cli_args = ["-p", "_mutmut_pytest_plugin"]
+mutate_only_covered_lines = true
+max_stack_depth = 2
+timeout_multiplier = 25
 do_not_mutate = [
     "*/__tests__/*",
     "*/conftest.py",
@@ -89,6 +96,10 @@ do_not_mutate = [
     "vendor/*",
     "coursework/*",
     "*/scripts/preprocessing/*.py",
+    # Import-only sys.path + re-export seam, executed once at first import and cached in
+    # sys.modules thereafter; mutmut generates zero mutants for it (P5.5) -- nothing to
+    # kill-or-justify per mutant, so it's excluded rather than left an unexplained 0/0.
+    "*/data/preprocessing/_vendor_starcop.py",
 ]
 pytest_add_cli_args_test_selection = [
     "src/data/download/__tests__",

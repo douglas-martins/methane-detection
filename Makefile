@@ -54,6 +54,10 @@ mutation-research:
 		'training.mlflow_utils.*' \
 		'baselines.starcop.training.settings_overlay.*' \
 		'data.preprocessing.split.*' \
+		'data.preprocessing.coordinates.*' \
+		'data.preprocessing.normalize.*' \
+		'data.preprocessing.patch_extract.*' \
+		'data.preprocessing.stats.*' \
 		'baselines.starcop.serving.band_baseline.*' \
 		'baselines.starcop.evaluation.select_docs_examples.*' \
 		'baselines.starcop.registry.hf_baseline_import.*'
