@@ -32,6 +32,9 @@ dev = [
     "genbadge[tests,coverage]",
     "interrogate",
     "ruff",
+    "mutmut==3.8.0",
+    "gdown>=6.2.0",
+    "spectral>=0.25",
 ]
 docs = [
     "mkdocs",
