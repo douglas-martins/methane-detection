@@ -64,6 +64,24 @@ uv sync
 - Tests live in `__tests__/` folders next to the module they cover; shared
   fixtures in the root `conftest.py`.
 
+### Mutation testing (rolling out)
+
+> [!NOTE]
+> This gate is rolling out module by module, not repo-wide yet — no
+> `make mutation-*` target exists until the first module lands.
+
+Coverage proves a line executed, not that a test would catch a change to it.
+This repo is layering [mutmut](https://mutmut.readthedocs.io/) mutation
+testing on top of the existing coverage gates: mutmut mutates the source
+(flips a comparison, changes a constant, drops a statement) and reruns the
+tests, and any mutant that survives is a behavior change nothing would have
+caught. Once a module is added to `[tool.mutmut] only_mutate` in
+`pyproject.toml`, every surviving mutant in it must be killed with a
+new/stronger test or explicitly justified (`# pragma: no mutate` or a
+`do_not_mutate` entry with a one-line reason) — never left unexplained, and
+the gate's scope or settings are never weakened just to make it pass. See
+[`AGENTS.md`](AGENTS.md) for the agent-facing rule and procedure.
+
 ## Architecture
 
 > [!IMPORTANT]
