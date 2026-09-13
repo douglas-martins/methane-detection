@@ -54,7 +54,10 @@ def run(cfg) -> None:
     )
 
     for name, split_df in [("train", train_df), ("val", val_df), ("test", test_df)]:
-        repoint_folder(split_df, selected_root).to_csv(splits_root / f"{name}.csv", index=False)
+        output_path = splits_root / f"{name}.csv"
+        # pandas treats a None index option identically to False.
+        csv_options = {"index": False}  # pragma: no mutate
+        repoint_folder(split_df, selected_root).to_csv(output_path, **csv_options)
 
 
 def main() -> None:
