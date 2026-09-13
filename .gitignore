@@ -75,6 +75,7 @@ junit.xml
 cover/
 coverage*.xml
 junit*.xml
+mutants/
 
 # Translations
 *.mo

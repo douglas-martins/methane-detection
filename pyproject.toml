@@ -51,6 +51,43 @@ package = false
 testpaths = ["src", "tests", "flows"]
 python_files = ["test_*.py"]
 
+[tool.mutmut]
+source_paths = ["src", "flows"]
+also_copy = [
+    "_mutmut_pytest_plugin.py",
+    "conftest.py",
+    "configs",
+    "dvc.yaml",
+    "requirements",
+    "scripts",
+    "vendor/starcop/scripts",
+    "vendor/starcop/starcop",
+]
+only_mutate = ["src/registry/promotion_criteria.py"]
+pytest_add_cli_args = ["-p", "_mutmut_pytest_plugin"]
+do_not_mutate = [
+    "*/__tests__/*",
+    "*/conftest.py",
+    "*/training/train.py",
+    "vendor/*",
+    "coursework/*",
+    "*/scripts/preprocessing/*.py",
+]
+pytest_add_cli_args_test_selection = [
+    "src/data/download/__tests__",
+    "src/data/preprocessing/__tests__",
+    "src/training/__tests__",
+    "src/baselines/starcop/training/__tests__",
+    "src/registry/__tests__",
+    "src/baselines/starcop/registry/__tests__",
+    "src/serving/__tests__",
+    "src/baselines/starcop/serving/__tests__",
+    "src/baselines/starcop/evaluation/__tests__",
+    "tests/vendor_starcop",
+    "tests/__tests__",
+    "flows/__tests__",
+]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
@@ -72,8 +109,9 @@ select = ["E", "F", "I", "W"]
 # the class docstring already covers.
 # coursework/ (DL course final project) is excluded for the same
 # isolation reason as vendor -- see the [tool.ruff] extend-exclude comment
-# above; use `make coursework-lint`/its own conventions instead.
-exclude = ["*/__tests__/*", "vendor", ".venv", "coursework"]
+# above; use `make coursework-lint`/its own conventions instead. mutants/
+# is mutmut's disposable generated copy, not an additional source tree.
+exclude = ["*/__tests__/*", "vendor", ".venv", "coursework", "mutants"]
 ignore-private = true
 ignore-magic = true
 ignore-nested-functions = true
