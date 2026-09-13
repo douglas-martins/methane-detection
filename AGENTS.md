@@ -47,7 +47,14 @@ and the operational checklist (scoping lint to your diff, running the
 full-repo docstring gate, fixing rather than suppressing) is in
 [`.agents/skills/lint-and-docstring-coverage/SKILL.md`](.agents/skills/lint-and-docstring-coverage/SKILL.md)
 — `.claude/skills/lint-and-docstring-coverage` symlinks to it so Claude Code
-picks it up the same way.
+picks it up the same way. Claude Code additionally has a
+`lint-and-docstring-coverage` **subagent**
+([`.claude/agents/lint-and-docstring-coverage.md`](.claude/agents/lint-and-docstring-coverage.md))
+carrying the same procedure, run on a cheaper model since running the gates
+and adding one-line docstrings is mechanical, rule-following work —
+subagents are a Claude Code-specific mechanism (unlike skills/rules), so
+this file lives only under `.claude/`, with no `.agents/` counterpart to
+mirror.
 
 ## Architecture
 
@@ -114,7 +121,15 @@ The full cycle, patterns, and examples are in
 [`.agents/skills/test-driven-development/SKILL.md`](.agents/skills/test-driven-development/SKILL.md)
 — agents that support the `.agents/skills` convention should load it
 directly; `.claude/skills/test-driven-development` symlinks to it so Claude
-Code picks it up the same way.
+Code picks it up the same way. Claude Code additionally has a
+`test-driven-development` **subagent**
+([`.claude/agents/test-driven-development.md`](.claude/agents/test-driven-development.md))
+carrying the same cycle, run on `sonnet` — this is core engineering
+judgment, not mechanical rule-following, so it stays on the same
+capability tier as the default session rather than a cheaper model.
+Subagents are a Claude Code-specific mechanism (unlike skills/rules), so
+this file lives only under `.claude/`, with no `.agents/` counterpart to
+mirror.
 
 ### Mutation testing (rolling out)
 
@@ -134,7 +149,14 @@ The operational procedure (running mutmut, triaging survivors, growing the
 gate) is in
 [`.agents/skills/mutation-testing/SKILL.md`](.agents/skills/mutation-testing/SKILL.md)
 — `.claude/skills/mutation-testing` symlinks to it so Claude Code picks it
-up the same way.
+up the same way. Claude Code additionally has a `mutation-testing`
+**subagent** ([`.claude/agents/mutation-testing.md`](.claude/agents/mutation-testing.md))
+carrying the same procedure, run on `sonnet` — triaging survivors is
+TDD-shaped judgment work, not mechanical rule-following, so it stays on
+the same capability tier as the default session rather than a cheaper
+model. Subagents are a Claude Code-specific mechanism (unlike
+skills/rules), so this file lives only under `.claude/`, with no
+`.agents/` counterpart to mirror.
 
 ## Commit Guidelines
 
@@ -151,7 +173,13 @@ An operational, step-by-step checklist for applying those rules lives in
 [`.agents/skills/conventional-commit/SKILL.md`](.agents/skills/conventional-commit/SKILL.md)
 — agents that support the `.agents/skills` convention should load it
 directly; `.claude/skills/conventional-commit` symlinks to it so Claude Code
-picks it up the same way.
+picks it up the same way. Claude Code additionally has a
+`conventional-commit` **subagent**
+([`.claude/agents/conventional-commit.md`](.claude/agents/conventional-commit.md))
+carrying the same procedure, run on a cheaper model since splitting a diff
+into typed commits is mechanical, rule-following work — subagents are a
+Claude Code-specific mechanism (unlike skills/rules), so this file lives
+only under `.claude/`, with no `.agents/` counterpart to mirror.
 
 This repo enforces [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
 via commitlint (`commitlint.config.cjs`) and drives versioning + `CHANGELOG.md`
