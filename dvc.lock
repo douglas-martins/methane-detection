@@ -138,8 +138,8 @@ stages:
       nfiles: 417
     - path: src/data/preprocessing/_vendor_starcop.py
       hash: md5
-      md5: 937ad54aacb676d93229d6d82e151f89
-      size: 1586
+      md5: 35137b57f5f0fd010d25278f952b9bfd
+      size: 1584
     - path: src/data/preprocessing/normalize.py
       hash: md5
       md5: 29b124b0f1970f4f58bb906bb62ce976
@@ -159,8 +159,8 @@ stages:
     deps:
     - path: configs/data.yaml
       hash: md5
-      md5: c18c5d3ec5d75b90c0494e2e19328bb7
-      size: 1225
+      md5: 643e446f560168a620c3085e45043f6d
+      size: 1157
     - path: configs/dataset/starcop_raw.yaml
       hash: md5
       md5: fd03212f9237f7435e1dfa1b1265235f
@@ -172,12 +172,12 @@ stages:
       nfiles: 75353
     - path: src/data/preprocessing/_vendor_starcop.py
       hash: md5
-      md5: 937ad54aacb676d93229d6d82e151f89
-      size: 1586
+      md5: 35137b57f5f0fd010d25278f952b9bfd
+      size: 1584
     - path: src/data/preprocessing/normalize.py
       hash: md5
-      md5: 8483e578941b3a9078c53ad70ff29990
-      size: 3976
+      md5: 29b124b0f1970f4f58bb906bb62ce976
+      size: 5434
     - path: vendor/starcop/starcop/data/normalizer_module.py
       hash: md5
       md5: 516ca2655b7b103658e92ce55cfb29af
@@ -224,8 +224,8 @@ stages:
     deps:
     - path: configs/data.yaml
       hash: md5
-      md5: c18c5d3ec5d75b90c0494e2e19328bb7
-      size: 1225
+      md5: 643e446f560168a620c3085e45043f6d
+      size: 1157
     - path: configs/dataset/starcop_raw.yaml
       hash: md5
       md5: fd03212f9237f7435e1dfa1b1265235f
@@ -242,8 +242,8 @@ stages:
       nfiles: 75353
     - path: src/data/preprocessing/split.py
       hash: md5
-      md5: 77bebd1ec18eb72df3fc758254c629e2
-      size: 2510
+      md5: ee8b7f17dafb011e6ab673ac10af67a8
+      size: 2741
     outs:
     - path: data/processed/starcop_raw/splits
       hash: md5
@@ -268,8 +268,8 @@ stages:
       nfiles: 3
     - path: src/data/preprocessing/_vendor_starcop.py
       hash: md5
-      md5: 937ad54aacb676d93229d6d82e151f89
-      size: 1586
+      md5: 35137b57f5f0fd010d25278f952b9bfd
+      size: 1584
     - path: src/data/preprocessing/patch_extract.py
       hash: md5
       md5: e4e03233ee5e3bcbb07ee6ca37a12fe9
@@ -289,8 +289,8 @@ stages:
     deps:
     - path: configs/data.yaml
       hash: md5
-      md5: c18c5d3ec5d75b90c0494e2e19328bb7
-      size: 1225
+      md5: 643e446f560168a620c3085e45043f6d
+      size: 1157
     - path: configs/dataset/starcop_raw.yaml
       hash: md5
       md5: fd03212f9237f7435e1dfa1b1265235f
@@ -302,12 +302,12 @@ stages:
       nfiles: 3
     - path: src/data/preprocessing/_vendor_starcop.py
       hash: md5
-      md5: 937ad54aacb676d93229d6d82e151f89
-      size: 1586
+      md5: 35137b57f5f0fd010d25278f952b9bfd
+      size: 1584
     - path: src/data/preprocessing/patch_extract.py
       hash: md5
-      md5: 20c9674d8cfa5513a6c3cff43f7ffaf7
-      size: 2425
+      md5: e4e03233ee5e3bcbb07ee6ca37a12fe9
+      size: 2643
     - path: vendor/starcop/starcop/data/datamodule.py
       hash: md5
       md5: f605027efc5922e8e3b39e322c0baa44
@@ -323,8 +323,8 @@ stages:
     deps:
     - path: configs/data.yaml
       hash: md5
-      md5: c18c5d3ec5d75b90c0494e2e19328bb7
-      size: 1225
+      md5: 643e446f560168a620c3085e45043f6d
+      size: 1157
     - path: configs/dataset/starcop_mini.yaml
       hash: md5
       md5: f4bc5d10e29ef28a7c01d8b895415392
@@ -336,12 +336,12 @@ stages:
       nfiles: 3
     - path: src/data/preprocessing/_vendor_starcop.py
       hash: md5
-      md5: 937ad54aacb676d93229d6d82e151f89
-      size: 1586
+      md5: 35137b57f5f0fd010d25278f952b9bfd
+      size: 1584
     - path: src/data/preprocessing/stats.py
       hash: md5
-      md5: 5b85339406d890f8c4ae81d389302b89
-      size: 5127
+      md5: 92b8064a01fbad5ae11a0edd348c14de
+      size: 5471
     - path: vendor/starcop/starcop/data/dataset.py
       hash: md5
       md5: f979a63fc755c25c01f17d89e6d4ce8e
@@ -357,8 +357,8 @@ stages:
     deps:
     - path: configs/data.yaml
       hash: md5
-      md5: c18c5d3ec5d75b90c0494e2e19328bb7
-      size: 1225
+      md5: 643e446f560168a620c3085e45043f6d
+      size: 1157
     - path: configs/dataset/starcop_raw.yaml
       hash: md5
       md5: fd03212f9237f7435e1dfa1b1265235f
@@ -370,12 +370,12 @@ stages:
       nfiles: 3
     - path: src/data/preprocessing/_vendor_starcop.py
       hash: md5
-      md5: 937ad54aacb676d93229d6d82e151f89
-      size: 1586
+      md5: 35137b57f5f0fd010d25278f952b9bfd
+      size: 1584
     - path: src/data/preprocessing/stats.py
       hash: md5
-      md5: 5b85339406d890f8c4ae81d389302b89
-      size: 5127
+      md5: 92b8064a01fbad5ae11a0edd348c14de
+      size: 5471
     - path: vendor/starcop/starcop/data/dataset.py
       hash: md5
       md5: f979a63fc755c25c01f17d89e6d4ce8e
@@ -417,8 +417,8 @@ stages:
     deps:
     - path: configs/data.yaml
       hash: md5
-      md5: c18c5d3ec5d75b90c0494e2e19328bb7
-      size: 1225
+      md5: 643e446f560168a620c3085e45043f6d
+      size: 1157
     - path: configs/dataset/starcop_raw.yaml
       hash: md5
       md5: fd03212f9237f7435e1dfa1b1265235f
@@ -430,11 +430,11 @@ stages:
       nfiles: 18836
     - path: src/data/preprocessing/coordinates.py
       hash: md5
-      md5: 7dd0de964f36347affed79e37f810551
-      size: 2256
+      md5: 6ca059126d8a188a04e96f9bc75fa004
+      size: 2485
     outs:
     - path: data/processed/starcop_raw/coordinates
       hash: md5
-      md5: d27b9908cfc0b35ddf46eab9ecdbc581.dir
-      size: 295669
+      md5: 11a23e3e5fd165249fa1749baa3a0e4a.dir
+      size: 295654
       nfiles: 1
