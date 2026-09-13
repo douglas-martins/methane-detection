@@ -1,11 +1,13 @@
 ENV_BASELINE_PYTHON := vendor/starcop/.venv/bin/python
 ENV_BASELINE_GENBADGE := vendor/starcop/.venv/bin/genbadge
+ENV_BASELINE_MUTMUT := vendor/starcop/.venv/bin/mutmut
 ENV_BASELINE_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop src/training/__tests__ src/baselines/starcop/training/__tests__ src/registry/__tests__ src/baselines/starcop/registry/__tests__ src/baselines/starcop/evaluation/__tests__
 ENV_BASELINE_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preprocessing --cov=src/training --cov=src/baselines/starcop/training
 
 ENV_RESEARCH_PYTHON := .venv/bin/python
 ENV_RESEARCH_GENBADGE := .venv/bin/genbadge
 ENV_RESEARCH_INTERROGATE := .venv/bin/interrogate
+ENV_RESEARCH_MUTMUT := .venv/bin/mutmut
 ENV_RESEARCH_RUFF := .venv/bin/ruff
 ENV_RESEARCH_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/baselines/starcop/training/__tests__ src/registry/__tests__ src/baselines/starcop/registry/__tests__ src/serving/__tests__ src/baselines/starcop/serving/__tests__ src/baselines/starcop/evaluation/__tests__ flows/__tests__ tests/__tests__
 ENV_RESEARCH_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/baselines/starcop/training --cov=src/registry --cov=src/baselines/starcop/registry --cov=src/serving --cov=src/baselines/starcop/serving --cov=src/baselines/starcop/evaluation --cov=flows
@@ -36,7 +38,23 @@ coursework-lint:
 coursework-train:
 	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/train.py
 
-.PHONY: test-baseline coverage test-research coverage-research badges badges-research test docstring-coverage test-scripts lint docs-serve docs-build
+.PHONY: test-baseline coverage test-research coverage-research badges badges-research test docstring-coverage test-scripts lint docs-serve docs-build mutation-research mutation-baseline mutation-gate
+
+mutation-research:
+	$(ENV_RESEARCH_MUTMUT) run 'registry.promotion_criteria.*'
+
+mutation-baseline:
+	$(ENV_BASELINE_MUTMUT) run 'data.download.download_mini_dataset.*'
+
+mutation-gate:
+	@if [ -x "$(ENV_RESEARCH_MUTMUT)" ]; then \
+		$(ENV_RESEARCH_MUTMUT) export-cicd-stats; \
+	else \
+		$(ENV_BASELINE_MUTMUT) export-cicd-stats; \
+	fi
+	jq -e \
+		'.survived == 0 and .suspicious == 0 and .segfault == 0 and .total > 0' \
+		mutants/mutmut-cicd-stats.json
 
 test-baseline:
 	$(ENV_BASELINE_PYTHON) -m pytest $(ENV_BASELINE_TEST_PATHS) -v
