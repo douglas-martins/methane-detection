@@ -49,7 +49,14 @@ mutation-research:
 		'baselines.starcop.training.launch_profiles.*' \
 		'baselines.starcop.training.accelerator_check.*' \
 		'baselines.starcop.training.colab_bootstrap.*' \
-		'training.mlflow_log_model_compat.*'
+		'training.mlflow_log_model_compat.*' \
+		'training.dvc_dataset_version.*' \
+		'training.mlflow_utils.*' \
+		'baselines.starcop.training.settings_overlay.*' \
+		'data.preprocessing.split.*' \
+		'baselines.starcop.serving.band_baseline.*' \
+		'baselines.starcop.evaluation.select_docs_examples.*' \
+		'baselines.starcop.registry.hf_baseline_import.*'
 
 mutation-baseline:
 	$(ENV_BASELINE_MUTMUT) run 'data.download.download_mini_dataset.*'

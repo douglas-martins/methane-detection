@@ -72,6 +72,13 @@ only_mutate = [
     "src/baselines/starcop/training/accelerator_check.py",
     "src/baselines/starcop/training/colab_bootstrap.py",
     "src/training/mlflow_log_model_compat.py",
+    "src/training/dvc_dataset_version.py",
+    "src/training/mlflow_utils.py",
+    "src/baselines/starcop/training/settings_overlay.py",
+    "src/data/preprocessing/split.py",
+    "src/baselines/starcop/serving/band_baseline.py",
+    "src/baselines/starcop/evaluation/select_docs_examples.py",
+    "src/baselines/starcop/registry/hf_baseline_import.py",
 ]
 pytest_add_cli_args = ["-p", "_mutmut_pytest_plugin"]
 do_not_mutate = [
