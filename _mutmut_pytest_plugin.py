@@ -6,6 +6,7 @@ pytest and runtime imports unchanged.
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -130,5 +131,8 @@ def _remove_flat_import_compatibility() -> bool:
 
 
 def pytest_configure(config: Any) -> None:
-    """Install flat-import compatibility before pytest collects source modules."""
+    """Install import compatibility and select tests for the active mutation environment."""
+    configured_paths = os.environ.get("MUTMUT_TEST_PATHS")
+    if configured_paths and not any("::" in argument for argument in config.args):
+        config.args = configured_paths.split()
     _install_flat_import_compatibility(root=Path.cwd())

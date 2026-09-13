@@ -59,7 +59,8 @@ mutation-research:
 		'baselines.starcop.registry.hf_baseline_import.*'
 
 mutation-baseline:
-	$(ENV_BASELINE_MUTMUT) run 'data.download.download_mini_dataset.*'
+	MUTMUT_TEST_PATHS='$(ENV_BASELINE_TEST_PATHS)' \
+		$(ENV_BASELINE_MUTMUT) run 'data.download.download_mini_dataset.*'
 
 mutation-gate:
 	@if [ -x "$(ENV_RESEARCH_MUTMUT)" ]; then \

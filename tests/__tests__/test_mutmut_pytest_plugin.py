@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import _mutmut_pytest_plugin as plugin
 
@@ -42,6 +42,40 @@ def test_qualify_mutmut_key_uses_loaded_flat_modules_file_path(tmp_path):
     )
 
     assert qualified == "registry.promotion_criteria.x_check_thresholds"
+
+
+def test_configure_replaces_union_selection_with_active_environment_paths(monkeypatch, tmp_path):
+    monkeypatch.setenv(
+        "MUTMUT_TEST_PATHS",
+        "src/data/download/__tests__ tests/vendor_starcop",
+    )
+    monkeypatch.setattr(plugin, "_install_flat_import_compatibility", lambda root: None)
+    config = SimpleNamespace(rootpath=tmp_path, args=["src", "tests"])
+
+    plugin.pytest_configure(config)
+
+    assert config.args == ["src/data/download/__tests__", "tests/vendor_starcop"]
+
+
+def test_configure_keeps_mutmut_selected_node_ids(monkeypatch, tmp_path):
+    monkeypatch.setenv("MUTMUT_TEST_PATHS", "src/data/download/__tests__")
+    monkeypatch.setattr(plugin, "_install_flat_import_compatibility", lambda root: None)
+    node_id = "src/data/download/__tests__/test_download_mini_dataset.py::test_name"
+    config = SimpleNamespace(rootpath=tmp_path, args=[node_id])
+
+    plugin.pytest_configure(config)
+
+    assert config.args == [node_id]
+
+
+def test_configure_keeps_union_selection_without_environment_override(monkeypatch, tmp_path):
+    monkeypatch.delenv("MUTMUT_TEST_PATHS", raising=False)
+    monkeypatch.setattr(plugin, "_install_flat_import_compatibility", lambda root: None)
+    config = SimpleNamespace(rootpath=tmp_path, args=["src", "tests"])
+
+    plugin.pytest_configure(config)
+
+    assert config.args == ["src", "tests"]
 
 
 def test_installed_plugin_records_qualified_key_and_dispatches_qualified_mutant(
