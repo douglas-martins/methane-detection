@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import coordinates
 import numpy as np
 import pytest
+import rasterio
+from rasterio.transform import from_origin
 
 
 def test_scene_centroid_latlon_matches_raster_bounds_centroid(tmp_path, tiny_geotiff_factory):
@@ -18,6 +20,27 @@ def test_scene_centroid_latlon_matches_raster_bounds_centroid(tmp_path, tiny_geo
     # raster therefore spans left=0/right=4/top=0/bottom=-4 in EPSG:4326.
     assert lat == pytest.approx(-2.0)
     assert lon == pytest.approx(2.0)
+
+
+def test_scene_centroid_accounts_for_nonzero_raster_origin(tmp_path):
+    band_path = tmp_path / "offset_band.tif"
+    with rasterio.open(
+        band_path,
+        "w",
+        driver="GTiff",
+        width=4,
+        height=4,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=from_origin(10, 20, 2, 3),
+    ) as dst:
+        dst.write(np.zeros((1, 4, 4), dtype="float32"))
+
+    lat, lon = coordinates.scene_centroid_latlon(band_path)
+
+    assert lat == pytest.approx(14.0)
+    assert lon == pytest.approx(14.0)
 
 
 def test_scene_centroid_scales_with_raster_size(tmp_path, tiny_geotiff_factory):
@@ -55,6 +78,27 @@ def test_collect_scene_coordinates_ignores_non_directory_entries(tmp_path, tiny_
     assert [row["scene_id"] for row in rows] == ["sceneA"]
 
 
+def test_run_uses_exact_selected_directory_and_reference_band(tmp_path, monkeypatch):
+    processed_root = tmp_path / "processed"
+    selected_root = processed_root / "selected"
+    selected_root.mkdir(parents=True)
+    received = {}
+
+    def _collect(actual_selected_root, reference_band):
+        received["arguments"] = (actual_selected_root, reference_band)
+        return []
+
+    monkeypatch.setattr(coordinates, "collect_scene_coordinates", _collect)
+    cfg = SimpleNamespace(
+        paths=SimpleNamespace(processed_root=str(processed_root)),
+        dataset_cfg=SimpleNamespace(input_products=["mag1c", "TOA_AVIRIS_640nm"]),
+    )
+
+    coordinates.run(cfg)
+
+    assert received["arguments"] == (selected_root, "mag1c")
+
+
 def test_run_writes_scene_coordinates_csv(tmp_path, tiny_geotiff_factory):
     """End-to-end: run() writes a real, parseable scene_coordinates.csv with correct values."""
     processed_root = tmp_path / "processed"
@@ -73,10 +117,32 @@ def test_run_writes_scene_coordinates_csv(tmp_path, tiny_geotiff_factory):
     with csv_path.open() as f:
         rows = list(csv.DictReader(f))
 
+    assert sorted(path.name for path in processed_root.iterdir()) == ["coordinates", "selected"]
+    assert [path.name for path in csv_path.parent.iterdir()] == ["scene_coordinates.csv"]
+    assert csv_path.read_bytes() == b"scene_id,lat,lon\r\nsceneA,-2.0,2.0\r\n"
     assert len(rows) == 1
     assert rows[0]["scene_id"] == "sceneA"
     assert float(rows[0]["lat"]) == pytest.approx(-2.0)
     assert float(rows[0]["lon"]) == pytest.approx(2.0)
+
+
+def test_run_replaces_existing_coordinates_csv(tmp_path, tiny_geotiff_factory):
+    processed_root = tmp_path / "processed"
+    tiny_geotiff_factory(
+        processed_root / "selected" / "sceneA" / "mag1c.tif", np.zeros((4, 4), dtype="float32")
+    )
+    coordinates_root = processed_root / "coordinates"
+    coordinates_root.mkdir()
+    csv_path = coordinates_root / "scene_coordinates.csv"
+    csv_path.write_text("stale output")
+    cfg = SimpleNamespace(
+        paths=SimpleNamespace(processed_root=str(processed_root)),
+        dataset_cfg=SimpleNamespace(input_products=["mag1c", "TOA_AVIRIS_640nm"]),
+    )
+
+    coordinates.run(cfg)
+
+    assert csv_path.read_bytes() == b"scene_id,lat,lon\r\nsceneA,-2.0,2.0\r\n"
 
 
 def test_run_produces_byte_identical_coordinates_across_two_runs(
