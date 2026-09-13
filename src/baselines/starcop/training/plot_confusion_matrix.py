@@ -24,9 +24,9 @@ def plot_confusion_matrix(cm, class_names=CLASS_NAMES) -> plt.Figure:
     ax.set_xlabel("Predicted")
     ax.set_ylabel("Actual")
 
-    for i in range(cm_np.shape[0]):
-        for j in range(cm_np.shape[1]):
-            ax.text(j, i, str(int(cm_np[i, j])), ha="center", va="center")
+    for i, row in enumerate(cm_np):
+        for j, value in enumerate(row):
+            ax.text(j, i, str(int(value)), ha="center", va="center")
 
     fig.tight_layout()
     return fig
