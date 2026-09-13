@@ -41,7 +41,15 @@ coursework-train:
 .PHONY: test-baseline coverage test-research coverage-research badges badges-research test docstring-coverage test-scripts lint docs-serve docs-build mutation-research mutation-baseline mutation-gate
 
 mutation-research:
-	$(ENV_RESEARCH_MUTMUT) run 'registry.promotion_criteria.*'
+	$(ENV_RESEARCH_MUTMUT) run \
+		'registry.promotion_criteria.*' \
+		'serving.band_statistics.*' \
+		'serving.drift.*' \
+		'baselines.starcop.training.validation_metrics.*' \
+		'baselines.starcop.training.launch_profiles.*' \
+		'baselines.starcop.training.accelerator_check.*' \
+		'baselines.starcop.training.colab_bootstrap.*' \
+		'training.mlflow_log_model_compat.*'
 
 mutation-baseline:
 	$(ENV_BASELINE_MUTMUT) run 'data.download.download_mini_dataset.*'

@@ -63,7 +63,16 @@ also_copy = [
     "vendor/starcop/scripts",
     "vendor/starcop/starcop",
 ]
-only_mutate = ["src/registry/promotion_criteria.py"]
+only_mutate = [
+    "src/registry/promotion_criteria.py",
+    "src/serving/band_statistics.py",
+    "src/serving/drift.py",
+    "src/baselines/starcop/training/validation_metrics.py",
+    "src/baselines/starcop/training/launch_profiles.py",
+    "src/baselines/starcop/training/accelerator_check.py",
+    "src/baselines/starcop/training/colab_bootstrap.py",
+    "src/training/mlflow_log_model_compat.py",
+]
 pytest_add_cli_args = ["-p", "_mutmut_pytest_plugin"]
 do_not_mutate = [
     "*/__tests__/*",
