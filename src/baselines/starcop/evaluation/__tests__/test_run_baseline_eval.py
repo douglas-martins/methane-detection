@@ -21,6 +21,28 @@ def _test_df(rows: dict) -> pd.DataFrame:
 
 
 class TestLoadAndPlaceModel:
+    def test_forwards_checkpoint_and_device_to_the_model_loader(self):
+        received = []
+
+        class FakeModel:
+            def to(self, device):
+                received.append(device)
+                return self
+
+        model = FakeModel()
+
+        def fake_load_model(checkpoint_path):
+            received.append(checkpoint_path)
+            return model, {"settings": "sentinel"}
+
+        result_model, settings = rbe.load_and_place_model(
+            "checkpoint.ckpt", device="cpu", load_model_fn=fake_load_model
+        )
+
+        assert result_model is model
+        assert settings == {"settings": "sentinel"}
+        assert received == ["checkpoint.ckpt", "cpu"]
+
     def test_moves_the_loaded_model_to_the_requested_device(self):
         fake_model = torch.nn.Linear(1, 1)
 
@@ -46,6 +68,19 @@ class TestLoadAndPlaceModel:
 
 
 class TestRunValidationSafely:
+    def test_forwards_model_and_dataloader_to_run_validation(self):
+        received = []
+        model = object()
+        dataloader = object()
+
+        def fake_run_validation(received_model, received_dataloader, **kwargs):
+            received.extend([received_model, received_dataloader])
+            return None, {}
+
+        rbe.run_validation_safely(model, dataloader, run_validation_fn=fake_run_validation)
+
+        assert received == [model, dataloader]
+
     def test_returns_run_validation_fns_result_on_success(self):
         def fake_run_validation(model, dataloader, **kwargs):
             return "out_data_sentinel", {"metrics": "sentinel"}
@@ -142,9 +177,12 @@ class TestSelectLimitSceneIds:
         assert len(selected) == 3
 
     def test_returns_empty_list_for_limit_zero(self):
-        test_df = _test_df({"plume1": {"has_plume": True, "qplume": 1500.0}})
+        test_df = _test_df({"noplume1": {"has_plume": False, "qplume": 0.0}})
 
         assert rbe.select_limit_scene_ids(test_df, limit=0) == []
+
+    def test_returns_empty_for_zero_without_reading_dataframe_columns(self):
+        assert rbe.select_limit_scene_ids(pd.DataFrame(), limit=0) == []
 
     def test_returns_fewer_than_limit_when_pool_is_smaller(self):
         test_df = _test_df({"plume1": {"has_plume": True, "qplume": 1500.0}})
@@ -161,6 +199,35 @@ class TestSelectLimitSceneIds:
         selected = rbe.select_limit_scene_ids(test_df, limit=6)
 
         assert len(selected) == len(set(selected))
+
+    def test_alternates_between_highest_and_lowest_plume_scenes(self):
+        test_df = _test_df(
+            {
+                "noplume": {"has_plume": False, "qplume": 0.0},
+                "plume_very_low": {"has_plume": True, "qplume": 50.0},
+                "plume_low": {"has_plume": True, "qplume": 100.0},
+                "plume_mid": {"has_plume": True, "qplume": 1000.0},
+                "plume_high": {"has_plume": True, "qplume": 3000.0},
+            }
+        )
+
+        selected = rbe.select_limit_scene_ids(test_df, limit=5)
+
+        assert selected == ["noplume", "plume_high", "plume_very_low", "plume_mid", "plume_low"]
+
+    def test_keeps_all_remaining_no_plume_scenes_until_limit(self):
+        test_df = _test_df(
+            {
+                "noplume_a": {"has_plume": False, "qplume": 0.0},
+                "noplume_b": {"has_plume": False, "qplume": 0.0},
+                "noplume_c": {"has_plume": False, "qplume": 0.0},
+                "noplume_d": {"has_plume": False, "qplume": 0.0},
+            }
+        )
+
+        selected = rbe.select_limit_scene_ids(test_df, limit=3)
+
+        assert selected == ["noplume_a", "noplume_b", "noplume_c"]
 
 
 class TestAssertKnownSceneCounts:
@@ -229,8 +296,10 @@ class TestValidateCliArgs:
         rbe.validate_cli_args(limit=None, emit_docs_assets=None)
 
     def test_raises_when_both_are_set(self):
-        with pytest.raises(ValueError, match="--limit"):
+        with pytest.raises(ValueError) as exc:
             rbe.validate_cli_args(limit=5, emit_docs_assets="/tmp/staging")
+
+        assert str(exc.value) == "--limit and --emit-docs-assets cannot be combined"
 
 
 class TestMaskDigest:

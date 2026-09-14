@@ -125,6 +125,17 @@ class TestResolveUvBinary:
 
         assert result == "/usr/local/bin/uv"
 
+    def test_looks_up_uv_by_its_exact_binary_name(self):
+        received = []
+
+        def which(name):
+            received.append(name)
+            return "/usr/local/bin/uv"
+
+        paper_eval_mlflow.resolve_uv_binary(which_fn=which)
+
+        assert received == ["uv"]
+
     def test_falls_back_to_the_home_local_bin_install_when_which_fails(self, tmp_path, monkeypatch):
         fallback = tmp_path / ".local" / "bin" / "uv"
         fallback.parent.mkdir(parents=True)
@@ -153,6 +164,17 @@ class TestResolveGitBinary:
         result = paper_eval_mlflow.resolve_git_binary(which_fn=lambda name: "/opt/homebrew/bin/git")
 
         assert result == "/opt/homebrew/bin/git"
+
+    def test_looks_up_git_by_its_exact_binary_name(self):
+        received = []
+
+        def which(name):
+            received.append(name)
+            return "/opt/homebrew/bin/git"
+
+        paper_eval_mlflow.resolve_git_binary(which_fn=which)
+
+        assert received == ["git"]
 
     def test_falls_back_to_usr_bin_git_when_which_fails(self):
         result = paper_eval_mlflow.resolve_git_binary(which_fn=lambda name: None)
@@ -271,6 +293,36 @@ class TestRenderPaperComparison:
         assert "30.72" in rendered
         assert "28.94" in rendered
 
+    def test_renders_the_complete_table_with_percentages_and_trailing_newline(self):
+        reference = {
+            "varon": {
+                "citation": "Table 1, page 9",
+                "strong_f1score": {"mean": 0.3072, "std": 0.0287},
+                "weak_f1score": {"mean": 0.1035, "std": 0.0152},
+                "no_plume_FPR": {"mean": 0.8789, "std": 0.0467},
+                "auprc": {"mean": 0.1192, "std": 0.0135},
+            }
+        }
+        this_run_metrics = {
+            "strong_f1score": 0.2894,
+            "weak_f1score": 0.1701,
+            "no_plume_FPR": 0.8457,
+            "auprc": 0.1127,
+        }
+
+        rendered = paper_eval_mlflow.render_paper_comparison("varon", this_run_metrics, reference)
+
+        assert rendered == (
+            "# Paper comparison — varon\n\n"
+            "Paper source: Table 1, page 9\n\n"
+            "| Metric | Paper | This run |\n"
+            "| --- | --- | --- |\n"
+            "| Strong F1 | 30.72 ± 2.87 | 28.94 |\n"
+            "| Weak F1 | 10.35 ± 1.52 | 17.01 |\n"
+            "| FPR (tile-level) | 87.89 ± 4.67 | 84.57 |\n"
+            "| AUPRC | 11.92 ± 1.35 | 11.27 |\n"
+        )
+
 
 class TestCollectDocsAssetArtifacts:
     """Pure filesystem-selection logic behind Phase 5's dependency: which
@@ -319,6 +371,19 @@ class TestCollectDocsAssetArtifacts:
 
         assert result == {"sample_masks": [], "offline_predictions": []}
 
+    def test_looks_in_the_lowercase_offline_predictions_directory(self, tmp_path, monkeypatch):
+        calls = []
+
+        def glob(path, pattern):
+            calls.append((path, pattern))
+            return []
+
+        monkeypatch.setattr(paper_eval_mlflow.Path, "glob", glob)
+
+        paper_eval_mlflow.collect_docs_asset_artifacts(tmp_path, "mag1c_rgb")
+
+        assert (tmp_path / "offline_predictions", "mag1c_rgb_*.json") in calls
+
     def test_ignores_non_png_files_at_the_top_level(self, tmp_path):
         (tmp_path / "mag1c_rgb_scene_a.png").touch()
         (tmp_path / "mag1c_rgb_notes.txt").touch()
@@ -357,6 +422,34 @@ class TestCheckRegistryVersionMatches:
             paper_eval_mlflow.check_registry_version_matches(
                 client, "starcop-baseline-varon", "different-sha"
             )
+
+    def test_uses_staging_as_the_default_registry_stage(self, monkeypatch):
+        from types import SimpleNamespace
+
+        version = SimpleNamespace(run_id="run-id", version="1")
+        client = SimpleNamespace(
+            get_run=lambda run_id: SimpleNamespace(
+                data=SimpleNamespace(tags={"checkpoint_sha256": "deadbeef"})
+            )
+        )
+        received = []
+
+        def resolve_stage_version(received_client, model_name, stage):
+            received.append((received_client, model_name, stage))
+            return version
+
+        monkeypatch.setattr(
+            paper_eval_mlflow.mlflow_registry,
+            "resolve_stage_version",
+            resolve_stage_version,
+        )
+
+        result = paper_eval_mlflow.check_registry_version_matches(
+            client, "starcop-baseline-varon", "deadbeef"
+        )
+
+        assert result is version
+        assert received == [(client, "starcop-baseline-varon", "Staging")]
 
     def test_propagates_resolve_stage_version_error_when_nothing_is_registered(self, client):
         with pytest.raises(ValueError, match="no registered model"):

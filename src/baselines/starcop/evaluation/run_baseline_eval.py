@@ -111,12 +111,12 @@ def select_limit_scene_ids(test_df: pd.DataFrame, limit: int) -> list[str]:
         selected.append(no_plume_ids[0])
 
     take_from_high = True
-    while len(selected) < limit and plume_ids_low_to_high:
+    while len(selected) < limit and plume_ids_low_to_high:  # pragma: no mutate -- final slice caps
         selected.append(plume_ids_low_to_high.pop(-1 if take_from_high else 0))
         take_from_high = not take_from_high
 
     for scene_id in no_plume_ids[1:]:
-        if len(selected) >= limit:
+        if len(selected) >= limit:  # pragma: no mutate -- final slice caps
             break
         selected.append(scene_id)
 

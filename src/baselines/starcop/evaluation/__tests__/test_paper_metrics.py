@@ -65,36 +65,76 @@ class TestJoinSceneResultsWithTestCsv:
         )  # duplicate "sceneA" index entries
         test_csv = _test_csv({"sceneA": 1500.0})
 
-        with pytest.raises(ValueError, match="duplicate"):
+        with pytest.raises(ValueError) as exc:
             paper_metrics.join_scene_results_with_test_csv(out_data, test_csv)
+
+        assert str(exc.value) == "out_data has duplicate ids"
 
     def test_raises_on_duplicate_ids_in_test_csv(self):
         out_data = _out_data({"sceneA": _out_data_row()})
         test_csv = pd.concat([_test_csv({"sceneA": 1500.0})] * 2)
 
-        with pytest.raises(ValueError, match="duplicate"):
+        with pytest.raises(ValueError) as exc:
             paper_metrics.join_scene_results_with_test_csv(out_data, test_csv)
+
+        assert str(exc.value) == "test_csv has duplicate ids"
 
     def test_raises_when_out_data_has_an_id_missing_from_test_csv(self):
         out_data = _out_data({"sceneA": _out_data_row(), "sceneB": _out_data_row()})
         test_csv = _test_csv({"sceneA": 1500.0})
 
-        with pytest.raises(ValueError, match="id sets"):
+        with pytest.raises(ValueError) as exc:
             paper_metrics.join_scene_results_with_test_csv(out_data, test_csv)
+
+        assert str(exc.value) == (
+            "id sets differ between out_data and test_csv -- "
+            "only in out_data: ['sceneB'], only in test_csv: []"
+        )
 
     def test_raises_when_test_csv_has_an_id_missing_from_out_data(self):
         out_data = _out_data({"sceneA": _out_data_row()})
         test_csv = _test_csv({"sceneA": 1500.0, "sceneB": 200.0})
 
-        with pytest.raises(ValueError, match="id sets"):
+        with pytest.raises(ValueError) as exc:
             paper_metrics.join_scene_results_with_test_csv(out_data, test_csv)
+
+        assert str(exc.value) == (
+            "id sets differ between out_data and test_csv -- "
+            "only in out_data: [], only in test_csv: ['sceneB']"
+        )
 
     def test_raises_on_null_qplume_in_joined_result(self):
         out_data = _out_data({"sceneA": _out_data_row()})
         test_csv = _test_csv({"sceneA": float("nan")})
 
-        with pytest.raises(ValueError, match="qplume"):
+        with pytest.raises(ValueError) as exc:
             paper_metrics.join_scene_results_with_test_csv(out_data, test_csv)
+
+        assert str(exc.value) == "null qplume in joined result"
+
+    def test_preserves_an_already_indexed_test_csv(self):
+        out_data = _out_data({"sceneA": _out_data_row()})
+        test_csv = pd.DataFrame({"qplume": [1500.0]}, index=pd.Index(["sceneA"], name="id"))
+
+        joined = paper_metrics.join_scene_results_with_test_csv(out_data, test_csv)
+
+        assert joined.loc["sceneA", "qplume"] == 1500.0
+
+    def test_requires_one_to_one_merge_validation(self, monkeypatch):
+        original_merge = pd.DataFrame.merge
+        received = {}
+
+        def merge(frame, *args, **kwargs):
+            received["validate"] = kwargs.get("validate")
+            return original_merge(frame, *args, **kwargs)
+
+        monkeypatch.setattr(pd.DataFrame, "merge", merge)
+        out_data = _out_data({"sceneA": _out_data_row()})
+        test_csv = _test_csv({"sceneA": 1500.0})
+
+        paper_metrics.join_scene_results_with_test_csv(out_data, test_csv)
+
+        assert received["validate"] == "one_to_one"
 
 
 class TestBucketConfusionMatrices:
@@ -110,6 +150,7 @@ class TestBucketConfusionMatrices:
 
         assert buckets["strong"][1, 1] == 10  # TP
         assert buckets["strong"][1, 0] == 2  # FN
+        assert buckets["strong"].dtype is torch.float64
 
     def test_buckets_weak_plume_rows_below_threshold(self):
         joined = _out_data({"weak1": _out_data_row(has_plume=True, TP=3, FN=1)})
@@ -167,7 +208,10 @@ class TestComputeBucketMetrics:
 
         metrics = paper_metrics.compute_bucket_metrics(buckets)
 
+        assert metrics["strong_precision"] == pytest.approx(0.8)
+        assert metrics["strong_recall"] == pytest.approx(2 / 3)
         assert metrics["strong_f1score"] == pytest.approx(0.72727, abs=1e-4)
+        assert metrics["strong_iou"] == pytest.approx(8 / 14)
 
     def test_computes_known_fpr_for_no_plume_bucket(self):
         # FPR = FP/(FP+TN) = 5/(5+95) = 0.05
@@ -247,6 +291,18 @@ class TestTileNoPlumeFpr:
         assert type(paper_metrics.tile_no_plume_fpr(joined)) is float
 
 
+class TestSceneMetrics:
+    def test_scene_iou_uses_the_union_of_positive_counts(self):
+        row = pd.Series({"TP": 2, "FP": 1, "FN": 1})
+
+        assert paper_metrics.scene_iou(row) == pytest.approx(0.5)
+
+    def test_scene_recall_uses_true_positive_and_false_negative_counts(self):
+        row = pd.Series({"TP": 2, "FN": 2})
+
+        assert paper_metrics.scene_recall(row) == pytest.approx(0.5)
+
+
 class TestSortPrecisionRecallByAscendingRecall:
     def test_sorts_by_ascending_recall_not_just_reversed(self):
         # Deliberately non-monotonic in list order (as run_validation's own
@@ -267,6 +323,16 @@ class TestSortPrecisionRecallByAscendingRecall:
         # against exactly that mistake.
         reversed_recalls = [item["recall"] for item in reversed(thresholded)]
         assert recalls != reversed_recalls
+
+    def test_preserves_input_order_for_equal_recall_values(self):
+        thresholded = [
+            {"recall": 0.5, "precision": 0.9},
+            {"recall": 0.5, "precision": 0.2},
+        ]
+
+        sorted_points = paper_metrics.sort_precision_recall_by_ascending_recall(thresholded)
+
+        assert sorted_points == [(0.5, 0.9), (0.5, 0.2)]
 
     def test_accepts_torch_tensor_precision_and_recall_values(self):
         # Real run_validation output stores these as 0-d tensors (the return
