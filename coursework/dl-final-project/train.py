@@ -108,6 +108,19 @@ def _seed_worker(worker_id: int, base_seed: int) -> None:
     torch.manual_seed(worker_seed)
 
 
+def _epoch_marker(is_best: bool) -> str:
+    """One-glyph marker for an epoch's outcome, for `fit(verbose=True)`'s printed line.
+
+    Purely cosmetic terminal readability -- a `raw-full` epoch takes
+    ~15 minutes and previously printed nothing until it finished, so at a
+    glance it wasn't obvious whether a given epoch had actually improved
+    on the run's best result. Carries no information not already in
+    `EarlyStopper.is_best`, and plays no role in checkpointing or
+    early-stopping decisions themselves.
+    """
+    return "✅" if is_best else "❌"
+
+
 def evaluate(
     model: torch.nn.Module,
     loader,
@@ -189,8 +202,16 @@ def fit(
     verbose: bool = False,
     seed: int = _DEFAULT_SEED,
     max_val_batches: int | None = None,
+    progress_every: int | None = None,
 ) -> dict:
     """Train `model` on `train_df`, validate on `val_df`; return final metrics + run length.
+
+    `progress_every` (optional, default `None` = off) prints a mid-epoch
+    heartbeat line every that many (cumulative) steps when `verbose=True`
+    -- a `raw-full` epoch takes ~15 minutes and otherwise prints nothing
+    until it finishes. Harmless to leave off for `mini`/`r2`, whose
+    epochs are already short (25-380 steps) and finish before a
+    reasonably-sized interval would ever fire.
 
     `max_val_batches` (plan Section 7.1 Phase A4, default `None` = full
     val split) is forwarded to every `evaluate()` call this makes -- for
@@ -282,6 +303,11 @@ def fit(
             loss.backward()
             optimizer.step()
             step_count += 1
+            if verbose and progress_every and step_count % progress_every == 0:
+                print(
+                    f"    ... epoch {epoch}/{max_epochs} step {step_count} "
+                    f"({time.perf_counter() - epoch_start:.0f}s elapsed this epoch)"
+                )
             if max_steps is not None and step_count >= max_steps:
                 break
 
@@ -296,14 +322,19 @@ def fit(
                 },
                 step=epoch,
             )
+        # Computed here, before the verbose print below, so the printed
+        # line's marker (`_epoch_marker`) reflects this epoch's own
+        # is_best outcome. `step()` mutates EarlyStopper's internal
+        # counter/best -- call it exactly once per epoch, never again
+        # below, or patience gets silently consumed twice as fast.
+        should_stop = stopper.step(val_metrics["loss"])
         if verbose:
             print(
-                f"  epoch {epoch}/{max_epochs} step {step_count}: "
-                f"val_loss={val_metrics['loss']:.4f} val_f1={val_metrics['f1']:.4f} "
-                f"({epoch_seconds:.1f}s)"
+                f"  {_epoch_marker(stopper.is_best)} epoch {epoch}/{max_epochs} "
+                f"step {step_count}: val_loss={val_metrics['loss']:.4f} "
+                f"val_f1={val_metrics['f1']:.4f} ({epoch_seconds:.1f}s)"
             )
 
-        should_stop = stopper.step(val_metrics["loss"])
         if stopper.is_best:
             best_metrics = val_metrics
             best_epoch = epoch
@@ -392,6 +423,9 @@ def main() -> None:
     completeness but R3 keeps it at 10 deliberately -- Section 7's own rule holds
     early-stopping patience fixed across tiers; only the epoch cap is the allowed
     per-tier exception.
+    `progress_every` (optional, default no heartbeat) prints a mid-epoch progress
+    line every that many cumulative steps -- worth setting for `raw-full`, whose
+    ~15-minute epochs otherwise print nothing until they finish.
     """
     args = _parse_kv_args(sys.argv[1:])
     architecture = args.get("architecture", "E1")
@@ -400,6 +434,7 @@ def main() -> None:
     max_steps = int(args["max_steps"]) if "max_steps" in args else None
     seed = int(args.get("seed", _DEFAULT_SEED))
     max_val_batches = int(args["max_val_batches"]) if "max_val_batches" in args else None
+    progress_every = int(args["progress_every"]) if "progress_every" in args else None
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Named once here so the values logged as MLflow params are the exact
@@ -462,6 +497,7 @@ def main() -> None:
             verbose=True,
             seed=seed,
             max_val_batches=max_val_batches,
+            progress_every=progress_every,
         )
         mlflow.log_metrics({k: v for k, v in result.items() if isinstance(v, int | float)})
         print(f"architecture={architecture} tier={tier} dataset={dataset}")

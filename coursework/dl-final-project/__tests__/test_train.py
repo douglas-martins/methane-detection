@@ -4,7 +4,15 @@ import pytest
 import segmentation_models_pytorch as smp
 import torch
 from losses import build_loss
-from train import augment_for, count_parameters, evaluate, fit, library_versions, set_seed
+from train import (
+    _epoch_marker,
+    augment_for,
+    count_parameters,
+    evaluate,
+    fit,
+    library_versions,
+    set_seed,
+)
 
 
 class TestAugmentFor:
@@ -500,3 +508,143 @@ class TestFitMaxValBatches:
         )
 
         assert captured_max_batches == [None]
+
+
+class TestEpochMarker:
+    def test_marks_a_new_best_epoch_with_a_positive_emoji(self):
+        # Cosmetic terminal readability for a long raw-full epoch (~15 min)
+        # -- carries no information not already in `stopper.is_best`, and
+        # plays no role in checkpointing or early-stopping logic itself.
+        assert _epoch_marker(is_best=True) == "✅"
+
+    def test_marks_a_non_improving_epoch_with_a_negative_emoji(self):
+        assert _epoch_marker(is_best=False) == "❌"
+
+
+class TestFitVerboseOutput:
+    def test_prints_a_positive_marker_for_the_first_epoch(
+        self, tmp_path, tiny_geotiff_factory, capsys
+    ):
+        # Epoch 1 is always the first "best" seen so far (nothing to beat
+        # yet), so its printed line must carry the positive marker.
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=1,
+            patience=10,
+            log_to_mlflow=False,
+            verbose=True,
+        )
+
+        captured = capsys.readouterr()
+        assert "✅" in captured.out
+
+    def test_prints_a_negative_marker_when_an_epoch_does_not_beat_the_best(
+        self, tmp_path, tiny_geotiff_factory, capsys, monkeypatch
+    ):
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        # Epoch 1 loss 0.1 (best), epoch 2 loss 0.5 (worse) -- epoch 2's
+        # printed line must carry the negative marker.
+        canned_losses = iter([0.1, 0.5])
+
+        def _fake_evaluate(model, loader, loss_fn, device, max_batches=None):
+            return {
+                "loss": next(canned_losses),
+                "f1": 0.0,
+                "degenerate": False,
+                "positive_fraction": 0.0,
+            }
+
+        monkeypatch.setattr("train.evaluate", _fake_evaluate)
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=2,
+            patience=100,
+            log_to_mlflow=False,
+            verbose=True,
+        )
+
+        lines = capsys.readouterr().out.strip().splitlines()
+        epoch_lines = [line for line in lines if "epoch" in line and "step" in line]
+        assert "✅" in epoch_lines[0]
+        assert "❌" in epoch_lines[1]
+
+
+class TestFitProgressHeartbeat:
+    def test_prints_a_mid_epoch_heartbeat_every_progress_every_steps(
+        self, tmp_path, tiny_geotiff_factory, capsys
+    ):
+        # A long raw-full epoch (~15 min) prints nothing between its start
+        # and its single end-of-epoch line by default -- `progress_every`
+        # gives a live sign of life without waiting for the whole epoch.
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=8, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=1,
+            patience=10,
+            log_to_mlflow=False,
+            verbose=True,
+            progress_every=2,
+        )
+
+        captured = capsys.readouterr().out
+        assert "step 2" in captured
+        assert "step 4" in captured
+
+    def test_defaults_to_no_heartbeat(self, tmp_path, tiny_geotiff_factory, capsys):
+        # Default behavior must be unchanged for every existing tier
+        # (mini/r2 epochs are short enough that a heartbeat would be
+        # noise, not signal) -- regression guard against `progress_every`
+        # becoming on-by-default.
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=1,
+            patience=10,
+            log_to_mlflow=False,
+            verbose=True,
+        )
+
+        captured = capsys.readouterr().out
+        assert "..." not in captured
