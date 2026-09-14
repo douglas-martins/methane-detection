@@ -94,6 +94,11 @@ only_mutate = [
     "src/baselines/starcop/serving/model_loader.py",
     "src/baselines/starcop/evaluation/dataset_wiring.py",
     "src/baselines/starcop/evaluation/live_verify.py",
+    "src/baselines/starcop/evaluation/paper_eval_mlflow.py",
+    "src/baselines/starcop/evaluation/paper_metrics.py",
+    "src/baselines/starcop/evaluation/run_baseline_eval.py",
+    "flows/retrain.py",
+    "flows/eval_baseline.py",
     "src/baselines/starcop/evaluation/select_docs_examples.py",
     "src/baselines/starcop/registry/hf_baseline_import.py",
     "src/data/download/download_mini_dataset.py",
@@ -117,6 +122,18 @@ do_not_mutate = [
     # sys.modules thereafter; mutmut generates zero mutants for it (P6.7) -- nothing to
     # kill-or-justify per mutant, so it's excluded rather than left an unexplained 0/0.
     "*/baselines/starcop/training/_vendor_starcop_training.py",
+    # Import-only serving sys.path + re-export seam; P7.9 independently confirmed zero
+    # mutants, so there is no executable behavior to kill-or-justify here.
+    "*/baselines/starcop/serving/_vendor_starcop_serving.py",
+    # Import-only registry sys.path + re-export seam; P7.9 independently confirmed zero
+    # mutants, so there is no executable behavior to kill-or-justify here.
+    "*/baselines/starcop/registry/_vendor_starcop_baseline.py",
+    # Import-only evaluation sys.path + re-export seam; P7.9 independently confirmed zero
+    # mutants, so there is no executable behavior to kill-or-justify here.
+    "*/baselines/starcop/evaluation/_vendor_starcop_evaluation.py",
+    # Thin BentoML framework glue is intentionally verified by real serve + curl; P7.9
+    # confirmed mutate_only_covered_lines finds no covered executable mutants here.
+    "*/baselines/starcop/serving/service.py",
 ]
 pytest_add_cli_args_test_selection = [
     "src/data/download/__tests__",

@@ -72,8 +72,20 @@ mutation-research:
 		'baselines.starcop.serving.model_loader.*' \
 		'baselines.starcop.evaluation.dataset_wiring.*' \
 		'baselines.starcop.evaluation.live_verify.*' \
+		'baselines.starcop.evaluation.paper_eval_mlflow.*' \
+		'baselines.starcop.evaluation.paper_metrics.*' \
+		'baselines.starcop.evaluation.run_baseline_eval.*' \
+		'flows.retrain.*' \
+		'flows.eval_baseline.*' \
 		'baselines.starcop.evaluation.select_docs_examples.*' \
 		'baselines.starcop.registry.hf_baseline_import.*'
+	# mutmut's association cache misses flow trampolines when the full union
+	# suite is collected; rebuild stats against the flow tests before gating.
+	@rm -f mutants/mutmut-stats.json
+	MUTMUT_TEST_PATHS='flows/__tests__' \
+		$(ENV_RESEARCH_MUTMUT) run \
+		'flows.retrain.*' \
+		'flows.eval_baseline.*'
 
 mutation-baseline:
 	MUTMUT_TEST_PATHS='$(ENV_BASELINE_TEST_PATHS)' \
