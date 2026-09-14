@@ -43,6 +43,8 @@ coursework-train:
 mutation-research:
 	$(ENV_RESEARCH_MUTMUT) run \
 		'registry.promotion_criteria.*' \
+		'registry.mlflow_registry.*' \
+		'registry.promote_model.*' \
 		'serving.band_statistics.*' \
 		'serving.drift.*' \
 		'baselines.starcop.training.validation_metrics.*' \
@@ -66,6 +68,8 @@ mutation-research:
 		'data.preprocessing.patch_extract.*' \
 		'data.preprocessing.stats.*' \
 		'baselines.starcop.serving.band_baseline.*' \
+		'baselines.starcop.serving.inference.*' \
+		'baselines.starcop.serving.model_loader.*' \
 		'baselines.starcop.evaluation.select_docs_examples.*' \
 		'baselines.starcop.registry.hf_baseline_import.*'
 

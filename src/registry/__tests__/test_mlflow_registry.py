@@ -9,6 +9,8 @@ historically never supported the model registry at all, so sqlite is both
 the only realistic option and what the real tracking server itself uses.
 """
 
+from types import SimpleNamespace
+
 import mlflow_registry
 import pytest
 from mlflow.exceptions import MlflowException
@@ -27,6 +29,12 @@ def _create_run_with_metric(client, experiment_id, start_time, key=None, values=
         for step, value in enumerate(values):
             client.log_metric(run.info.run_id, key, value, step=step)
     return run
+
+
+class _RecordingSearchClient:
+    def search_runs(self, **kwargs):
+        self.search_kwargs = kwargs
+        return [SimpleNamespace(info=SimpleNamespace(run_id="latest-run"))]
 
 
 class TestResolveRunId:
@@ -49,6 +57,18 @@ class TestResolveRunId:
 
         with pytest.raises(ValueError, match="empty-experiment|no runs"):
             mlflow_registry.resolve_run_id(client, run_id=None, experiment_id=empty_experiment_id)
+
+    def test_uses_default_experiment_and_latest_run_query(self):
+        client = _RecordingSearchClient()
+
+        result = mlflow_registry.resolve_run_id(client, run_id=None)
+
+        assert result == "latest-run"
+        assert client.search_kwargs == {
+            "experiment_ids": ["0"],
+            "order_by": ["attributes.start_time DESC"],
+            "max_results": 1,
+        }
 
 
 class TestFetchRunMetrics:
@@ -167,6 +187,47 @@ class TestRegisterAndPromote:
         assert model_version.current_stage == "Staging"
         fetched = client.get_model_version("methane-cnn-starcop", model_version.version)
         assert fetched.run_id == run.info.run_id
+        assert fetched.source == f"runs:/{run.info.run_id}/model"
+
+    def test_rejects_multiple_versions_for_the_same_run(self, client, tmp_path):
+        run = self._run_with_model_artifact(client, tmp_path)
+        model_name = "methane-cnn-duplicate-run"
+        client.create_registered_model(model_name)
+
+        for _ in range(2):
+            client.create_model_version(
+                name=model_name, source=f"runs:/{run.info.run_id}/model", run_id=run.info.run_id
+            )
+
+        with pytest.raises(ValueError, match="matches 2 existing versions"):
+            mlflow_registry.register_and_promote(
+                client, run_id=run.info.run_id, model_name=model_name, stage="Staging"
+            )
+
+    def test_reuses_only_a_version_registered_under_the_requested_model(self, client, tmp_path):
+        run = self._run_with_model_artifact(client, tmp_path)
+        first = mlflow_registry.register_and_promote(
+            client,
+            run_id=run.info.run_id,
+            model_name="methane-cnn-first-model",
+            stage="Staging",
+        )
+        mlflow_registry.register_and_promote(
+            client,
+            run_id=run.info.run_id,
+            model_name="methane-cnn-second-model",
+            stage="Staging",
+        )
+
+        result = mlflow_registry.register_and_promote(
+            client,
+            run_id=run.info.run_id,
+            model_name="methane-cnn-first-model",
+            stage="Production",
+        )
+
+        assert result.version == first.version
+        assert result.current_stage == "Production"
 
     def test_reuses_an_existing_registered_model_for_a_second_promotion(self, client, tmp_path):
         run_a = self._run_with_model_artifact(client, tmp_path)

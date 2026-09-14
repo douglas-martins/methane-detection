@@ -65,6 +65,8 @@ also_copy = [
 ]
 only_mutate = [
     "src/registry/promotion_criteria.py",
+    "src/registry/mlflow_registry.py",
+    "src/registry/promote_model.py",
     "src/serving/band_statistics.py",
     "src/serving/drift.py",
     "src/baselines/starcop/training/validation_metrics.py",
@@ -88,6 +90,8 @@ only_mutate = [
     "src/data/preprocessing/patch_extract.py",
     "src/data/preprocessing/stats.py",
     "src/baselines/starcop/serving/band_baseline.py",
+    "src/baselines/starcop/serving/inference.py",
+    "src/baselines/starcop/serving/model_loader.py",
     "src/baselines/starcop/evaluation/select_docs_examples.py",
     "src/baselines/starcop/registry/hf_baseline_import.py",
     "src/data/download/download_mini_dataset.py",
