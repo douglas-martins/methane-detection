@@ -64,10 +64,23 @@ def set_seed(seed: int) -> None:
     all of which read from these same global generators) could not be
     reproduced. Call this before building the model too, not only inside
     `fit()`, so weight initialization is also covered.
+
+    Also forces `cudnn.deterministic=True` / `cudnn.benchmark=False` --
+    seeding the RNGs alone is NOT sufficient for reproducible results on
+    CUDA (found the hard way, via a real reproducibility spot-check during
+    plan Section 7's own validation checklist: a full 50-epoch E1/mini
+    rerun diverged from its recorded result, best_epoch 47->50 and
+    val_loss 0.0142->0.0120, a ~16% difference, not noise). Without this,
+    cuDNN can pick a different convolution algorithm run to run even with
+    identical seeds, and that compounds over many steps into materially
+    different trajectories. Per torch's own reproducibility notes
+    (pytorch.org/docs/stable/notes/randomness.html).
     """
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def count_parameters(model: torch.nn.Module) -> int:

@@ -236,6 +236,25 @@ class TestSetSeed:
         assert torch.equal(first_torch, second_torch)
         assert np.array_equal(first_numpy, second_numpy)
 
+    def test_enables_cudnn_determinism(self):
+        # Found via a real reproducibility spot-check (plan Section 7's own
+        # validation checklist): seeding torch/cuda/numpy RNGs alone is NOT
+        # sufficient for reproducible results on CUDA -- cuDNN can pick a
+        # different (non-deterministic) convolution algorithm run to run
+        # even with identical seeds, and that compounds over many training
+        # steps into materially different trajectories (confirmed for real:
+        # a full 50-epoch E1/mini rerun diverged from its recorded result --
+        # best_epoch 47->50, val_loss 0.0142->0.0120, a ~16% difference, not
+        # noise). Per torch's own reproducibility notes, cudnn.deterministic
+        # must be explicitly enabled.
+        torch.backends.cudnn.deterministic = False
+        torch.backends.cudnn.benchmark = True
+
+        set_seed(123)
+
+        assert torch.backends.cudnn.deterministic is True
+        assert torch.backends.cudnn.benchmark is False
+
 
 class TestFitSeed:
     def test_same_seed_produces_identical_metrics_across_runs(self, tmp_path, tiny_geotiff_factory):
