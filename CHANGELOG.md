@@ -2,6 +2,38 @@
 
 <!-- version list -->
 
+## v0.23.0 (2026-09-14)
+
+### Bug Fixes
+
+- **agents**: Catch staged and untracked files in lint-scope discovery
+  ([`7a8350b`](https://github.com/douglas-martins/methane-detection/commit/7a8350bfc5895a233b720d9b6d7a997d9e98402c))
+
+- **cd**: Require explicit deployment dispatch
+  ([`39ff424`](https://github.com/douglas-martins/methane-detection/commit/39ff424e68f752c8593714048c8015c03004e16c))
+
+### Build System
+
+- **deps**: Add mutation testing dependencies
+  ([`fa789e4`](https://github.com/douglas-martins/methane-detection/commit/fa789e4c84480d2a55e2d3a5a9692b8d5225c7a6))
+
+- **deps**: Add mutmut to the baseline environment
+  ([`f030c57`](https://github.com/douglas-martins/methane-detection/commit/f030c57f17d7c61400a553f523dbd83dc8cbb0cf))
+
+### Features
+
+- **pi**: Add OpenAI-backed project subagents
+  ([`d208cbe`](https://github.com/douglas-martins/methane-detection/commit/d208cbe5adc46251f113bdf2a8816bdd499c8bda))
+
+### Refactoring
+
+- **starcop**: Separate baseline adapters from shared infrastructure
+  ([`3cd1faf`](https://github.com/douglas-martins/methane-detection/commit/3cd1faf69cc45c5a4cbc78098abe3a40fdd4ebec))
+
+- **training**: Simplify confusion matrix annotations
+  ([`93c72b1`](https://github.com/douglas-martins/methane-detection/commit/93c72b1571967a9b320389687e286e022c62004e))
+
+
 ## v0.22.5 (2026-09-08)
 
 ### Bug Fixes
