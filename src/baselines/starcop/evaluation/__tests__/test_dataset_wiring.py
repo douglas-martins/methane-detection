@@ -14,9 +14,9 @@ Phase 1: `data/starcop_raw/STARCOP_test/<id>` resolves for all 342 test.csv
 ids.
 
 `build_test_dataloader` itself (STARCOPDataset + DataLoader construction,
-both unmodified STARCOP objects) is thin glue exercised by the real
-Phase 0/1 run instead of a unit test, per this project's own established
-pattern for such glue (see starcop_datamodule.py's test file).
+both unmodified STARCOP objects) is covered below with small fakes so its
+argument forwarding and defaults remain mutation-testable without requiring
+the full multi-GB dataset.
 """
 
 from pathlib import Path
@@ -83,3 +83,46 @@ class TestLoadDataframe:
         df = dataset_wiring._load_dataframe(csv_path, root_folder=tmp_path / "STARCOP_test")
 
         assert df.loc["sceneA", "qplume"] == 1234.5
+
+    def test_builds_unshuffled_loader_with_default_batch_and_worker_counts(
+        self, monkeypatch, tmp_path
+    ):
+        dataframe = pd.DataFrame({"id": ["sceneA"]})
+        load_args = []
+
+        def fake_load_dataframe(*args):
+            load_args.append(args)
+            return dataframe
+
+        class FakeDataset:
+            def __init__(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+
+        class FakeDataLoader:
+            def __init__(self, dataset, **kwargs):
+                self.dataset = dataset
+                self.kwargs = kwargs
+
+        monkeypatch.setattr(dataset_wiring, "_load_dataframe", fake_load_dataframe)
+        monkeypatch.setattr(dataset_wiring, "STARCOPDataset", FakeDataset)
+        monkeypatch.setattr(dataset_wiring, "DataLoader", FakeDataLoader)
+
+        loader = dataset_wiring.build_test_dataloader(
+            tmp_path / "test.csv",
+            tmp_path / "STARCOP_test",
+            input_products=["mag1c"],
+            output_products=["plume"],
+            weight_loss="weighted",
+        )
+
+        assert load_args == [(tmp_path / "test.csv", tmp_path / "STARCOP_test")]
+        assert loader.dataset.args == (dataframe,)
+        assert loader.dataset.kwargs == {
+            "input_products": ["mag1c"],
+            "output_products": ["plume"],
+            "weight_loss": "weighted",
+            "spatial_augmentations": None,
+            "window_size_sample": None,
+        }
+        assert loader.kwargs == {"batch_size": 1, "shuffle": False, "num_workers": 0}
