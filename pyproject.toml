@@ -93,6 +93,7 @@ only_mutate = [
     "src/baselines/starcop/serving/inference.py",
     "src/baselines/starcop/serving/model_loader.py",
     "src/baselines/starcop/evaluation/dataset_wiring.py",
+    "src/baselines/starcop/evaluation/live_verify.py",
     "src/baselines/starcop/evaluation/select_docs_examples.py",
     "src/baselines/starcop/registry/hf_baseline_import.py",
     "src/data/download/download_mini_dataset.py",
