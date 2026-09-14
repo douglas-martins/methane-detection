@@ -19,7 +19,7 @@ class FakeWandbExperiment:
     def __init__(self):
         self.logged = []
 
-    def log(self, data, commit=False):
+    def log(self, data, commit=None):
         self.logged.append((data, commit))
 
 
@@ -94,6 +94,40 @@ class TestMultiLoggerImageLogger:
             ("run-123", "fig", "images/val_batch_epoch_3.png")
         ]
 
+    def test_train_hook_builds_figures_from_train_batch_model_and_split(self):
+        figures = {"train_batch": "fig"}
+        ml = _image_logger_with_canned_figures(MultiLoggerImageLogger, figures)
+        model = object()
+        received = {}
+
+        def record_split(batch, passed_model, split):
+            received.update(batch=batch, model=passed_model, split=split)
+            return figures
+
+        ml.on_split_epoch_end = record_split
+        trainer = FakeTrainer(loggers=[FakeWandbLogger()])
+
+        ml.on_train_epoch_end(trainer, model=model)
+
+        assert received == {"batch": ml.batch_train, "model": model, "split": "train"}
+
+    def test_validation_hook_builds_figures_from_test_batch_model_and_split(self):
+        figures = {"val_batch": "fig"}
+        ml = _image_logger_with_canned_figures(MultiLoggerImageLogger, figures)
+        model = object()
+        received = {}
+
+        def record_split(batch, passed_model, split):
+            received.update(batch=batch, model=passed_model, split=split)
+            return figures
+
+        ml.on_split_epoch_end = record_split
+        trainer = FakeTrainer(loggers=[FakeWandbLogger()])
+
+        ml.on_validation_epoch_end(trainer, model=model)
+
+        assert received == {"batch": ml.batch_test, "model": model, "split": "val"}
+
     def test_logs_to_both_loggers_when_both_present(self):
         ml = _image_logger_with_canned_figures(MultiLoggerImageLogger, {"train_batch": "fig"})
         wandb_logger = FakeWandbLogger()
@@ -121,3 +155,13 @@ class TestMultiLoggerImageLogger:
             "images/train_batch_epoch_0.png",
             "images/extra_batch_epoch_0.png",
         }
+
+    def test_falls_back_to_trainer_logger_when_loggers_attribute_is_absent(self):
+        ml = _image_logger_with_canned_figures(MultiLoggerImageLogger, {"train_batch": "fig"})
+        wandb_logger = FakeWandbLogger()
+        trainer = FakeTrainer(loggers=[wandb_logger])
+        del trainer.loggers
+
+        ml.on_train_epoch_end(trainer, model=None)
+
+        assert wandb_logger.experiment.logged == [({"train_batch": "fig"}, False)]

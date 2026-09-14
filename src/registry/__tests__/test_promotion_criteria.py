@@ -102,6 +102,31 @@ class TestIsLossHistoryStable:
     def test_false_for_a_history_shorter_than_the_window(self):
         assert promotion_criteria.is_loss_history_stable([0.5, 0.48], window=5) is False
 
+    def test_true_for_a_smooth_history_exactly_as_long_as_the_window(self):
+        history = [0.5, 0.45, 0.41, 0.38, 0.36]
+
+        assert promotion_criteria.is_loss_history_stable(history, window=5) is True
+
+    def test_false_when_consecutive_deltas_alternate(self):
+        history = [0.0, 1.0, 0.0, 1.0, 0.0]
+
+        assert promotion_criteria.is_loss_history_stable(history) is False
+
+    def test_true_for_a_single_value_when_window_is_one(self):
+        assert promotion_criteria.is_loss_history_stable([0.5], window=1) is True
+
+    def test_true_when_delta_stddev_exactly_equals_the_limit(self):
+        history = [0.0, -1.0, 0.0]
+
+        assert (
+            promotion_criteria.is_loss_history_stable(
+                history,
+                window=3,
+                max_delta_stddev=1.0,
+            )
+            is True
+        )
+
 
 class TestEvaluateStaging:
     def test_promotes_when_metrics_pass_and_loss_is_stable(self):
@@ -129,7 +154,9 @@ class TestEvaluateStaging:
         )
 
         assert decision.promote is False
-        assert any("loss" in reason.lower() for reason in decision.reasons)
+        assert decision.reasons == [
+            "val_loss history is not stable (see promotion_criteria.is_loss_history_stable)"
+        ]
 
 
 class TestEvaluateProduction:

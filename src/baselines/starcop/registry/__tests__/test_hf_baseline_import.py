@@ -8,8 +8,10 @@ real fixtures over mocks, same convention as test_mlflow_registry.py).
 """
 
 import importlib
+import io
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import hf_baseline_import
 import pytest
@@ -79,8 +81,48 @@ class TestVerifyCheckpointDigest:
         checkpoint_path.write_bytes(b"tampered or corrupted bytes")
         monkeypatch.setitem(hf_baseline_import._EXPECTED_CHECKPOINT_SHA256, "mag1c_only", "0" * 64)
 
-        with pytest.raises(ValueError, match="digest mismatch"):
+        with pytest.raises(ValueError) as exc_info:
             hf_baseline_import.verify_checkpoint_digest("mag1c_only", checkpoint_path)
+
+        import hashlib
+
+        actual = hashlib.sha256(b"tampered or corrupted bytes").hexdigest()
+        assert str(exc_info.value) == (
+            "checkpoint digest mismatch for variant 'mag1c_only': expected sha256 "
+            f"{'0' * 64}, got {actual}. Refusing to unpickle a checkpoint that "
+            "doesn't match the pinned, reviewed digest."
+        )
+
+    def test_reads_checkpoint_in_one_mebibyte_chunks(self, monkeypatch):
+        import hashlib
+
+        content = b"x" * (1024 * 1024 + 1)
+        read_sizes = []
+
+        class RecordingReader:
+            def __init__(self):
+                self._stream = io.BytesIO(content)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def read(self, size):
+                read_sizes.append(size)
+                return self._stream.read(size)
+
+        monkeypatch.setattr("builtins.open", lambda path, mode: RecordingReader())
+        monkeypatch.setitem(
+            hf_baseline_import._EXPECTED_CHECKPOINT_SHA256,
+            "mag1c_only",
+            hashlib.sha256(content).hexdigest(),
+        )
+
+        hf_baseline_import.verify_checkpoint_digest("mag1c_only", Path("checkpoint.ckpt"))
+
+        assert read_sizes == [1024 * 1024, 1024 * 1024, 1024 * 1024]
 
     def test_computes_the_correct_digest_without_hashlib_file_digest(self, monkeypatch, tmp_path):
         """hashlib.file_digest was only added in Python 3.11 -- baseline env
@@ -124,7 +166,14 @@ class TestDownloadCheckpoint:
         calls = []
 
         def fake_hf_hub_download(repo_id, filename, revision=None, local_dir=None):
-            calls.append({"filename": filename, "revision": revision})
+            calls.append(
+                {
+                    "repo_id": repo_id,
+                    "filename": filename,
+                    "revision": revision,
+                    "local_dir": local_dir,
+                }
+            )
             path = Path(local_dir) / filename
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(checkpoint_bytes if filename.endswith(".ckpt") else b"config: true")
@@ -137,8 +186,24 @@ class TestDownloadCheckpoint:
         )
 
         assert revision == hf_baseline_import._PINNED_REVISION
-        assert len(calls) == 2
-        assert all(call["revision"] == hf_baseline_import._PINNED_REVISION for call in calls)
+        assert checkpoint_path == (
+            tmp_path / "models/hyperstarcop_mag1c_only/final_checkpoint_model.ckpt"
+        )
+        assert config_path == tmp_path / "models/hyperstarcop_mag1c_only/config.yaml"
+        assert calls == [
+            {
+                "repo_id": hf_baseline_import._HF_REPO,
+                "filename": "models/hyperstarcop_mag1c_only/final_checkpoint_model.ckpt",
+                "revision": hf_baseline_import._PINNED_REVISION,
+                "local_dir": str(tmp_path),
+            },
+            {
+                "repo_id": hf_baseline_import._HF_REPO,
+                "filename": "models/hyperstarcop_mag1c_only/config.yaml",
+                "revision": hf_baseline_import._PINNED_REVISION,
+                "local_dir": str(tmp_path),
+            },
+        ]
 
 
 class TestLocalCheckpointDir:
@@ -232,8 +297,57 @@ class TestResolveCheckpoint:
             hf_baseline_import.resolve_checkpoint("varon", tmp_path)
 
     def test_unknown_variant_raises_value_error(self, tmp_path):
-        with pytest.raises(ValueError, match="unknown_variant"):
+        with pytest.raises(ValueError) as exc_info:
             hf_baseline_import.resolve_checkpoint("nonexistent", tmp_path)
+
+        assert str(exc_info.value) == (
+            "unknown_variant 'nonexistent'; expected one of ['mag1c_only', 'mag1c_rgb', 'varon']"
+        )
+
+
+class TestLoadModel:
+    def test_restores_settings_state_and_evaluation_mode(self, monkeypatch, tmp_path):
+        settings = SimpleNamespace(model=SimpleNamespace(model_mode="segmentation_output"))
+        state_dict = {"weight": torch.tensor([1.0])}
+        checkpoint_path = tmp_path / "model.ckpt"
+        calls = {}
+
+        def fake_torch_load(path, *, map_location, weights_only):
+            calls["torch_load"] = (path, map_location, weights_only)
+            return {"hyper_parameters": {"settings": settings}, "state_dict": state_dict}
+
+        class FakeModel:
+            def __init__(self, received_settings):
+                calls["settings"] = received_settings
+
+            def load_state_dict(self, received_state_dict):
+                calls["state_dict"] = received_state_dict
+
+            def eval(self):
+                calls["eval"] = True
+
+        def fake_model_class_for_mode(model_mode):
+            calls["model_mode"] = model_mode
+            return FakeModel
+
+        monkeypatch.setattr(torch, "load", fake_torch_load)
+        monkeypatch.setattr(
+            hf_baseline_import,
+            "model_class_for_mode",
+            fake_model_class_for_mode,
+        )
+
+        model, restored_settings = hf_baseline_import.load_model(checkpoint_path)
+
+        assert isinstance(model, FakeModel)
+        assert restored_settings is settings
+        assert calls == {
+            "torch_load": (str(checkpoint_path), "cpu", False),
+            "settings": settings,
+            "model_mode": "segmentation_output",
+            "state_dict": state_dict,
+            "eval": True,
+        }
 
 
 @pytest.mark.skipif(
@@ -256,6 +370,9 @@ class TestImportVariant:
 
     def _fake_resolve_checkpoint(self, dest_dir):
         def _resolve(variant, tmp_dir):
+            assert variant == "mag1c_only"
+            assert isinstance(tmp_dir, Path)
+            assert tmp_dir.is_dir()
             checkpoint_path = Path(dest_dir) / "final_checkpoint_model.ckpt"
             config_path = Path(dest_dir) / "config.yaml"
             checkpoint_path.write_bytes(b"fake checkpoint bytes")
@@ -277,6 +394,7 @@ class TestImportVariant:
         from omegaconf import OmegaConf
 
         def _load(checkpoint_path):
+            assert checkpoint_path.name == "final_checkpoint_model.ckpt"
             model = torch.nn.Linear(2, 2)
             settings = OmegaConf.create({"model": {"model_mode": "segmentation_output"}})
             return model, settings
@@ -301,11 +419,14 @@ class TestImportVariant:
         import mlflow
 
         tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
+        previous_tracking_uri = mlflow.get_tracking_uri()
         monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
         monkeypatch.setenv("MLFLOW_TRACKING_USERNAME", "test")
         monkeypatch.setenv("MLFLOW_TRACKING_PASSWORD", "test")
+        mlflow.set_tracking_uri(tracking_uri)
         yield tracking_uri
         mlflow.set_experiment(experiment_id="0")
+        mlflow.set_tracking_uri(previous_tracking_uri)
 
     def test_logs_a_real_mlflow_run_with_provenance_tags_when_stage_is_none(
         self, mlflow_sqlite_env, tmp_path
@@ -328,11 +449,27 @@ class TestImportVariant:
 
         runs = client.search_runs([experiment.experiment_id])
         assert len(runs) == 1
-        tags = runs[0].data.tags
+        run = runs[0]
+        tags = run.data.tags
+        assert tags["mlflow.runName"] == "starcop-baseline-mag1c-only-import"
         assert tags["variant"] == "mag1c_only"
         assert tags["baseline"] == "true"
         assert tags["sensor"] == hf_baseline_import._SENSOR
         assert tags["hf_repo"] == hf_baseline_import._HF_REPO
+        assert {artifact.path for artifact in client.list_artifacts(run.info.run_id)} == {
+            "checkpoint",
+            "config",
+        }
+        logged_models = client.search_logged_models([experiment.experiment_id])
+        assert len(logged_models) == 1
+        assert logged_models[0].name == "model"
+        assert logged_models[0].source_run_id == run.info.run_id
+        assert {artifact.path for artifact in client.list_artifacts(run.info.run_id, "config")} == {
+            "config/config.yaml"
+        }
+        assert {
+            artifact.path for artifact in client.list_artifacts(run.info.run_id, "checkpoint")
+        } == {"checkpoint/final_checkpoint_model.ckpt"}
 
     def test_registers_and_promotes_the_run_when_a_stage_is_given(
         self, mlflow_sqlite_env, tmp_path
@@ -353,3 +490,6 @@ class TestImportVariant:
         model_name = hf_baseline_import.registry_model_name("mag1c_only")
         versions = client.get_latest_versions(model_name, stages=["Staging"])
         assert len(versions) == 1
+        experiment = client.get_experiment_by_name("starcop-baselines")
+        runs = client.search_runs([experiment.experiment_id])
+        assert versions[0].run_id == runs[0].info.run_id

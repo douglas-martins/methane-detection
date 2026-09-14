@@ -119,6 +119,29 @@ class _FixedLogitsModel(nn.Module):
 
 
 class TestRunInference:
+    def test_passes_the_input_tensor_to_the_model(self):
+        logits = torch.tensor([[[[5.0, -5.0], [-5.0, 5.0]]]])
+
+        mask, probs = inference.run_inference(nn.Identity(), logits)
+
+        assert mask.tolist() == [[1, 0], [0, 1]]
+        assert np.allclose(probs, torch.sigmoid(logits).squeeze().numpy())
+
+    def test_preserves_non_singleton_batch_and_channel_dimensions(self):
+        logits = torch.zeros((2, 1, 2, 2))
+
+        mask, probs = inference.run_inference(nn.Identity(), logits)
+
+        assert mask.shape == (2, 1, 2, 2)
+        assert probs.shape == (2, 1, 2, 2)
+
+    def test_treats_exactly_half_probability_as_no_plume(self):
+        logits = torch.zeros((1, 1, 2, 2))
+
+        mask, _ = inference.run_inference(nn.Identity(), logits)
+
+        assert (mask == 0).all()
+
     def test_thresholds_positive_logits_as_plume_present(self):
         # sigmoid(5.0) ~ 0.993, well above the 0.5 threshold
         logits = torch.full((1, 1, 2, 2), 5.0)
@@ -171,6 +194,20 @@ class TestPredictResponse:
     run. Same real-fixed-logits-model approach as TestRunInference, no
     mocking.
     """
+
+    def test_passes_the_assembled_tensor_to_inference(self):
+        array = np.array(
+            [[[5.0], [-5.0]], [[-5.0], [5.0]]],
+            dtype=np.float32,
+        )
+
+        response = inference.predict_response(nn.Identity(), array, expected_channels=1)
+
+        assert response["mask"] == [[1, 0], [0, 1]]
+        assert np.allclose(
+            response["confidence"],
+            torch.sigmoid(torch.tensor([[5.0, -5.0], [-5.0, 5.0]])).numpy(),
+        )
 
     def test_returns_json_ready_mask_and_confidence_lists(self):
         logits = torch.full((1, 1, 2, 2), 5.0)

@@ -47,6 +47,18 @@ class TestSelectDocsExamples:
 
         assert picks["best_strong_plume"] == "strong_good"
 
+    def test_keeps_first_scene_when_best_iou_is_tied(self):
+        joined = _joined(
+            {
+                "first": _row(qplume=1500.0, TP=8, FP=1, FN=1),
+                "second": _row(qplume=2000.0, TP=8, FP=1, FN=1),
+            }
+        )
+
+        picks = select_docs_examples.select_docs_examples(joined)
+
+        assert picks["best_strong_plume"] == "first"
+
     def test_picks_highest_iou_weak_plume_scene(self):
         joined = _joined(
             {
@@ -58,6 +70,32 @@ class TestSelectDocsExamples:
         picks = select_docs_examples.select_docs_examples(joined)
 
         assert picks["best_weak_plume"] == "weak_good"
+
+    def test_exact_strong_threshold_belongs_only_to_strong_bucket(self):
+        joined = _joined({"boundary": _row(qplume=1000.0, TP=1, FP=0, FN=0)})
+
+        picks = select_docs_examples.select_docs_examples(joined)
+
+        assert picks["best_strong_plume"] == "boundary"
+        assert picks["best_weak_plume"] is None
+
+    def test_no_plume_scene_above_qplume_threshold_is_not_a_strong_plume(self):
+        joined = _joined(
+            {
+                "strong": _row(qplume=1500.0, TP=1, FP=1, FN=0),
+                "no_plume": _row(
+                    has_plume=False,
+                    qplume=2000.0,
+                    TP=10,
+                    FP=0,
+                    FN=0,
+                ),
+            }
+        )
+
+        picks = select_docs_examples.select_docs_examples(joined)
+
+        assert picks["best_strong_plume"] == "strong"
 
     def test_picks_highest_qplume_zero_recall_scene_as_false_negative(self):
         joined = _joined(

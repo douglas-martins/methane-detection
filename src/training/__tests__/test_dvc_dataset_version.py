@@ -9,14 +9,14 @@ over mocks throughout.
 """
 
 import subprocess
+import sys
 from pathlib import Path
 
 import dvc_dataset_version as dvcv
 import pytest
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-REAL_DVC_BINARY = REPO_ROOT / ".venv" / "bin" / "dvc"
+REAL_DVC_BINARY = Path(sys.executable).with_name("dvc")
 
 
 def _write_lock(tmp_path: Path, stages: dict) -> Path:
@@ -52,12 +52,36 @@ class TestGetDatasetVersion:
         with pytest.raises(ValueError, match="patch_extract@starcop_mini"):
             dvcv.get_dataset_version("starcop_mini", lock_path)
 
+    def test_raises_value_error_when_lock_has_no_stages_mapping(self, tmp_path):
+        lock_path = tmp_path / "dvc.lock"
+        lock_path.write_text("schema: '2.0'\n")
+
+        with pytest.raises(ValueError, match="Available stages: \\[\\]"):
+            dvcv.get_dataset_version("starcop_mini", lock_path)
+
+    def test_raises_exact_error_when_stage_has_no_outputs(self, tmp_path):
+        lock_path = _write_lock(tmp_path, {"patch_extract@starcop_mini": {}})
+
+        with pytest.raises(ValueError) as exc_info:
+            dvcv.get_dataset_version("starcop_mini", lock_path)
+
+        assert str(exc_info.value) == (
+            f"Stage 'patch_extract@starcop_mini' in {lock_path} has no outputs"
+        )
+
     def test_raises_clear_error_on_malformed_yaml(self, tmp_path):
         lock_path = tmp_path / "dvc.lock"
         lock_path.write_text("stages: [this is not: valid: yaml: at all")
 
         with pytest.raises(ValueError, match="Malformed"):
             dvcv.get_dataset_version("starcop_mini", lock_path)
+
+
+def _write_dvc_script(tmp_path: Path, body: str) -> Path:
+    script = tmp_path / "fake-dvc"
+    script.write_text(f"#!/bin/sh\n{body}\n")
+    script.chmod(0o755)
+    return script
 
 
 def _init_tiny_dvc_repo(tmp_path: Path) -> Path:
@@ -128,7 +152,12 @@ class TestIsDatasetDirty:
         where dvc is pip-installed straight into the system environment) --
         must fall back to shutil.which("dvc") instead of assuming a venv."""
         _init_tiny_dvc_repo(tmp_path)
-        monkeypatch.setattr(dvcv.shutil, "which", lambda name: str(REAL_DVC_BINARY))
+
+        def fake_which(name):
+            assert name == "dvc"
+            return str(REAL_DVC_BINARY)
+
+        monkeypatch.setattr(dvcv.shutil, "which", fake_which)
 
         assert dvcv.is_dataset_dirty("mini", tmp_path) is False
 
@@ -136,7 +165,27 @@ class TestIsDatasetDirty:
         """No dvc_binary, no .venv, and PATH has no dvc either -- should still
         fail with a clear FileNotFoundError, not a confusing one."""
         _init_tiny_dvc_repo(tmp_path)
-        monkeypatch.setattr(dvcv.shutil, "which", lambda name: None)
+
+        def fake_which(name):
+            assert name == "dvc"
+            return None
+
+        monkeypatch.setattr(dvcv.shutil, "which", fake_which)
 
         with pytest.raises(FileNotFoundError, match=r"\.venv[/\\]bin[/\\]dvc"):
             dvcv.is_dataset_dirty("mini", tmp_path)
+
+    def test_nonzero_dvc_exit_reports_decoded_stderr(self, tmp_path):
+        dvc_binary = _write_dvc_script(tmp_path, "echo 'status failed' >&2\nexit 3")
+
+        with pytest.raises(RuntimeError) as exc_info:
+            dvcv.is_dataset_dirty("mini", tmp_path, dvc_binary=dvc_binary)
+
+        assert str(exc_info.value) == (
+            "dvc status failed for 'patch_extract@mini' (exit 3): status failed\n"
+        )
+
+    def test_empty_successful_status_is_clean(self, tmp_path):
+        dvc_binary = _write_dvc_script(tmp_path, "exit 0")
+
+        assert dvcv.is_dataset_dirty("mini", tmp_path, dvc_binary=dvc_binary) is False

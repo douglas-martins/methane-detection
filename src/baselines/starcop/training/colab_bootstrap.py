@@ -82,7 +82,7 @@ def read_secret(
         try:
             value = userdata_get(name)
         except Exception:
-            value = None
+            value = None  # pragma: no mutate - any falsey sentinel takes the same fallback path
         if value:
             return value
     return environ.get(name)

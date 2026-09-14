@@ -13,6 +13,10 @@ boundary src/baselines/starcop/registry/hf_baseline_import.py's own load_model/i
 are validated at.
 """
 
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
 import mlflow.pytorch
 import model_loader
 import pytest
@@ -99,3 +103,33 @@ class TestLoadModel:
 
         with torch.no_grad():
             assert torch.equal(model(x), original(x))
+
+    def test_adds_registry_path_and_forwards_tracking_uri(self, tracking_uri, monkeypatch):
+        expected_registry_dir = str(Path(model_loader.__file__).resolve().parents[3] / "registry")
+        monkeypatch.setattr(
+            sys, "path", [path for path in sys.path if path != expected_registry_dir]
+        )
+        monkeypatch.delitem(sys.modules, "mlflow_registry", raising=False)
+        received_tracking_uris = []
+
+        class RecordingClient:
+            def __init__(self, *, tracking_uri):
+                received_tracking_uris.append(tracking_uri)
+                self.tracking_uri = tracking_uri
+
+            def get_latest_versions(self, model_name, stages):
+                assert model_name == "test-model"
+                assert stages == ["Staging"]
+                return [SimpleNamespace(source="runs:/run-id/custom_artifact_path")]
+
+        loaded_model = torch.nn.Linear(1, 1)
+        monkeypatch.setattr(model_loader, "MlflowClient", RecordingClient)
+        monkeypatch.setattr(model_loader.mlflow.pytorch, "load_model", lambda source: loaded_model)
+
+        model, version = model_loader.load_model(tracking_uri, "test-model", "Staging")
+
+        assert sys.path[0] == expected_registry_dir
+        assert received_tracking_uris == [tracking_uri]
+        assert model is loaded_model
+        assert model.training is False
+        assert version.source == "runs:/run-id/custom_artifact_path"

@@ -30,9 +30,11 @@ class TestRequireMlflowTrackingEnv:
         with pytest.raises(RuntimeError) as exc_info:
             mlflow_utils.require_mlflow_tracking_env()
 
-        assert "MLFLOW_TRACKING_URI" in str(exc_info.value)
-        assert "MLFLOW_TRACKING_USERNAME" in str(exc_info.value)
-        assert "MLFLOW_TRACKING_PASSWORD" in str(exc_info.value)
+        assert str(exc_info.value) == (
+            "Missing required MLflow tracking environment variable(s): "
+            "MLFLOW_TRACKING_URI, MLFLOW_TRACKING_USERNAME, MLFLOW_TRACKING_PASSWORD "
+            "(see internal-docs/setup/environment-notes.md)"
+        )
 
 
 class TestBuildRunTags:
@@ -77,6 +79,13 @@ class TestFlattenHydraParams:
         flat = mlflow_utils.flatten_hydra_params(settings)
 
         assert flat["dataset.input_products"] == "['mag1c', 'TOA_AVIRIS_640nm']"
+
+    def test_resolves_omegaconf_interpolations(self):
+        settings = OmegaConf.create({"base_lr": 0.001, "model": {"lr": "${base_lr}"}})
+
+        flat = mlflow_utils.flatten_hydra_params(settings)
+
+        assert flat["model.lr"] == "0.001"
 
     def test_flat_top_level_key_has_no_leading_dot(self):
         settings = OmegaConf.create({"seed": 42})

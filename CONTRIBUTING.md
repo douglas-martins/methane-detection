@@ -49,6 +49,9 @@ uv sync
 | `make badges` / `make badges-research` | Regenerate `docs/badges/*.svg` |
 | `make lint` | `ruff check` + `ruff format --check` (research env) |
 | `make docstring-coverage` | `interrogate` docstring-coverage check (research env) |
+| `make mutation-research` | Run mutation tests for the gated research-env scope |
+| `make mutation-baseline` | Run mutation tests for the gated baseline-env scope |
+| `make mutation-gate` | Fail unless all generated mutants are killed or excluded with justification |
 | `make test-scripts` | Run the `bats` suite for `scripts/` in Docker |
 | `make docs-serve` | Serve the MkDocs site locally |
 | `make docs-build` | Build the MkDocs site (`--strict`) |
@@ -63,6 +66,26 @@ uv sync
   broad mocking is not.
 - Tests live in `__tests__/` folders next to the module they cover; shared
   fixtures in the root `conftest.py`.
+
+### Mutation testing (rolling out)
+
+> [!NOTE]
+> This gate is rolling out module by module, not repo-wide. The
+> `make mutation-*` targets operate only on the modules currently listed in
+> `[tool.mutmut] only_mutate`; the baseline target becomes active when the first
+> baseline-env module joins that allowlist.
+
+Coverage proves a line executed, not that a test would catch a change to it.
+This repo is layering [mutmut](https://mutmut.readthedocs.io/) mutation
+testing on top of the existing coverage gates: mutmut mutates the source
+(flips a comparison, changes a constant, drops a statement) and reruns the
+tests, and any mutant that survives is a behavior change nothing would have
+caught. Once a module is added to `[tool.mutmut] only_mutate` in
+`pyproject.toml`, every surviving mutant in it must be killed with a
+new/stronger test or explicitly justified (`# pragma: no mutate` or a
+`do_not_mutate` entry with a one-line reason) — never left unexplained, and
+the gate's scope or settings are never weakened just to make it pass. See
+[`AGENTS.md`](AGENTS.md) for the agent-facing rule and procedure.
 
 ## Architecture
 
@@ -127,8 +150,9 @@ gitGraph
 
 - `main` is protected against direct pushes — always PR, and at least one
   approving review is required before merge.
-- CI (`lint.yml`, `tests.yml`, `scripts-tests.yml`, `commitlint.yml`) must pass,
-  and all review conversations must be resolved, before merge.
+- CI (`lint.yml`, `tests.yml`, `mutation.yml`, `scripts-tests.yml`,
+  `commitlint.yml`) must pass, and all review conversations must be resolved,
+  before merge.
 - On merge, `release.yml` (python-semantic-release) computes the version bump
   from Conventional Commit types (`feat`→minor, `fix`/`perf`→patch), regenerates
   `CHANGELOG.md`, tags, and publishes a GitHub Release — automatically, no

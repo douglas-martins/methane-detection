@@ -16,6 +16,7 @@ configured has_plume_threshold, so that value is actually configurable
 end-to-end.
 """
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -134,6 +135,72 @@ def test_has_plume_threshold_is_actually_configurable(tmp_path, tiny_geotiff_fac
     assert bool(_first_patch(strict)["has_plume"]) is False
 
 
+def test_patch_scenes_default_num_workers_is_one(monkeypatch):
+    """num_workers defaults to 1 when the caller doesn't pass it explicitly."""
+    captured = {}
+
+    def fake_tiled_dataframe(indexed, tile_size, overlap, output_products, num_workers):
+        """Stand in for tiled_dataframe(): record the forwarded num_workers."""
+        captured["num_workers"] = num_workers
+        return pd.DataFrame({"frac_positives": [0.0]})
+
+    monkeypatch.setattr(patch_extract, "tiled_dataframe", fake_tiled_dataframe)
+
+    patch_extract.patch_scenes(
+        pd.DataFrame([{"id": "scene1"}]),
+        patch_size=PATCH_SIZE,
+        overlap=OVERLAP,
+        output_products=["labelbinary"],
+        has_plume_threshold=DEFAULT_THRESHOLD,
+    )
+
+    assert captured["num_workers"] == 1
+
+
+def test_patch_scenes_forwards_an_explicit_num_workers_to_tiled_dataframe(monkeypatch):
+    """An explicit num_workers must actually reach tiled_dataframe, not be dropped."""
+    captured = {}
+
+    def fake_tiled_dataframe(indexed, tile_size, overlap, output_products, num_workers):
+        """Stand in for tiled_dataframe(): record the forwarded num_workers."""
+        captured["num_workers"] = num_workers
+        return pd.DataFrame({"frac_positives": [0.0]})
+
+    monkeypatch.setattr(patch_extract, "tiled_dataframe", fake_tiled_dataframe)
+
+    patch_extract.patch_scenes(
+        pd.DataFrame([{"id": "scene1"}]),
+        patch_size=PATCH_SIZE,
+        overlap=OVERLAP,
+        output_products=["labelbinary"],
+        has_plume_threshold=DEFAULT_THRESHOLD,
+        num_workers=3,
+    )
+
+    assert captured["num_workers"] == 3
+
+
+def test_has_plume_is_false_exactly_at_the_threshold_boundary(monkeypatch):
+    """has_plume == threshold is not flagged -- the check is strict '>', not '>='."""
+    monkeypatch.setattr(
+        patch_extract,
+        "tiled_dataframe",
+        lambda indexed, tile_size, overlap, output_products, num_workers: pd.DataFrame(
+            {"frac_positives": [0.5]}
+        ),
+    )
+
+    tiled = patch_extract.patch_scenes(
+        pd.DataFrame([{"id": "scene1"}]),
+        patch_size=PATCH_SIZE,
+        overlap=OVERLAP,
+        output_products=["labelbinary"],
+        has_plume_threshold=0.5,
+    )
+
+    assert tiled["has_plume"].tolist() == [False]
+
+
 def test_run_passes_configured_num_workers_to_patch_scenes(tmp_path, monkeypatch):
     """num_workers only changes multiprocessing pool size, not patch_scenes's
     output -- there's no observable state difference to assert on instead."""
@@ -165,6 +232,115 @@ def test_run_passes_configured_num_workers_to_patch_scenes(tmp_path, monkeypatch
     patch_extract.run(cfg)
 
     assert captured_num_workers == [4, 4, 4]
+
+
+def test_run_reads_and_writes_exact_expected_paths_and_columns(tmp_path, monkeypatch):
+    """run() reads splits/{name}.csv (exact lowercase names), forwards the configured
+    has_plume_threshold unchanged, drops only the "window" column, and writes each split
+    to patches/{name}_tiled_{h}_{w}.csv -- exact case and path components, verified via
+    the literal argument values captured at the call sites (not through the filesystem,
+    which resolves a wrong-case path to the same file on a case-insensitive filesystem
+    and would mask every one of these mutations)."""
+    processed_root = tmp_path / "processed"
+    (processed_root / "splits").mkdir(parents=True)
+
+    read_paths = []
+
+    def fake_read_csv(path, *args, **kwargs):
+        """Stand in for pd.read_csv(): record the exact path, skip touching disk."""
+        read_paths.append(Path(path))
+        return pd.DataFrame({"id": []})
+
+    monkeypatch.setattr(patch_extract.pd, "read_csv", fake_read_csv)
+
+    thresholds = []
+
+    def fake_patch_scenes(
+        dataframe, patch_size, overlap, output_products, has_plume_threshold, num_workers=1
+    ):
+        """Stand in for patch_scenes(): record has_plume_threshold, return a fixed frame."""
+        thresholds.append(has_plume_threshold)
+        return pd.DataFrame({"window": [1], "id": ["scene1"]})
+
+    monkeypatch.setattr(patch_extract, "patch_scenes", fake_patch_scenes)
+
+    write_calls = []
+    original_to_csv = pd.DataFrame.to_csv
+
+    def fake_to_csv(self, path=None, *args, **kwargs):
+        """Wrap DataFrame.to_csv(): record the written columns and exact path."""
+        write_calls.append((list(self.columns), path))
+        return original_to_csv(self, path, *args, **kwargs)
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", fake_to_csv)
+
+    cfg = SimpleNamespace(
+        paths=SimpleNamespace(processed_root=str(processed_root)),
+        patch=SimpleNamespace(
+            size=[128, 64], overlap=OVERLAP, has_plume_threshold=0.25, num_workers=1
+        ),
+        dataset_cfg=SimpleNamespace(output_products=["labelbinary"]),
+    )
+
+    patch_extract.run(cfg)
+
+    assert [p.parent.name for p in read_paths] == ["splits"] * 3
+    assert [p.name for p in read_paths] == ["train.csv", "val.csv", "test.csv"]
+    assert thresholds == [0.25, 0.25, 0.25]
+    assert [columns for columns, _ in write_calls] == [["id"]] * 3
+    write_paths = [Path(path) for _, path in write_calls]
+    assert [p.parent.name for p in write_paths] == ["patches"] * 3
+    assert [p.name for p in write_paths] == [
+        "train_tiled_128_64.csv",
+        "val_tiled_128_64.csv",
+        "test_tiled_128_64.csv",
+    ]
+
+
+def test_run_creates_deeply_nested_patches_root_when_its_parent_is_missing(tmp_path, monkeypatch):
+    """The final mkdir(parents=True) must create every missing intermediate directory,
+    not just patches_root itself -- exercised with a processed_root whose own parent
+    doesn't exist yet, unlike every test above where tmp_path already provides it."""
+    processed_root = tmp_path / "not_yet_created" / "processed"
+    assert not processed_root.parent.exists()
+    monkeypatch.setattr(patch_extract.pd, "read_csv", lambda *a, **kw: pd.DataFrame({"id": []}))
+    monkeypatch.setattr(
+        patch_extract, "patch_scenes", lambda *a, **kw: pd.DataFrame(columns=["window"])
+    )
+
+    patch_extract.run(
+        SimpleNamespace(
+            paths=SimpleNamespace(processed_root=str(processed_root)),
+            patch=SimpleNamespace(
+                size=PATCH_SIZE, overlap=OVERLAP, has_plume_threshold=0.5, num_workers=1
+            ),
+            dataset_cfg=SimpleNamespace(output_products=["labelbinary"]),
+        )
+    )
+
+    assert (processed_root / "patches").is_dir()
+
+
+def test_run_is_idempotent_when_patches_root_already_exists(tmp_path, monkeypatch):
+    """A second run() over the same processed_root must not raise on the pre-existing
+    patches_root -- the mkdir needs exist_ok=True, not just parents=True."""
+    processed_root = tmp_path / "processed"
+    (processed_root / "splits").mkdir(parents=True)
+    (processed_root / "patches").mkdir()
+    monkeypatch.setattr(patch_extract.pd, "read_csv", lambda *a, **kw: pd.DataFrame({"id": []}))
+    monkeypatch.setattr(
+        patch_extract, "patch_scenes", lambda *a, **kw: pd.DataFrame(columns=["window"])
+    )
+
+    patch_extract.run(
+        SimpleNamespace(
+            paths=SimpleNamespace(processed_root=str(processed_root)),
+            patch=SimpleNamespace(
+                size=PATCH_SIZE, overlap=OVERLAP, has_plume_threshold=0.5, num_workers=1
+            ),
+            dataset_cfg=SimpleNamespace(output_products=["labelbinary"]),
+        )
+    )
 
 
 def test_run_produces_byte_identical_patches_across_two_runs(

@@ -44,8 +44,13 @@ class TestValidateMachine:
     def test_raises_when_machine_is_still_the_missing_sentinel(self):
         settings = OmegaConf.create({"machine": "???"})
 
-        with pytest.raises(ValueError, match="machine"):
+        with pytest.raises(ValueError) as exc_info:
             settings_overlay.validate_machine(settings)
+
+        assert str(exc_info.value) == (
+            "settings.machine is required and was not set -- pass "
+            "+machine=desktop|macbook|colab on the CLI."
+        )
 
     def test_raises_when_machine_is_not_one_of_the_allowed_values(self):
         settings = OmegaConf.create({"machine": "raspberry-pi"})
@@ -64,8 +69,13 @@ class TestValidateDatasetName:
     def test_raises_when_dataset_name_is_still_the_missing_sentinel(self):
         settings = OmegaConf.create({"dataset_name": "???"})
 
-        with pytest.raises(ValueError, match="dataset_name"):
+        with pytest.raises(ValueError) as exc_info:
             settings_overlay.validate_dataset_name(settings)
+
+        assert str(exc_info.value) == (
+            "settings.dataset_name is required and was not set -- pass "
+            "+dataset_name=starcop_mini|starcop_raw on the CLI."
+        )
 
     def test_raises_when_dataset_name_is_not_recognized(self):
         settings = OmegaConf.create({"dataset_name": "starcop_huge"})

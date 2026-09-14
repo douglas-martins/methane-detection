@@ -61,8 +61,10 @@ class TestParseRunId:
     def test_raises_when_sentinel_missing(self):
         stdout = "training crashed before finishing\n"
 
-        with pytest.raises(RuntimeError, match="MLFLOW_RUN_ID"):
+        with pytest.raises(RuntimeError) as error:
             retrain.parse_run_id(stdout)
+
+        assert str(error.value) == "MLFLOW_RUN_ID sentinel not found in training output"
 
 
 class TestPullDataset:
@@ -76,8 +78,7 @@ class TestPullDataset:
         retrain.pull_dataset(Path("/repo"), cmd_runner=fake_runner)
 
         [(cmd, kwargs)] = calls
-        assert cmd[-1] == "pull"
-        assert "dvc" in cmd[0]
+        assert cmd == ["/repo/.venv/bin/dvc", "pull"]
         assert kwargs["cwd"] == Path("/repo")
 
     def test_raises_on_nonzero_exit(self):
@@ -107,8 +108,10 @@ class TestRunTraining:
         retrain.run_training(Path("/repo"), cmd_runner=fake_runner)
 
         [(cmd, kwargs)] = calls
-        assert "train_mac.sh" in cmd[0]
+        assert cmd == ["/repo/scripts/train_mac.sh"]
         assert kwargs["cwd"] == Path("/repo")
+        assert kwargs["capture_output"] is True
+        assert kwargs["text"] is True
 
     def test_raises_on_nonzero_exit_without_parsing_stdout(self):
         def failing_runner(cmd, **kwargs):
@@ -123,30 +126,41 @@ class TestRunTraining:
         # re-run train_mac.sh outside the flow to find the actual error
         # (wandb's no-tty UsageError). The raised message must carry enough
         # of stderr to diagnose the failure straight from Prefect's logs.
-        def failing_runner(cmd, **kwargs):
-            return FakeCompletedProcess(
-                returncode=1,
-                stderr="wandb.errors.UsageError: api_key not configured (no-tty)",
-            )
+        stderr_lines = [f"line-{index}" for index in range(45)]
 
-        with pytest.raises(RuntimeError, match="api_key not configured"):
+        def failing_runner(cmd, **kwargs):
+            return FakeCompletedProcess(returncode=1, stderr="\n".join(stderr_lines))
+
+        with pytest.raises(RuntimeError) as error:
             retrain.run_training(Path("/repo"), cmd_runner=failing_runner)
+
+        assert str(error.value) == (
+            "training failed with exit code 1\n" + "\n".join(stderr_lines[-40:])
+        )
 
 
 class TestPromote:
     def test_pins_explicit_model_name_not_the_module_default(self, monkeypatch):
         captured = {}
+        fake_client = object()
 
         def fake_decide_and_promote(client, run_id, model_name):
+            captured["client"] = client
             captured["model_name"] = model_name
             captured["run_id"] = run_id
             return make_outcome(stage="Staging", run_id=run_id)
 
+        def fake_client_factory(tracking_uri):
+            captured["tracking_uri"] = tracking_uri
+            return fake_client
+
         monkeypatch.setattr(retrain.promote_model, "decide_and_promote", fake_decide_and_promote)
-        monkeypatch.setattr(retrain, "MlflowClient", lambda tracking_uri: object())
+        monkeypatch.setattr(retrain, "MlflowClient", fake_client_factory)
 
         retrain.promote("https://mlflow.example.com", "run-abc")
 
+        assert captured["tracking_uri"] == "https://mlflow.example.com"
+        assert captured["client"] is fake_client
         assert captured["model_name"] == "starcop-baseline-mag1c-rgb"
         assert captured["run_id"] == "run-abc"
         assert captured["model_name"] != "methane-cnn-starcop"
@@ -164,8 +178,12 @@ class TestTriggerCd:
 
         [(url, kwargs)] = calls
         assert url == retrain.CD_DISPATCH_URL
-        assert kwargs["headers"]["Authorization"] == "Bearer secret-token"
+        assert kwargs["headers"] == {
+            "Authorization": "Bearer secret-token",
+            "Accept": "application/vnd.github+json",
+        }
         assert kwargs["json"] == {"ref": "main"}
+        assert kwargs["timeout"] == 30
 
     def test_raises_on_error_response(self):
         def fake_post(url, **kwargs):
@@ -190,6 +208,7 @@ class TestNotify:
         assert kwargs["data"]["token"] == "api-token"
         assert kwargs["data"]["user"] == "user-key"
         assert kwargs["data"]["message"] == "hello"
+        assert kwargs["timeout"] == 30
 
 
 class TestBuildNotificationMessage:
@@ -207,8 +226,18 @@ class TestBuildNotificationMessage:
 
         message = retrain.build_notification_message(outcome)
 
-        assert "NOT promoted" in message
-        assert "val_accuracy 0.80 below threshold 0.85" in message
+        assert message == (
+            "Retraining run run-123: NOT promoted. Reasons: val_accuracy 0.80 below threshold 0.85"
+        )
+
+    def test_joins_multiple_rejection_reasons_with_a_semicolon(self):
+        outcome = make_outcome(stage=None, reasons=["first reason", "second reason"])
+
+        message = retrain.build_notification_message(outcome)
+
+        assert message == (
+            "Retraining run run-123: NOT promoted. Reasons: first reason; second reason"
+        )
 
 
 class TestRunRetrainingCycle:
@@ -216,9 +245,10 @@ class TestRunRetrainingCycle:
         calls = {"trigger_cd": False, "notify_message": None}
 
         def fake_pull(repo_root):
-            pass
+            assert repo_root == Path("/repo")
 
         def fake_train(repo_root):
+            assert repo_root == Path("/repo")
             return "run-999"
 
         def fake_promote(tracking_uri, run_id, model_name):
@@ -230,6 +260,8 @@ class TestRunRetrainingCycle:
             calls["trigger_cd_token"] = token
 
         def fake_notify(user_key, api_token, message):
+            assert user_key == "pu-key"
+            assert api_token == "pu-token"
             calls["notify_message"] = message
 
         kwargs = dict(
@@ -292,9 +324,10 @@ class TestRunRetrainingCycleFailureHandling:
         notify_calls = []
 
         def fake_pull(repo_root):
-            pass
+            assert repo_root == Path("/repo")
 
         def fake_train(repo_root):
+            assert repo_root == Path("/repo")
             return "run-999"
 
         def fake_promote(tracking_uri, run_id, model_name):
@@ -304,6 +337,8 @@ class TestRunRetrainingCycleFailureHandling:
             pass
 
         def fake_notify(user_key, api_token, message):
+            assert user_key == "pu-key"
+            assert api_token == "pu-token"
             notify_calls.append(message)
 
         kwargs = dict(
@@ -330,9 +365,9 @@ class TestRunRetrainingCycleFailureHandling:
         with pytest.raises(RuntimeError, match="dvc pull failed"):
             retrain.run_retraining_cycle(**kwargs)
 
-        assert len(notify_calls) == 1
-        assert "pull_dataset" in notify_calls[0]
-        assert "dvc pull failed with exit code 1" in notify_calls[0]
+        assert notify_calls == [
+            "Retraining flow failed at step 'pull_dataset': dvc pull failed with exit code 1"
+        ]
 
     def test_notifies_and_reraises_when_training_fails(self):
         def failing_train(repo_root):
@@ -343,8 +378,9 @@ class TestRunRetrainingCycleFailureHandling:
         with pytest.raises(RuntimeError, match="training failed"):
             retrain.run_retraining_cycle(**kwargs)
 
-        assert len(notify_calls) == 1
-        assert "run_training" in notify_calls[0]
+        assert notify_calls == [
+            "Retraining flow failed at step 'run_training': training failed with exit code 1"
+        ]
 
     def test_notifies_and_reraises_when_promote_fails(self):
         def failing_promote(tracking_uri, run_id, model_name):
@@ -355,8 +391,7 @@ class TestRunRetrainingCycleFailureHandling:
         with pytest.raises(RuntimeError, match="mlflow unreachable"):
             retrain.run_retraining_cycle(**kwargs)
 
-        assert len(notify_calls) == 1
-        assert "promote" in notify_calls[0]
+        assert notify_calls == ["Retraining flow failed at step 'promote': mlflow unreachable"]
 
     def test_notifies_and_reraises_when_trigger_cd_fails(self):
         def failing_trigger_cd(token):
@@ -367,8 +402,7 @@ class TestRunRetrainingCycleFailureHandling:
         with pytest.raises(RuntimeError, match="HTTP 403"):
             retrain.run_retraining_cycle(**kwargs)
 
-        assert len(notify_calls) == 1
-        assert "trigger_cd" in notify_calls[0]
+        assert notify_calls == ["Retraining flow failed at step 'trigger_cd': HTTP 403"]
 
     def test_does_not_notify_twice_when_a_step_fails(self):
         def failing_train(repo_root):

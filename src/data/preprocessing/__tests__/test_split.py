@@ -48,6 +48,23 @@ def test_every_row_is_preserved_across_the_two_splits():
     assert len(train_df) + len(val_df) == len(dataframe)
 
 
+def test_default_stratification_uses_name_column():
+    dataframe = _train_dataframe(["scene0", "scene1", "scene2", "scene3"])
+
+    train_df, val_df = split.split_scenes(dataframe, val_fraction=0.5, seed=42)
+
+    assert set(train_df["name"]) & set(val_df["name"]) == set()
+
+
+def test_split_outputs_have_fresh_range_indexes():
+    dataframe = _train_dataframe(["scene0", "scene1", "scene2", "scene3"])
+
+    train_df, val_df = split.split_scenes(dataframe, val_fraction=0.5, seed=42)
+
+    assert list(train_df.index) == list(range(len(train_df)))
+    assert list(val_df.index) == list(range(len(val_df)))
+
+
 def test_split_is_deterministic_for_a_fixed_seed():
     """The same seed produces the same val-scene set across repeated calls."""
     scenes = [f"scene{i}" for i in range(10)]
@@ -113,9 +130,43 @@ def test_run_writes_train_val_test_csvs_with_no_scene_leakage(tmp_path):
     val_out = pd.read_csv(splits_root / "val.csv")
     test_out = pd.read_csv(splits_root / "test.csv")
 
+    assert [path.name for path in processed_root.iterdir()] == ["splits"]
+    assert {path.name for path in splits_root.iterdir()} == {
+        "train.csv",
+        "val.csv",
+        "test.csv",
+    }
+    assert set(train_out.columns) == {"id", "name", "folder"}
+    assert set(val_out.columns) == {"id", "name", "folder"}
+    assert set(test_out.columns) == {"id", "name", "folder"}
     assert set(train_out["name"]) & set(val_out["name"]) == set()
     assert list(test_out["id"]) == ["test_scene_w0"]
     assert test_out["folder"].iloc[0] == str(processed_root / "selected" / "test_scene_w0")
+
+
+def test_run_forwards_configured_stratification_column(tmp_path):
+    raw_root = tmp_path / "raw"
+    raw_root.mkdir(parents=True)
+    train_df = _train_dataframe(["scene0", "scene1", "scene2", "scene3"])
+    train_df["name"] = "shared_scene_name"
+    train_df["flight_group"] = ["a", "a", "a", "a", "b", "b", "b", "b"]
+    train_df.to_csv(raw_root / "train.csv", index=False)
+    train_df.iloc[:1].to_csv(raw_root / "test.csv", index=False)
+
+    processed_root = tmp_path / "processed"
+    cfg = SimpleNamespace(
+        paths=SimpleNamespace(raw_root=str(raw_root), processed_root=str(processed_root)),
+        dataset_cfg=SimpleNamespace(train_csv="train.csv", test_csv="test.csv"),
+        split=SimpleNamespace(val_fraction=0.5, seed=42, stratify_by="flight_group"),
+    )
+
+    split.run(cfg)
+
+    train_out = pd.read_csv(processed_root / "splits" / "train.csv")
+    val_out = pd.read_csv(processed_root / "splits" / "val.csv")
+    assert len(train_out) == 4
+    assert len(val_out) == 4
+    assert set(train_out["flight_group"]) & set(val_out["flight_group"]) == set()
 
 
 def test_run_produces_byte_identical_splits_across_two_runs(tmp_path, assert_trees_identical):

@@ -35,7 +35,7 @@ class TestDvcServiceAccountSetupCommands:
         ] in commands
 
     def test_raises_value_error_on_empty_path(self):
-        with pytest.raises(ValueError, match="service_account_json_path"):
+        with pytest.raises(ValueError, match=r"^service_account_json_path must not be empty\.$"):
             colab_bootstrap.dvc_service_account_setup_commands("")
 
 
@@ -49,6 +49,20 @@ class TestRequiredColabSecrets:
         assert "AWS_ACCESS_KEY_ID" in secrets
         assert "AWS_SECRET_ACCESS_KEY" in secrets
         assert "DVC_GDRIVE_SERVICE_ACCOUNT_JSON" in secrets
+
+    def test_uses_the_colab_launch_profile(self, monkeypatch):
+        env_vars_by_machine = {
+            "colab": ["MLFLOW_TRACKING_URI", "COLAB_ONLY_SECRET"],
+        }
+        monkeypatch.setattr(
+            colab_bootstrap.launch_profiles,
+            "required_env_vars",
+            env_vars_by_machine.__getitem__,
+        )
+
+        secrets = colab_bootstrap.required_colab_secrets()
+
+        assert secrets == ["COLAB_ONLY_SECRET", "DVC_GDRIVE_SERVICE_ACCOUNT_JSON"]
 
     def test_excludes_mlflow_tracking_uri(self):
         # The notebook hardcodes MLFLOW_TRACKING_URI unconditionally (same
@@ -64,7 +78,7 @@ class TestReadSecret:
     def test_prefers_userdata_when_it_returns_a_value(self):
         value = colab_bootstrap.read_secret(
             "MLFLOW_TRACKING_URI",
-            userdata_get=lambda name: "from-userdata",
+            userdata_get={"MLFLOW_TRACKING_URI": "from-userdata"}.__getitem__,
             environ={"MLFLOW_TRACKING_URI": "from-environ"},
         )
 

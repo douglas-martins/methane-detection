@@ -1,13 +1,15 @@
 ENV_BASELINE_PYTHON := vendor/starcop/.venv/bin/python
 ENV_BASELINE_GENBADGE := vendor/starcop/.venv/bin/genbadge
+ENV_BASELINE_MUTMUT := vendor/starcop/.venv/bin/mutmut
 ENV_BASELINE_TEST_PATHS := src/data/download/__tests__ tests/vendor_starcop src/training/__tests__ src/baselines/starcop/training/__tests__ src/registry/__tests__ src/baselines/starcop/registry/__tests__ src/baselines/starcop/evaluation/__tests__
 ENV_BASELINE_COV_PATHS := --cov=src/data/download --cov=vendor/starcop/scripts/preprocessing --cov=src/training --cov=src/baselines/starcop/training
 
 ENV_RESEARCH_PYTHON := .venv/bin/python
 ENV_RESEARCH_GENBADGE := .venv/bin/genbadge
 ENV_RESEARCH_INTERROGATE := .venv/bin/interrogate
+ENV_RESEARCH_MUTMUT := .venv/bin/mutmut
 ENV_RESEARCH_RUFF := .venv/bin/ruff
-ENV_RESEARCH_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/baselines/starcop/training/__tests__ src/registry/__tests__ src/baselines/starcop/registry/__tests__ src/serving/__tests__ src/baselines/starcop/serving/__tests__ src/baselines/starcop/evaluation/__tests__ flows/__tests__
+ENV_RESEARCH_TEST_PATHS := src/data/preprocessing/__tests__ src/training/__tests__ src/baselines/starcop/training/__tests__ src/registry/__tests__ src/baselines/starcop/registry/__tests__ src/serving/__tests__ src/baselines/starcop/serving/__tests__ src/baselines/starcop/evaluation/__tests__ flows/__tests__ tests/__tests__
 ENV_RESEARCH_COV_PATHS := --cov=src/data/preprocessing --cov=src/training --cov=src/baselines/starcop/training --cov=src/registry --cov=src/baselines/starcop/registry --cov=src/serving --cov=src/baselines/starcop/serving --cov=src/baselines/starcop/evaluation --cov=flows
 
 BATS_IMAGE := bats/bats:latest
@@ -36,7 +38,86 @@ coursework-lint:
 coursework-train:
 	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/train.py
 
-.PHONY: test-baseline coverage test-research coverage-research badges badges-research test docstring-coverage test-scripts lint docs-serve docs-build
+.PHONY: test-baseline coverage test-research coverage-research badges badges-research test docstring-coverage test-scripts lint docs-serve docs-build mutation-research mutation-baseline mutation-gate
+
+mutation-research:
+	@rm -rf mutants
+	$(ENV_RESEARCH_MUTMUT) run \
+		'registry.promotion_criteria.*' \
+		'registry.mlflow_registry.*' \
+		'registry.promote_model.*' \
+		'serving.band_statistics.*' \
+		'serving.drift.*' \
+		'baselines.starcop.training.validation_metrics.*' \
+		'baselines.starcop.training.metrics_ext.*' \
+		'baselines.starcop.training.normalizer_dtype_fix.*' \
+		'baselines.starcop.training.lightning2_compat.*' \
+		'baselines.starcop.training.optimizer_compat.*' \
+		'baselines.starcop.training.starcop_datamodule.*' \
+		'baselines.starcop.training.plot_confusion_matrix.*' \
+		'baselines.starcop.training.mlflow_image_logger.*' \
+		'baselines.starcop.training.launch_profiles.*' \
+		'baselines.starcop.training.accelerator_check.*' \
+		'baselines.starcop.training.colab_bootstrap.*' \
+		'training.mlflow_log_model_compat.*' \
+		'training.dvc_dataset_version.*' \
+		'training.mlflow_utils.*' \
+		'baselines.starcop.training.settings_overlay.*' \
+		'data.preprocessing.split.*' \
+		'data.preprocessing.coordinates.*' \
+		'data.preprocessing.normalize.*' \
+		'data.preprocessing.patch_extract.*' \
+		'data.preprocessing.stats.*' \
+		'baselines.starcop.serving.band_baseline.*' \
+		'baselines.starcop.serving.inference.*' \
+		'baselines.starcop.serving.model_loader.*' \
+		'baselines.starcop.evaluation.dataset_wiring.*' \
+		'baselines.starcop.evaluation.live_verify.*' \
+		'baselines.starcop.evaluation.paper_eval_mlflow.*' \
+		'baselines.starcop.evaluation.paper_metrics.*' \
+		'baselines.starcop.evaluation.run_baseline_eval.*' \
+		'flows.retrain.*' \
+		'flows.eval_baseline.*' \
+		'baselines.starcop.evaluation.select_docs_examples.*' \
+		'baselines.starcop.registry.hf_baseline_import.*'
+	# mutmut's association cache misses flow trampolines when the full union
+	# suite is collected; rebuild stats against the flow tests before gating.
+	@rm -f mutants/mutmut-stats.json
+	MUTMUT_TEST_PATHS='flows/__tests__' \
+		$(ENV_RESEARCH_MUTMUT) run \
+		'flows.retrain.*' \
+		'flows.eval_baseline.*'
+	# The baseline-only downloader is collected by the shared config but run only
+	# by mutation-baseline; remove its untested metadata before the research gate.
+	@rm -rf mutants/src/data/download
+
+mutation-baseline:
+	@set -e; \
+	backup=$$(mktemp); \
+	cp pyproject.toml "$$backup"; \
+	trap 'cp "$$backup" pyproject.toml; rm -f "$$backup"' EXIT INT TERM; \
+	$(ENV_BASELINE_PYTHON) -c 'from pathlib import Path; p=Path("pyproject.toml"); s=p.read_text(); start=s.index("only_mutate = ["); end=s.index("]\npytest_add_cli_args =", start)+1; p.write_text(s[:start] + "only_mutate = [\n    \"src/data/download/download_mini_dataset.py\",\n]" + s[end:])'; \
+	rm -rf mutants; \
+	MUTMUT_TEST_PATHS='$(ENV_BASELINE_TEST_PATHS)' \
+		$(ENV_BASELINE_MUTMUT) run 'data.download.download_mini_dataset.*'; \
+	cp "$$backup" pyproject.toml; \
+	rm -f "$$backup"; \
+	trap - EXIT INT TERM
+
+mutation-gate:
+	@if [ -x "$(ENV_RESEARCH_MUTMUT)" ]; then \
+		mutmut_bin="$(ENV_RESEARCH_MUTMUT)"; \
+	else \
+		mutmut_bin="$(ENV_BASELINE_MUTMUT)"; \
+	fi; \
+	"$$mutmut_bin" export-cicd-stats; \
+	if "$$mutmut_bin" results | grep -q ': not checked$$'; then \
+		echo 'Mutation gate found unchecked mutants'; \
+		exit 1; \
+	fi
+	jq -e \
+		'.survived == 0 and .suspicious == 0 and .segfault == 0 and .total > 0' \
+		mutants/mutmut-cicd-stats.json
 
 test-baseline:
 	$(ENV_BASELINE_PYTHON) -m pytest $(ENV_BASELINE_TEST_PATHS) -v

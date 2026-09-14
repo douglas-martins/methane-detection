@@ -8,6 +8,7 @@ pattern as evaluate_variant()/import_variant(). See
 track-a-paper-benchmark-reproduction-plan.md Phase 5.
 """
 
+import hashlib
 import json
 import runpy
 import sys
@@ -38,8 +39,6 @@ class TestMaskSha256:
         # _mask_digest -- same recipe, independently re-derived here rather
         # than imported, since live_verify.py compares a JSON-round-tripped
         # (nested list) mask, not a numpy array straight out of the model.
-        import hashlib
-
         mask = [[0, 1], [1, 0]]
         expected = hashlib.sha256(
             np.ascontiguousarray(np.array(mask, dtype=np.int64)).tobytes()
@@ -55,6 +54,12 @@ class TestMaskSha256:
 
     def test_differs_for_different_masks(self):
         assert live_verify.mask_sha256([[0, 1]]) != live_verify.mask_sha256([[1, 1]])
+
+    def test_normalizes_float_mask_values_to_int64_before_hashing(self):
+        mask = np.array([[0.0, 1.0]])
+        expected = hashlib.sha256(np.ascontiguousarray(mask.astype(np.int64)).tobytes()).hexdigest()
+
+        assert live_verify.mask_sha256(mask) == expected
 
 
 class TestComparePrediction:
@@ -299,6 +304,31 @@ class TestResolvePaperEvalRun:
         result = live_verify.resolve_paper_eval_run(client, "mag1c_only")
 
         assert result.info.run_id == run.info.run_id
+
+    def test_forwards_variant_filter_and_newest_order_to_mlflow(self):
+        run = object()
+
+        class RecordingClient:
+            def get_experiment_by_name(self, experiment_name):
+                self.experiment_name = experiment_name
+                return type("Experiment", (), {"experiment_id": "42"})()
+
+            def search_runs(self, *args, **kwargs):
+                self.search_args = args
+                self.search_kwargs = kwargs
+                return [run]
+
+        client = RecordingClient()
+
+        result = live_verify.resolve_paper_eval_run(client, "mag1c_only")
+
+        assert result is run
+        assert client.experiment_name == "starcop-paper-eval"
+        assert client.search_args == (["42"],)
+        assert client.search_kwargs == {
+            "filter_string": "tags.variant = 'mag1c_only'",
+            "order_by": ["start_time DESC"],
+        }
 
     def test_ignores_soft_deleted_runs(self, client):
         stale = self._log_run(client, "starcop-paper-eval", "mag1c_only")

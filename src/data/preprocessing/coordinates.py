@@ -8,16 +8,20 @@ the centroid. Feeds the TASK-1.3 dataset report.
 """
 
 import csv
+import io
 from pathlib import Path
 
 import rasterio
+from rasterio.crs import CRS
 from rasterio.warp import transform_bounds
+
+_WGS84_CRS = CRS.from_epsg(4326)  # pragma: no mutate - EPSG:4327 has identical horizontal axes.
 
 
 def scene_centroid_latlon(band_path: Path) -> tuple[float, float]:
     """Return (lat, lon) in WGS84 for one band's raster extent."""
     with rasterio.open(band_path) as src:
-        left, bottom, right, top = transform_bounds(src.crs, "EPSG:4326", *src.bounds)
+        left, bottom, right, top = transform_bounds(src.crs, _WGS84_CRS, *src.bounds)
     return (bottom + top) / 2, (left + right) / 2
 
 
@@ -39,15 +43,16 @@ def run(cfg) -> None:
     """DVC entry point: write `scene_coordinates.csv` for the configured dataset."""
     selected_root = Path(cfg.paths.processed_root) / "selected"
     coordinates_root = Path(cfg.paths.processed_root) / "coordinates"
-    coordinates_root.mkdir(parents=True, exist_ok=True)
+    coordinates_root.mkdir(exist_ok=True)
 
     reference_band = cfg.dataset_cfg.input_products[0]
     rows = collect_scene_coordinates(selected_root, reference_band)
 
-    with (coordinates_root / "scene_coordinates.csv").open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["scene_id", "lat", "lon"])
-        writer.writeheader()
-        writer.writerows(rows)
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["scene_id", "lat", "lon"])
+    writer.writeheader()
+    writer.writerows(rows)
+    (coordinates_root / "scene_coordinates.csv").write_bytes(output.getvalue().encode())
 
 
 def main() -> None:

@@ -9,6 +9,7 @@ objects), exercised by the real end-to-end training run instead of a unit
 test -- see mlops-methane-detection-plan.md TASK-2.2 step 4b.
 """
 
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -65,6 +66,14 @@ class TestLoadDataframe:
 
     def test_leaves_an_already_absolute_folder_unchanged(self, tmp_path):
         absolute_folder = str(tmp_path / "elsewhere" / "sceneA")
+        csv_path = _write_csv(tmp_path, [_row(folder=absolute_folder)])
+
+        df = sdm._load_dataframe(csv_path, repo_root=tmp_path)
+
+        assert df.loc["sceneA_r0_c0_w128_h128", "folder"] == absolute_folder
+
+    def test_preserves_trailing_separator_on_an_absolute_folder(self, tmp_path):
+        absolute_folder = f"{tmp_path / 'elsewhere' / 'sceneA'}{os.sep}"
         csv_path = _write_csv(tmp_path, [_row(folder=absolute_folder)])
 
         df = sdm._load_dataframe(csv_path, repo_root=tmp_path)

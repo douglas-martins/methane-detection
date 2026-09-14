@@ -65,6 +65,23 @@ class TestCastNormalizerParamsToFloat32:
 
         assert normalizer.clip_max_input is original
 
+    def test_continues_after_float32_parameter_to_cast_later_parameter(self):
+        normalizer = _FakeNormalizer(
+            offsets_input=torch.tensor([0.0], dtype=torch.float32),
+            factors_input=torch.tensor([60], dtype=torch.int64),
+        )
+
+        normalizer_dtype_fix.cast_normalizer_params_to_float32(normalizer)
+
+        assert normalizer.factors_input.dtype == torch.float32
+
+    def test_preserves_requires_grad_false_when_casting(self):
+        normalizer = _FakeNormalizer(offsets_input=torch.tensor([0.0], dtype=torch.float64))
+
+        normalizer_dtype_fix.cast_normalizer_params_to_float32(normalizer)
+
+        assert normalizer.offsets_input.requires_grad is False
+
     def test_skips_output_parameters_that_are_none_without_raising(self):
         normalizer = _FakeNormalizer(
             offsets_input=torch.tensor([0], dtype=torch.int64),

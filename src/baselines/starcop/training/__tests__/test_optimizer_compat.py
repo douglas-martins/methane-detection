@@ -54,6 +54,29 @@ class TestBindVerboseFreeConfigureOptimizers:
         assert result["monitor"] == "val_loss"
         assert isinstance(result["lr_scheduler"], _NoVerboseReduceLROnPlateau)
 
+    def test_forwards_model_configuration_to_scheduler(self, monkeypatch):
+        scheduler_args = None
+
+        class _NoVerboseReduceLROnPlateau:
+            def __init__(self, optimizer, mode, factor, patience):
+                nonlocal scheduler_args
+                scheduler_args = (optimizer, mode, factor, patience)
+
+        monkeypatch.setattr(
+            torch.optim.lr_scheduler, "ReduceLROnPlateau", _NoVerboseReduceLROnPlateau
+        )
+        model = _FakeModelModule()
+
+        optimizer_compat.bind_verbose_free_configure_optimizers(model)
+        result = model.configure_optimizers()
+
+        assert scheduler_args == (
+            result["optimizer"],
+            "min",
+            model.lr_decay,
+            model.lr_patience,
+        )
+
     def test_is_a_noop_when_installed_reduce_lr_on_plateau_still_accepts_verbose(self, monkeypatch):
         class _VerboseReduceLROnPlateau:
             def __init__(self, optimizer, mode, factor, patience, verbose):
@@ -83,6 +106,21 @@ class TestBindVerboseFreeConfigureOptimizers:
         result = model.configure_optimizers()
 
         assert isinstance(result["optimizer"], torch.optim.Adam)
+
+    def test_configures_adam_with_model_learning_rate(self, monkeypatch):
+        class _NoVerboseReduceLROnPlateau:
+            def __init__(self, optimizer, mode, factor, patience):
+                pass
+
+        monkeypatch.setattr(
+            torch.optim.lr_scheduler, "ReduceLROnPlateau", _NoVerboseReduceLROnPlateau
+        )
+        model = _FakeModelModule()
+
+        optimizer_compat.bind_verbose_free_configure_optimizers(model)
+        result = model.configure_optimizers()
+
+        assert result["optimizer"].param_groups[0]["lr"] == model.lr
 
     def test_raises_for_an_unimplemented_optimizer_setting(self, monkeypatch):
         class _NoVerboseReduceLROnPlateau:
