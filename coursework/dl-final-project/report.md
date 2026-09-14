@@ -398,6 +398,19 @@ A URI de rastreamento é explícita e escopada a este projeto — nunca
 `mlruns/` já existente na raiz do repositório (dados reais de
 rastreamento da tese).
 
+### Versões de bibliotecas
+
+Lidas diretamente dos parâmetros logados em `mlflow.db` (não retranscritas
+de memória) — idênticas nas 8 execuções reais (E1/E2/E3 × mini/R2, E2/E3 ×
+R3), já que todas rodaram na mesma máquina/ambiente:
+
+| Biblioteca | Versão |
+| --- | --- |
+| `torch` | 2.12.1+cu130 |
+| `segmentation-models-pytorch` | 0.5.0 |
+| CUDA | 13.0 |
+| GPU | NVIDIA GeForce RTX 5070 |
+
 ### Um bug real encontrado e corrigido antes de qualquer resultado ser aceito
 
 A primeira versão de `evaluate()` (`train.py`) concatenava as predições
@@ -589,7 +602,109 @@ deixou de melhorar dentro da paciência de 10 épocas.
 
 ## Resultados
 
-*(pendente — Seções 8–9 do plano)*
+Todos os números abaixo foram lidos diretamente de `mlflow.db`
+(`experimento dl-final-project`, `seed=42`), nunca retranscritos dos logs
+de terminal — cada linha é rastreável a um `run_id` específico (listados
+ao final de cada tabela).
+
+**Uma correção de dado real, encontrada ao montar esta seção**: a métrica
+`seconds_per_epoch` é logada duas vezes por execução em `train.py` — uma
+vez por época (com `step=<época>`) e uma vez como média final do treino
+completo (sem `step` explícito, portanto `step=0`). O acesso ingênuo
+`run.data.metrics["seconds_per_epoch"]` do MLflow retorna o valor de
+**maior `step`**, não o cronologicamente mais recente — ou seja, retorna
+a duração da **última época individual**, não a média real do treino
+(diferença de até ~3s por execução, nunca o suficiente para mudar
+qualquer conclusão, mas um valor tecnicamente errado se lido sem
+cuidado). Os números de "tempo/época" abaixo foram lidos corretamente via
+`MlflowClient.get_metric_history(run_id, "seconds_per_epoch")`,
+filtrando pelo registro `step=0` (a média real,
+`wall_clock_seconds / epochs_run`).
+
+### Tabela principal — `mini` (formato Tabela 4 do PDF)
+
+| Configuração | Parâmetros | Melhor `val_loss` | Melhor `val_f1` | Tempo/época | Tempo total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| E1 (do zero) | 487.361 | 0,0142 | 0,4455 | 2,15 s | 107,5 s (1,8 min) |
+| E2 (U-Net + MobileNetV2) | 6.629.233 | 0,0300 | 0,2618 | 2,56 s | 127,8 s (2,1 min) |
+| E3 (LinkNet + MobileNetV3-small) | 856.635 | 0,4849 | 0,0194 | 2,47 s | 123,4 s (2,1 min) |
+
+**Ordem por `val_f1`: E1 > E2 > E3** — ver "Comparação E1/E2/E3 — mini"
+acima para a discussão de por que essa ordem reflete velocidade de
+convergência sob um orçamento fixo de 50 épocas, não necessariamente
+qualidade de arquitetura (E3 ainda caindo de forma acentuada na época 50,
+não convergido).
+
+*Rastreabilidade (`run_id`): E1=`55abf9c8`, E2=`fb408e9b`, E3=`47d2e0f4`.*
+
+### Tabela de confirmação — camada `starcop_raw` (R2 e R3, Seção 0.1)
+
+Mantida visualmente separada da tabela principal — nenhum destes números
+substitui os de `mini`, são a confirmação em escala do plano.
+
+| Configuração | Camada | Parâmetros | Melhor `val_loss` | Melhor `val_f1` | Melhor época / total | Tempo/época | Tempo total |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| E1 | R2 (subamostra, 6.076 patches) | 487.361 | 0,1685 | 0,2529 | 11/21 (early stop) | 40,39 s | 848,2 s (14,1 min) |
+| E2 | R2 (subamostra, 6.076 patches) | 6.629.233 | 0,1883 | 0,3825 | 24/34 (early stop) | 44,09 s | 1.499,1 s (25,0 min) |
+| E3 | R2 (subamostra, 6.076 patches) | 856.635 | 0,2013 | 0,3625 | 39/49 (early stop) | 42,37 s | 2.076,0 s (34,6 min) |
+| E2 | R3 (`raw-full`, 141.218 patches) | 6.629.233 | 0,0583 | 0,2795 | 17/20 (atingiu o teto) | 833,48 s | 16.669,6 s (4,63 h) |
+| E3 | R3 (`raw-full`, 141.218 patches) | 856.635 | 0,0715 | 0,2477 | 9/19 (early stop) | 790,88 s | 15.026,8 s (4,17 h) |
+
+**Ordem por `val_f1` em R2: E2 > E3 > E1** — inversão em relação a
+`mini` (E1 > E2 > E3), o achado mais importante deste projeto (ver seção
+"Comparação E1/E2/E3 — r2" acima). **Ordem em R3: E2 > E3** (E1
+deliberadamente excluído da Fase E — Seção 6/7 do plano) — mesma ordem
+relativa de R2, não uma nova inversão. Note que os valores absolutos de
+`val_f1` de E2 e E3 *caíram* de R2 para R3 (E2: 0,3825→0,2795; E3:
+0,3625→0,2477) apesar de ~23× mais passos de treino por época —
+plausivelmente porque o split de validação de `raw-full` (26.607
+patches) é muito maior e mais diverso que o de R2 (3.136 patches,
+curado), um teste mais difícil e mais representativo, não uma regressão
+real de qualidade do modelo. Também vale registrar uma assimetria de
+convergência: E2 usou todo o teto de 20 épocas sem esgotar a paciência
+(ainda tinha margem para melhorar), enquanto E3 convergiu de fato e
+parou sozinho — uma leitura mais otimista para E2 nesta camada do que o
+número isolado de `val_f1` sugere por si só.
+
+`pos_weight` idêntico dentro de cada camada (87,27 em `mini`, 269,73 em
+R2, 314,48 em R3) confirma que todas as execuções de uma mesma camada
+leram exatamente o mesmo split/manifesto — não uma amostra redesenhada
+por execução.
+
+*Rastreabilidade (`run_id`): E1-R2=`1d4c6ac6`, E2-R2=`6e8e4e90`,
+E3-R2=`0791a33d`, E2-R3=`0c1de1bf`, E3-R3=`4f0ee075`.*
+
+### Limitação de reprodutibilidade encontrada após os resultados acima
+
+**Um terceiro bug real, encontrado só agora** (ao executar o item do plano
+"confirme reprodutibilidade re-rodando um treino"): re-rodar E1/`mini` com
+exatamente a mesma configuração e semente (`seed=42`) usada para gerar a
+tabela acima produziu um resultado **diferente** do registrado — melhor
+época 50 (não 47), `val_loss=0,0120` (não 0,0142), `val_f1=0,5604` (não
+0,4455). Uma diferença de 16-26% não é ruído.
+
+**Causa raiz**: `set_seed()` semeava os geradores aleatórios (torch, CUDA,
+numpy) mas nunca fixava `torch.backends.cudnn.deterministic=True` — o
+cuDNN pode escolher um algoritmo de convolução diferente (não
+determinístico) a cada execução mesmo com sementes idênticas, e essa
+diferença se acumula ao longo de muitos passos de treino. **Corrigido**
+(TDD, 82/82 testes) e **reverificado de forma concreta**: duas execuções
+completas de 50 épocas de E1/`mini` sob a correção agora produzem
+resultados **idênticos bit a bit** (`val_loss=0,011957116425037384` nas
+duas).
+
+**O que isso significa para os números acima**: a correção garante
+reprodutibilidade **daqui para frente**, mas não torna retroativamente
+reprodutíveis os 8 números já registrados nas tabelas desta seção — todos
+foram treinados antes da correção, e uma nova execução de qualquer um
+deles hoje provavelmente produziria um resultado diferente (porém, a
+partir de agora, ele mesmo reprodutível). Os números em si continuam
+sendo reais — execuções que de fato ocorreram, não inventadas — apenas a
+propriedade específica de "reprodutibilidade bit a bit" não se sustenta
+para eles como registrados. Re-rodar as 8 configurações sob o código
+corrigido é uma decisão de custo real (R3 sozinho consome ~4h por
+arquitetura) e foi deixada explicitamente para o usuário decidir, não
+tomada unilateralmente.
 
 ## Discussão
 
