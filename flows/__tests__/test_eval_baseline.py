@@ -60,23 +60,34 @@ class TestConstants:
 
 class TestMultistarcopRegisteredAndCurrent:
     def test_true_when_staging_versions_tag_matches_the_resolved_checkpoint(self):
+        captured = {}
+        fake_client = object()
+
         def fake_resolve_checkpoint(variant, dest_dir):
+            captured["checkpoint"] = (variant, dest_dir)
             return (Path("ckpt"), Path("cfg"), {"checkpoint_sha256": "abc123"})
 
         def fake_resolve_stage_version(client, model_name, stage):
+            captured["stage"] = (client, model_name, stage)
             return SimpleNamespace(run_id="run-1")
 
         class FakeClient:
             def get_run(self, run_id):
+                captured["run_id"] = run_id
                 return SimpleNamespace(data=SimpleNamespace(tags={"checkpoint_sha256": "abc123"}))
 
+        fake_client = FakeClient()
         result = eval_baseline.multistarcop_registered_and_current(
-            FakeClient(),
+            fake_client,
             resolve_checkpoint_fn=fake_resolve_checkpoint,
             resolve_stage_version_fn=fake_resolve_stage_version,
         )
 
         assert result is True
+        assert captured["checkpoint"][0] == "varon"
+        assert captured["checkpoint"][1].is_absolute()
+        assert captured["stage"] == (fake_client, "starcop-baseline-varon", "Staging")
+        assert captured["run_id"] == "run-1"
 
     def test_false_when_the_tag_does_not_match(self):
         def fake_resolve_checkpoint(variant, dest_dir):
@@ -138,10 +149,15 @@ class TestMultistarcopRegisteredAndCurrent:
 class TestEnsureMultistarcopRegistered:
     def test_skips_import_when_already_registered(self):
         import_calls = []
+        fake_client = object()
+
+        def is_registered(client):
+            assert client is fake_client
+            return True
 
         eval_baseline.ensure_multistarcop_registered(
-            object(),
-            is_registered_fn=lambda client: True,
+            fake_client,
+            is_registered_fn=is_registered,
             import_fn=lambda variant, stage: import_calls.append((variant, stage)),
         )
 
@@ -202,18 +218,57 @@ class TestRunEvaluationForVariant:
         )
 
         [cmd] = calls
-        assert "--emit-docs-assets" in cmd
-        assert str(Path("/staging/run-1")) in cmd
+        assert cmd == [
+            "/repo/vendor/starcop/.venv/bin/python",
+            "/repo/scripts/run_starcop_baseline_evaluation.py",
+            "mag1c_only",
+            "--emit-docs-assets",
+            "/staging/run-1",
+        ]
         assert "--limit" not in cmd
 
     def test_raises_with_variant_and_stderr_tail_on_nonzero_exit(self):
-        def failing_runner(cmd, **kwargs):
-            return FakeCompletedProcess(returncode=1, stderr="KnownDifficultyBucketGapError: boom")
+        stderr_lines = [f"line-{index}" for index in range(45)]
 
-        with pytest.raises(RuntimeError, match="mag1c_rgb"):
+        def failing_runner(cmd, **kwargs):
+            return FakeCompletedProcess(returncode=1, stderr="\n".join(stderr_lines))
+
+        with pytest.raises(RuntimeError) as error:
             eval_baseline.run_evaluation_for_variant(
                 Path("/repo"), "mag1c_rgb", Path("/staging"), cmd_runner=failing_runner
             )
+
+        assert str(error.value) == (
+            "evaluation failed for variant='mag1c_rgb' with exit code 1\n"
+            + "\n".join(stderr_lines[-40:])
+        )
+
+    def test_builds_the_exact_baseline_subprocess_contract(self, monkeypatch):
+        monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+        monkeypatch.delenv("MLFLOW_S3_ENDPOINT_URL", raising=False)
+        calls = []
+
+        def fake_runner(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return FakeCompletedProcess(returncode=0, stdout="MLFLOW_RUN_ID=abc123\n")
+
+        eval_baseline.run_evaluation_for_variant(
+            Path("/repo"), "varon", Path("/staging"), cmd_runner=fake_runner
+        )
+
+        [(cmd, kwargs)] = calls
+        assert cmd == [
+            "/repo/vendor/starcop/.venv/bin/python",
+            "/repo/scripts/run_starcop_baseline_evaluation.py",
+            "varon",
+            "--emit-docs-assets",
+            "/staging",
+        ]
+        assert kwargs["cwd"] == Path("/repo")
+        assert kwargs["capture_output"] is True
+        assert kwargs["text"] is True
+        assert kwargs["env"]["MLFLOW_TRACKING_URI"] == eval_baseline.MLFLOW_TRACKING_URI
+        assert kwargs["env"]["MLFLOW_S3_ENDPOINT_URL"] == eval_baseline.MLFLOW_S3_ENDPOINT_URL
 
     def test_passes_mlflow_tracking_uri_to_the_subprocess_env(self):
         # Real bug, caught live 2026-08-22: run_starcop_baseline_evaluation.py
@@ -345,6 +400,33 @@ class TestStartBentomlServe:
         assert "src.baselines.starcop.serving.service:MethaneDetectionService" in cmd
         assert "3005" in cmd
 
+    def test_builds_the_exact_bentoml_subprocess_contract(self, monkeypatch):
+        monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+        monkeypatch.delenv("MLFLOW_S3_ENDPOINT_URL", raising=False)
+        calls = []
+
+        def fake_popen(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return FakeProcess()
+
+        eval_baseline.start_bentoml_serve(Path("/repo"), "mag1c_rgb", 3005, popen=fake_popen)
+
+        [(cmd, kwargs)] = calls
+        assert cmd == [
+            "/repo/.venv/bin/python",
+            "-m",
+            "bentoml",
+            "serve",
+            "src.baselines.starcop.serving.service:MethaneDetectionService",
+            "--port",
+            "3005",
+        ]
+        assert kwargs["cwd"] == Path("/repo")
+        assert kwargs["env"]["MODEL_NAME"] == "starcop-baseline-mag1c-rgb"
+        assert kwargs["env"]["MODEL_STAGE"] == "Staging"
+        assert kwargs["env"]["MLFLOW_TRACKING_URI"] == eval_baseline.MLFLOW_TRACKING_URI
+        assert kwargs["env"]["MLFLOW_S3_ENDPOINT_URL"] == eval_baseline.MLFLOW_S3_ENDPOINT_URL
+
 
 class TestWaitForHealth:
     def test_returns_health_payload_once_it_responds_200(self):
@@ -366,8 +448,11 @@ class TestWaitForHealth:
         import requests
 
         attempts = {"n": 0}
+        calls = []
+        sleeps = []
 
         def fake_post(url, timeout=None):
+            calls.append((url, timeout))
             attempts["n"] += 1
             if attempts["n"] < 3:
                 raise requests.exceptions.ConnectionError("not up yet")
@@ -376,12 +461,14 @@ class TestWaitForHealth:
         result = eval_baseline.wait_for_health(
             "http://localhost:3001",
             http_post=fake_post,
-            sleep_fn=lambda s: None,
+            sleep_fn=sleeps.append,
             time_fn=_counting_clock(),
         )
 
         assert result == {"status": "ok"}
         assert attempts["n"] == 3
+        assert calls == [("http://localhost:3001/health", 10)] * 3
+        assert sleeps == [2, 2]
 
     def test_raises_timeout_error_past_the_deadline(self):
         import requests
@@ -389,8 +476,12 @@ class TestWaitForHealth:
         def always_failing_post(url, timeout=None):
             raise requests.exceptions.ConnectionError("never up")
 
-        clock = _counting_clock(step=100)  # each check advances the clock past a short timeout
-        with pytest.raises(TimeoutError, match="localhost:3001"):
+        clock_values = iter((0, 0, 100))
+
+        def clock():
+            return next(clock_values)
+
+        with pytest.raises(TimeoutError, match="never up"):
             eval_baseline.wait_for_health(
                 "http://localhost:3001",
                 timeout_seconds=10,
@@ -398,6 +489,42 @@ class TestWaitForHealth:
                 sleep_fn=lambda s: None,
                 time_fn=clock,
             )
+
+    def test_reports_none_when_the_deadline_expires_before_any_request(self):
+        clock_values = iter((0, 0))
+
+        with pytest.raises(TimeoutError, match=r"within 0s \(None\)"):
+            eval_baseline.wait_for_health(
+                "http://localhost:3001",
+                timeout_seconds=0,
+                http_post=lambda url, timeout=None: pytest.fail("must not request health"),
+                sleep_fn=lambda seconds: None,
+                time_fn=lambda: next(clock_values),
+            )
+
+    def test_stops_at_the_deadline_without_an_extra_health_request(self):
+        import requests
+
+        attempts = []
+        clock_values = iter((0, 0, 10, 11))
+
+        def fake_clock():
+            return next(clock_values)
+
+        def failing_post(url, timeout=None):
+            attempts.append((url, timeout))
+            raise requests.exceptions.ConnectionError("not up")
+
+        with pytest.raises(TimeoutError):
+            eval_baseline.wait_for_health(
+                "http://localhost:3001",
+                timeout_seconds=10,
+                http_post=failing_post,
+                sleep_fn=lambda seconds: None,
+                time_fn=fake_clock,
+            )
+
+        assert attempts == [("http://localhost:3001/health", 10)]
 
 
 def _counting_clock(step=1):
@@ -453,7 +580,46 @@ class TestRunLiveCheckForVariant:
         )
 
         assert result["status"] == "passed"
+        assert result["detail"] == {"passed": True, "results": []}
         assert process.terminated is True
+
+    def test_forwards_the_exact_live_check_contract(self):
+        calls = {}
+        process = FakeProcess()
+
+        def start_serve(repo_root, variant, port):
+            calls["start"] = (repo_root, variant, port)
+            return process
+
+        def wait_for_health(base_url):
+            calls["health"] = base_url
+            return {"status": "ok"}
+
+        def verify(variant, **kwargs):
+            calls["verify"] = (variant, kwargs)
+            return {"passed": True, "results": []}
+
+        result = eval_baseline.run_live_check_for_variant(
+            Path("/repo"),
+            "mag1c_rgb",
+            "https://mlflow.example.com",
+            start_serve_fn=start_serve,
+            wait_for_health_fn=wait_for_health,
+            verify_fn=verify,
+        )
+
+        assert result["status"] == "passed"
+        assert calls["start"] == (Path("/repo"), "mag1c_rgb", eval_baseline.BENTOML_PORT)
+        assert calls["health"] == "http://localhost:3001"
+        assert calls["verify"] == (
+            "mag1c_rgb",
+            {
+                "base_url": "http://localhost:3001",
+                "tracking_uri": "https://mlflow.example.com",
+                "test_csv_path": "/repo/data/starcop_raw/test.csv",
+                "root_folder": "/repo/data/starcop_raw/STARCOP_test",
+            },
+        )
 
     def test_returns_failed_status_when_verify_fn_reports_failure_not_all_scenes_passed(self):
         process = FakeProcess()
@@ -534,11 +700,11 @@ class TestRunLiveCheckForVariant:
             def __init__(self):
                 super().__init__()
                 self.killed = False
-                self._wait_calls = 0
+                self.wait_calls = []
 
             def wait(self, timeout=None):
-                self._wait_calls += 1
-                if self._wait_calls == 1:
+                self.wait_calls.append(timeout)
+                if len(self.wait_calls) == 1:
                     raise subprocess.TimeoutExpired(cmd="bentoml serve", timeout=timeout)
                 self.waited = True
 
@@ -560,6 +726,7 @@ class TestRunLiveCheckForVariant:
         assert process.terminated is True
         assert process.killed is True
         assert process.waited is True
+        assert process.wait_calls == [30, 30]
 
 
 class TestValidateRunCompleteness:
@@ -593,6 +760,12 @@ class TestValidateRunCompleteness:
 
         with pytest.raises(ValueError, match="mag1c_rgb"):
             eval_baseline.validate_run_completeness(results)
+
+    def test_rejects_an_unexpected_servable_variant_without_a_result(self):
+        with pytest.raises(ValueError, match="extra"):
+            eval_baseline.validate_run_completeness(
+                self._complete_results(), servable_variants=("extra",)
+            )
 
     def test_does_not_require_a_live_check_for_varon(self):
         results = self._complete_results()
@@ -724,6 +897,76 @@ class TestRenderAggregateComparison:
         assert live_check_lines, "expected a live-check status under Varon's heading"
         assert "out of scope" in live_check_lines[0].lower() or "n/a" in live_check_lines[0].lower()
 
+    def test_renders_the_exact_markdown_contract(self):
+        variant_results = {
+            "varon": {"run_id": "r1", "metrics": self._metrics()},
+            "mag1c_only": {
+                "run_id": "r2",
+                "metrics": self._metrics(),
+                "live_check": {"status": "passed"},
+            },
+            "mag1c_rgb": {
+                "run_id": "r3",
+                "metrics": self._metrics(),
+                "live_check": {"status": "failed"},
+            },
+        }
+
+        rendered = eval_baseline.render_aggregate_comparison(variant_results, self._reference())
+
+        assert (
+            rendered
+            == """# Paper comparison — all variants
+
+## MultiSTARCOP — Varon ratio
+
+**Variant:** `varon` · **Live API check:** out of scope (MultiSTARCOP not deployed live)
+
+| Metric | Paper | Reproduced |
+| --- | ---: | ---: |
+| Strong F1 | 30.72 ± 2.87 | 50.00 |
+| Weak F1 | 10.35 ± 1.52 | 40.00 |
+| FPR (tile-level) | 87.89 ± 4.67 | 30.00 |
+| AUPRC | 11.92 ± 1.35 | 20.00 |
+
+## HyperSTARCOP — mag1c only
+
+**Variant:** `mag1c_only` · **Live API check:** passed
+
+| Metric | Paper | Reproduced |
+| --- | ---: | ---: |
+| Strong F1 | 74.15 ± 6.10 | 50.00 |
+| Weak F1 | 47.57 ± 4.17 | 40.00 |
+| FPR (tile-level) | 52.11 ± 10.98 | 30.00 |
+| AUPRC | 49.41 ± 5.49 | 20.00 |
+
+## HyperSTARCOP — mag1c + RGB
+
+**Variant:** `mag1c_rgb` · **Live API check:** failed
+
+| Metric | Paper | Reproduced |
+| --- | ---: | ---: |
+| Strong F1 | 81.96 ± 3.71 | 50.00 |
+| Weak F1 | 43.42 ± 5.72 | 40.00 |
+| FPR (tile-level) | 43.66 ± 7.36 | 30.00 |
+| AUPRC | 51.99 ± 2.76 | 20.00 |
+"""
+        )
+
+    def test_renders_na_for_missing_reference_metrics_and_variants(self):
+        reference = self._reference()
+        del reference["varon"]["auprc"]
+        reference.pop("mag1c_only")
+        variant_results = {
+            variant: {"run_id": variant, "metrics": self._metrics()}
+            for variant in eval_baseline.VARIANTS
+        }
+
+        rendered = eval_baseline.render_aggregate_comparison(variant_results, reference)
+
+        assert rendered.count("| AUPRC | n/a | 20.00 |") == 2
+        assert rendered.count("| Strong F1 | n/a | 50.00 |") == 1
+
 
 class TestPublishStagingDir:
     def test_replaces_canonical_dir_contents_with_stagings(self, tmp_path):
@@ -743,7 +986,7 @@ class TestPublishStagingDir:
         staging = tmp_path / "staging"
         staging.mkdir()
         (staging / "a.png").write_text("new-a")
-        canonical = tmp_path / "nested" / "canonical"
+        canonical = tmp_path / "outer" / "nested" / "canonical"
 
         eval_baseline.publish_staging_dir(staging, canonical)
 
@@ -771,6 +1014,12 @@ class TestBuildSuccessMessage:
 
         message = eval_baseline.build_success_message(variant_results)
 
+        assert message == (
+            "eval_baseline completed:\n"
+            "varon: run run-varon\n"
+            "mag1c_only: run run-mo (live check: passed)\n"
+            "mag1c_rgb: run run-mr (live check: failed)"
+        )
         assert "run-varon" in message
         assert "run-mo" in message
         assert "run-mr" in message
@@ -791,40 +1040,66 @@ class TestBuildSuccessMessage:
 class TestRunEvalBaselineCycle:
     def _run(self, **overrides):
         calls = {"notify_message": None}
+        fake_client = object()
 
         def fake_pull(repo_root):
-            pass
+            assert repo_root == Path("/repo")
 
         def fake_ensure_registered(client):
-            pass
+            assert client is expected_client
+            calls["ensured_client"] = client
 
         def fake_evaluate(repo_root, variant, staging_dir):
+            assert repo_root == Path("/repo")
+            assert variant in eval_baseline.VARIANTS
+            assert staging_dir.is_dir()
             return f"run-{variant}"
 
         def fake_live_check(repo_root, variant, tracking_uri):
+            assert repo_root == Path("/repo")
+            assert variant in eval_baseline.SERVABLE_VARIANTS
+            assert tracking_uri == "https://mlflow.example.com"
             return {"status": "passed", "detail": {}}
 
         def fake_aggregate(variant_results, reference):
+            assert set(variant_results) == set(eval_baseline.VARIANTS)
+            assert all(
+                result.get("metrics")
+                == {
+                    "strong_f1score": 0.5,
+                    "weak_f1score": 0.4,
+                    "no_plume_FPR": 0.3,
+                    "auprc": 0.2,
+                }
+                for result in variant_results.values()
+            )
+            assert reference == {"reference": True}
             return "combined markdown"
 
         def fake_publish(staging_dir, canonical_dir):
+            assert staging_dir.is_dir()
+            assert {path.name for path in staging_dir.iterdir()} == {"paper_comparison.md"}
+            assert (staging_dir / "paper_comparison.md").read_text() == "combined markdown"
+            assert canonical_dir == Path("/repo/docs/assets/paper_eval")
             calls["published"] = (staging_dir, canonical_dir)
 
         def fake_notify(user_key, api_token, message):
+            assert user_key == "pu-key"
+            assert api_token == "pu-token"
             calls["notify_message"] = message
 
-        class FakeClient:
-            def get_run(self, run_id):
-                return SimpleNamespace(
-                    data=SimpleNamespace(
-                        metrics={
-                            "strong_f1score": 0.5,
-                            "weak_f1score": 0.4,
-                            "no_plume_FPR": 0.3,
-                            "auprc": 0.2,
-                        }
-                    )
-                )
+        expected_client = overrides.pop("expected_client", fake_client)
+
+        def fake_fetch_metrics(client, run_id):
+            assert client is expected_client
+            assert run_id in {"run-varon", "run-mag1c_only", "run-mag1c_rgb"}
+            return {
+                "strong_f1score": 0.5,
+                "weak_f1score": 0.4,
+                "no_plume_FPR": 0.3,
+                "auprc": 0.2,
+                "ignored": 99,
+            }
 
         kwargs = dict(
             repo_root=Path("/repo"),
@@ -833,7 +1108,7 @@ class TestRunEvalBaselineCycle:
             canonical_docs_dir=Path("/repo/docs/assets/paper_eval"),
             pushover_user_key="pu-key",
             pushover_api_token="pu-token",
-            client=FakeClient(),
+            client=fake_client,
             pull_fn=fake_pull,
             ensure_registered_fn=fake_ensure_registered,
             evaluate_fn=fake_evaluate,
@@ -841,10 +1116,16 @@ class TestRunEvalBaselineCycle:
             aggregate_fn=fake_aggregate,
             publish_fn=fake_publish,
             notify_fn=fake_notify,
-            load_reference_fn=lambda path: {},
+            load_reference_fn=lambda path: (
+                {"reference": True} if path == Path("/repo/reference.md") else pytest.fail(path)
+            ),
+            fetch_metrics_fn=fake_fetch_metrics,
         )
         kwargs.update(overrides)
-        result = eval_baseline.run_eval_baseline_cycle(**kwargs)
+        try:
+            result = eval_baseline.run_eval_baseline_cycle(**kwargs)
+        finally:
+            self._last_calls = calls
         return result, calls
 
     def test_returns_a_run_id_per_variant(self):
@@ -881,12 +1162,21 @@ class TestRunEvalBaselineCycle:
         with pytest.raises(RuntimeError, match="dvc pull failed"):
             self._run(pull_fn=failing_pull)
 
+        assert self._last_calls["notify_message"] == (
+            "eval_baseline flow failed at step 'pull_dataset': dvc pull failed with exit code 1"
+        )
+
     def test_notifies_and_reraises_when_evaluation_fails(self):
         def failing_evaluate(repo_root, variant, staging_dir):
             raise RuntimeError(f"evaluation failed for variant={variant!r}")
 
         with pytest.raises(RuntimeError, match="evaluation failed"):
             self._run(evaluate_fn=failing_evaluate)
+
+        assert self._last_calls["notify_message"] == (
+            "eval_baseline flow failed at step 'run_evaluation': "
+            "evaluation failed for variant='varon'"
+        )
 
     def test_does_not_publish_when_evaluation_fails(self):
         def failing_evaluate(repo_root, variant, staging_dir):
@@ -901,6 +1191,39 @@ class TestRunEvalBaselineCycle:
             self._run(evaluate_fn=failing_evaluate, publish_fn=fake_publish)
 
         assert calls["published"] is False
+
+    @pytest.mark.parametrize(
+        ("override_name", "expected_step"),
+        [
+            ("ensure_registered_fn", "ensure_multistarcop_registered"),
+            ("live_check_fn", "live_check"),
+            ("aggregate_fn", "aggregate"),
+            ("publish_fn", "publish"),
+        ],
+    )
+    def test_reports_the_exact_step_when_a_later_step_fails(self, override_name, expected_step):
+        def failing_step(*args):
+            raise RuntimeError("step exploded")
+
+        with pytest.raises(RuntimeError, match="step exploded"):
+            self._run(**{override_name: failing_step})
+
+        assert self._last_calls["notify_message"] == (
+            f"eval_baseline flow failed at step '{expected_step}': step exploded"
+        )
+
+    def test_creates_the_mlflow_client_when_one_is_not_supplied(self, monkeypatch):
+        captured = {}
+
+        def fake_client_factory(tracking_uri):
+            captured["tracking_uri"] = tracking_uri
+            return captured["client"]
+
+        captured["client"] = object()
+        monkeypatch.setattr(eval_baseline, "MlflowClient", fake_client_factory)
+        self._run(client=None, expected_client=captured["client"])
+
+        assert captured["tracking_uri"] == "https://mlflow.example.com"
 
     def test_a_failed_live_check_does_not_fail_the_whole_run(self):
         # Non-fatal by design -- run_live_check_for_variant itself never
