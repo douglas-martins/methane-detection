@@ -70,6 +70,7 @@ mutation-research:
 		'baselines.starcop.serving.band_baseline.*' \
 		'baselines.starcop.serving.inference.*' \
 		'baselines.starcop.serving.model_loader.*' \
+		'baselines.starcop.evaluation.dataset_wiring.*' \
 		'baselines.starcop.evaluation.select_docs_examples.*' \
 		'baselines.starcop.registry.hf_baseline_import.*'
 
