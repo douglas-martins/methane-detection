@@ -41,6 +41,7 @@ coursework-train:
 .PHONY: test-baseline coverage test-research coverage-research badges badges-research test docstring-coverage test-scripts lint docs-serve docs-build mutation-research mutation-baseline mutation-gate
 
 mutation-research:
+	@rm -rf mutants
 	$(ENV_RESEARCH_MUTMUT) run \
 		'registry.promotion_criteria.*' \
 		'registry.mlflow_registry.*' \
@@ -86,16 +87,33 @@ mutation-research:
 		$(ENV_RESEARCH_MUTMUT) run \
 		'flows.retrain.*' \
 		'flows.eval_baseline.*'
+	# The baseline-only downloader is collected by the shared config but run only
+	# by mutation-baseline; remove its untested metadata before the research gate.
+	@rm -rf mutants/src/data/download
 
 mutation-baseline:
+	@set -e; \
+	backup=$$(mktemp); \
+	cp pyproject.toml "$$backup"; \
+	trap 'cp "$$backup" pyproject.toml; rm -f "$$backup"' EXIT INT TERM; \
+	$(ENV_BASELINE_PYTHON) -c 'from pathlib import Path; p=Path("pyproject.toml"); s=p.read_text(); start=s.index("only_mutate = ["); end=s.index("]\npytest_add_cli_args =", start)+1; p.write_text(s[:start] + "only_mutate = [\n    \"src/data/download/download_mini_dataset.py\",\n]" + s[end:])'; \
+	rm -rf mutants; \
 	MUTMUT_TEST_PATHS='$(ENV_BASELINE_TEST_PATHS)' \
-		$(ENV_BASELINE_MUTMUT) run 'data.download.download_mini_dataset.*'
+		$(ENV_BASELINE_MUTMUT) run 'data.download.download_mini_dataset.*'; \
+	cp "$$backup" pyproject.toml; \
+	rm -f "$$backup"; \
+	trap - EXIT INT TERM
 
 mutation-gate:
 	@if [ -x "$(ENV_RESEARCH_MUTMUT)" ]; then \
-		$(ENV_RESEARCH_MUTMUT) export-cicd-stats; \
+		mutmut_bin="$(ENV_RESEARCH_MUTMUT)"; \
 	else \
-		$(ENV_BASELINE_MUTMUT) export-cicd-stats; \
+		mutmut_bin="$(ENV_BASELINE_MUTMUT)"; \
+	fi; \
+	"$$mutmut_bin" export-cicd-stats; \
+	if "$$mutmut_bin" results | grep -q ': not checked$$'; then \
+		echo 'Mutation gate found unchecked mutants'; \
+		exit 1; \
 	fi
 	jq -e \
 		'.survived == 0 and .suspicious == 0 and .segfault == 0 and .total > 0' \
