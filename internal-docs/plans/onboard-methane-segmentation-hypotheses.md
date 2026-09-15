@@ -1,11 +1,14 @@
-# Hardware-oriented methane segmentation: repository analysis and model hypotheses
+# On-board methane segmentation: hardware and model hypotheses
 
 > **Status:** design baseline, not an implementation specification  
 > **Analysis date:** 2026-08-19  
 > **Target project:** `methane-detection`  
-> **Primary deployment tool considered:** [hls4ml](https://fastmachinelearning.org/hls4ml/)  
-> **Decision rule:** do not choose an architecture until the target FPGA, system boundary, throughput, power, and full-granule false-alert budget are defined.  
-> **Update 2026-08-19:** added RaVAEn on-board flight evidence (Section 6A), a non-FPGA fallback track (Section 8.5), Alternative E (Section 9), and H9 (Section 10), after reading Růžička et al., *Fast Model Inference and Training On-Board of Satellites*, arXiv:2307.08700.
+> **Renamed 2026-09-09** from `hls4ml-methane-model-hypotheses.md` — the original name overstated hls4ml's role once Vitis AI (Section 6B) and a CPU-only flight-heritage path (Section 6D) both proved out on this project's actual architecture family; this document is no longer hls4ml-centric, so the filename shouldn't read that way either. Content and section numbers are unchanged by the rename.  
+> **Toolchains under evaluation:** [hls4ml](https://fastmachinelearning.org/hls4ml/), **Xilinx Vitis AI**, and plain **CPU/ONNX Runtime on flight-heritage hardware** — as of 2026-09-09, Vitis AI has a proven end-to-end path on this project's actual architecture family, a CPU-only pipeline has a proven end-to-end path on a *different* published architecture on real flight-heritage hardware (Section 6D), and hls4ml has neither. None is presumptively primary; Section 9 and Section 16 give the current comparison and recommendation.  
+> **Decision rule:** do not choose an architecture until the target FPGA/board, system boundary, throughput, power, and full-granule false-alert budget are defined.  
+> **Update 2026-08-19:** added RaVAEn on-board flight evidence (Section 6A), a non-FPGA fallback track (Section 8.5), Alternative E (Section 9), and H9 (Section 10), after reading Růžička et al., *Fast Model Inference and Training On-Board of Satellites*, arXiv:2307.08700.  
+> **Update 2026-09-08:** added Vitis AI as a proven-feasible toolchain (Section 6B) and Alternative F (Section 9), after re-reading the collaborator's ZCU104 benchmark (`Projeto_VITISAI_hyperstarcop`) alongside this project's own 2026-09-06 hls4ml probe; added Herec et al.'s direct on-board methane benchmark (Section 6D) and its LinkNet+Mag1c-SAS candidate (Section 10, H1.5); added corroborating hls4ml/U-Net FPGA evidence (Kang 2025, Neiso 2024), a second Xilinx-FPGA RaVAEn data point (Ruzicka 2022, distinct from the arXiv:2307.08700 flight paper in Section 6A), and a parallel DPU deployment data point (Dorise 2026); revised Section 1's executive summary, the recommended portfolio, Section 8.2's conversion matrix, and Section 16's decisions accordingly — the corrected "what to build first" answer no longer starts from a from-scratch tiny student; see Section 16.  
+> **Update 2026-09-09:** replaced the Herec et al. evidence in Section 6D with Herec, Růžička, Pitoňák & Sedmidubsky (2026, arXiv:2606.03675) — a substantially expanded successor to the 2025 EDHPC paper previously cited, adding the EMIT-MSeg orbital dataset, a demonstrated zero-shot AVIRIS-NG-to-EMIT generalization result, a full CPU/RAM/power/throughput profile on real flight-heritage hardware (Xiphos Q8J, not the earlier Raspberry Pi proxy), and an MIT/BSD-3-licensed open-source library (`onboard-methane-detection` on PyPI). This resolves H1.5's previously-flagged license blocker and its "no cross-sensor evidence" limitation; revised Section 6D, H1.5 (Section 10), Section 16, and Section 17 accordingly. Also renamed the document itself — see the note above.
 
 ## 1. Executive summary
 
@@ -13,22 +16,27 @@ Three observations should drive the design:
 
 1. **Input representation matters more than making an already large segmentation network larger.** The MARS study reports that changing from Mag1c to WMF improved the single-model tiled F1 from 43.59 to 63.07, while changing among U-Net, U-Net++, DeepLabV3/+, and much larger encoders produced relatively small differences. This favors investment in the spectral/preprocessing contract and hard-negative data before architecture scale.
 2. **Full-granule false alerts, not patch accuracy, are the operational bottleneck.** MARS found 3,565 average false alarms for a single RGB+WMF U-Net over its EMIT full-tile set, reduced to 1,501 by a five-model ensemble. A hardware student should therefore be optimized and distilled against object/granule behavior, not only pixel F1.
-3. **Neither reference model family is a safe drop-in hls4ml conversion target.** MARS uses a 6.69M-parameter U-Net/MobileNetV3 with unsupported or awkward frontend operations. HyperspectralViTs uses attention, LayerNorm, dynamic interpolation, and custom graph logic; hls4ml lists multi-head attention as unsupported through its PyTorch frontend. The practical path is a small, static, FX-traceable student composed from Conv2D, depthwise Conv2D, BatchNorm, ReLU, fixed nearest-neighbor upsampling, and simple two-input merges.
+3. **Neither reference model family is a safe drop-in *hls4ml* conversion target — but this is a toolchain-specific finding, not evidence against direct conversion in general.** MARS uses a 6.69M-parameter U-Net/MobileNetV3 with unsupported or awkward frontend operations. HyperspectralViTs uses attention, LayerNorm, dynamic interpolation, and custom graph logic; hls4ml lists multi-head attention as unsupported through its PyTorch frontend. This project's own 2026-09-06 probe confirms the same blocker on its own baseline: hls4ml's PyTorch frontend has no handler for `ReLU6`, MobileNetV2's signature activation (Section 6B). **A different toolchain, Vitis AI, already converts and deploys this project's own architecture family successfully** — a collaborator's ZCU104 benchmark quantizes the actual `HyperSTARCOP mag1c+RGB` U-Net/MobileNetV2 (6.6M params) to INT8 and runs it on a Xilinx DPU with F1/IoU changing by less than 0.06 percentage points and 8x-102x the CPU throughput (Section 6B). So the constrained, FX-traceable student path (Conv2D, depthwise Conv2D, BatchNorm, ReLU, fixed nearest-neighbor upsampling, simple two-input merges) remains the right approach specifically *if hls4ml is the target toolchain*; if Vitis AI is the target, the real baseline architecture is already a viable starting point, and a smaller evidence-backed candidate exists too — Herec et al.'s LinkNet/MobileNetV3-small + Mag1c-SAS (0.851M params; Section 6D) — before reaching for an unproven from-scratch design.
 
 ### Recommended first experiment portfolio
 
-Run these in parallel against identical splits and full-scene evaluation:
+**Revised 2026-09-08.** With Vitis AI proven on this project's own architecture
+family (Section 6B), the portfolio no longer starts from an unproven from-scratch
+design. Run these against identical splits and full-scene evaluation, roughly in
+this order:
 
-| Priority | Candidate                     | Input                      | Main question                                                                                          |
-| -------- | ----------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------ |
-| P0       | **TinyDS-4**                  | `mag1c/WMF + RGB`          | What is the smallest full-resolution CNN that preserves useful plume morphology?                       |
-| P0       | **SpectralTiny-86**           | selected EMIT/AVIRIS bands | Can a 1x1 spectral bottleneck plus a tiny spatial CNN remove matched-filter latency without attention? |
-| P1       | **TinyU-4**                   | `mag1c/WMF + RGB`          | Are two spatial scales worth the skip-buffer and conversion complexity?                                |
-| P1       | **Distilled TinyDS/TinyU**    | either input regime        | Can one student reproduce the false-positive suppression of the five-model MARS ensemble?              |
-| P2       | **On-board retrainable head (H9)** | frozen encoder latents | Can a tiny head be retrained on-board from few-shot labels to adapt without redeployment, as RaVAEn demonstrated for cloud detection? Not comparable to H1–H3 until the [H9.1 protocol](#h91--required-evaluation-protocol-precondition-for-comparison-with-h1h3) is fixed. |
-| Control  | **MF threshold + morphology** | `mag1c/WMF`                | What accuracy, latency, and resource floor must learned models beat?                                   |
+| Priority | Candidate                     | Input                      | Toolchain | Origin | Main question                                                                                          |
+| -------- | ----------------------------- | -------------------------- | --------- | ------ | ------------------------------------------------------------------------------------------------------ |
+| P0       | **Existing STARCOP baseline (U-Net/MobileNetV2)** | `mag1c + RGB` | Vitis AI | This project's own trained checkpoint | Does the already-trained baseline reproduce the collaborator's ZCU104 quality/speed result inside this project's own pipeline (Section 6B, Section 16)? Lowest-risk, fastest path to a real on-board benchmark. |
+| P0       | **LinkNet + MobileNetV3-small + Mag1c-SAS (H1.5)** | `mag1c-SAS + RGB` | Vitis AI | **Reproduced** from Herec et al. (Section 6D) — not this project's own architecture | Does the smaller, evidence-backed candidate from Herec et al. (Section 6D) hold its accuracy/speed trade-off on this project's own full `starcop_raw` split, not just `STARCOP_mini`? |
+| P1       | **TinyDS-4**                  | `mag1c/WMF + RGB`          | hls4ml    | Original design, this project | What is the smallest full-resolution CNN that preserves useful plume morphology, for boards without a DPU or where HLS-level resource control is the binding constraint? |
+| P1       | **SpectralTiny-86**           | selected EMIT/AVIRIS bands | hls4ml    | Original design, this project | Can a 1x1 spectral bottleneck plus a tiny spatial CNN remove matched-filter latency without attention? |
+| P2       | **TinyU-4**                   | `mag1c/WMF + RGB`          | hls4ml    | Original design, this project | Are two spatial scales worth the skip-buffer and conversion complexity?                                |
+| P2       | **Distilled TinyDS/TinyU**    | either input regime        | hls4ml    | Strategy on an original student; MARS ensemble reproduced as teacher only | Can one student reproduce the false-positive suppression of the five-model MARS ensemble?              |
+| P2       | **On-board retrainable head (H9)** | frozen encoder latents | VPU/CPU (Alt. E) | System pattern borrowed from RaVAEn; encoder is this project's own | Can a tiny head be retrained on-board from few-shot labels to adapt without redeployment, as RaVAEn demonstrated for cloud detection? Not comparable to H1–H3 until the [H9.1 protocol](#h91--required-evaluation-protocol-precondition-for-comparison-with-h1h3) is fixed. |
+| Control  | **MF threshold + morphology** | `mag1c/WMF`                | either    | Classical baseline technique | What accuracy, latency, and resource floor must learned models beat?                                   |
 
-**Do not begin with a direct U-Net, SegFormer, or EfficientViT conversion.** First prove the conversion, bit-accuracy, synthesis, and end-to-end data path with a deliberately constrained student.
+**Do not begin with a direct U-Net, SegFormer, or EfficientViT conversion *through hls4ml*.** hls4ml's PyTorch frontend is specifically blocked on this project's MobileNetV2-based architecture today (Section 6B); prove hls4ml's conversion, bit-accuracy, synthesis, and end-to-end data path with a deliberately constrained student first if hls4ml is the chosen toolchain. This constraint does not apply to Vitis AI, which already converts the real baseline architecture successfully — see Section 16 for the corrected starting point.
 
 **Also run OpenVino/VPU as a parallel, non-FPGA fallback benchmark (Section 8.5, Alternative E)**, not as the primary path: it is flight-proven (Section 6A) and de-risks the case where hls4ml conversion or synthesis gates block a promising candidate — but the flight evidence used an EOL OpenVino toolchain (2022.3 LTS + MYRIAD/HDDL), so pin that toolchain or re-validate on a current one (Section 8.5) before treating it as an available fallback rather than historical evidence.
 
@@ -384,6 +392,433 @@ RaVAEn is a scene-level cloud-detection VAE, not a methane segmentation network,
 - Myriad X / OpenVino is a specific, aging Intel VPU product line. A target-hardware decision should not anchor on this exact chip without checking current availability — Section 13's "FPGA/SoC board and exact part: TBD" row should treat it as one candidate to evaluate or explicitly rule out, not assume.
 - No resource utilization, power draw, or radiation/reliability data is reported for the VPU beyond the encode/train timings above — not yet comparable to the hardware-metrics rigor Section 12.1 requires.
 
+### 6A.5 A second, Xilinx-FPGA data point from the same author group
+
+Section 6A.2–6A.4 draw only on Růžička et al.'s arXiv:2307.08700 flight paper, which
+used a Myriad VPU via OpenVino. The original RaVAEn paper — Růžička et al. 2022,
+*RaVÆn: unsupervised change detection of extreme events using ML on-board
+satellites*, Scientific Reports 12:16939 — is a distinct, earlier work by an
+overlapping author group, and it reports **actual Xilinx FPGA evidence**, not a
+VPU: the same VAE tested on a **Xilinx PYNQ board**, 650 MHz ARM Cortex-A9 CPU,
+512 MB RAM, explicitly chosen "to emulate the resources available on a typical
+small satellite." Model size and runtime were reduced by 85% on the PYNQ board
+while keeping performance within ±3% of the unconstrained model.
+
+This is weaker evidence than Section 6B's Vitis AI result below — PYNQ's
+Cortex-A9 running a compressed VAE is not a DPU-accelerated segmentation
+network, and no LUT/FF/DSP/BRAM synthesis data is reported — but it establishes
+that this project's own reference author group (STARCOP, HyperspectralViTs,
+RaVAEn all share authors) has independently validated Xilinx FPGA hardware
+twice, on two different Xilinx product lines (PYNQ here, ZCU104 DPU in Section
+6B), which is a relevant prior when choosing a board family for Section 13.
+
+---
+
+## 6B. Vitis AI on this project's own architecture: proven feasibility
+
+### 6B.1 Why this evidence is different from Sections 5, 6, and 6A
+
+Sections 5, 6, and 6A analyze reference repositories and papers whose models are
+not this project's own trained checkpoint. This section is different: it covers
+(a) a collaborator's completed feasibility study that deploys **this project's
+own baseline architecture family** — `HyperSTARCOP`, U-Net with a MobileNetV2
+encoder, 4-channel `mag1c + RGB` input, the same architecture and input contract
+this project trains on (Section 4.1) — end-to-end on a Xilinx FPGA DPU via
+**Vitis AI**, and (b) this project's own first hls4ml probe against a checkpoint
+from its own `train.py` pipeline, run 2026-09-06 specifically to test whether
+hls4ml could do the same thing. Together they are the most direct toolchain
+evidence available: not a proxy benchmark, not a different model family, but two
+competing toolchains tested against the same architecture this repository
+actually produces.
+
+### 6B.2 Vitis AI / ZCU104: the collaborator's result
+
+Carried out in a separate repository,
+[`Thifjj/Projeto_VITISAI_hyperstarcop`](https://github.com/Thifjj/Projeto_VITISAI_hyperstarcop),
+and curated publicly in this project's own `docs/results/hardware-benchmark.md`.
+The model is `HyperSTARCOP mag1c + RGB`: `unet_semseg`, MobileNetV2 encoder,
+`[1, 4, 512, 512]` input (`mag1c`, `TOA_AVIRIS_640nm`, `TOA_AVIRIS_550nm`,
+`TOA_AVIRIS_460nm`), evaluated on the `STARCOP_mini` test set (nine scenes),
+INT8-calibrated separately on 200 images from the full STARCOP dataset.
+
+**Segmentation quality is essentially unchanged by INT8 quantization for the DPU:**
+
+| Target | Precision | Recall | F1 | IoU |
+| --- | ---: | ---: | ---: | ---: |
+| CPU x86 (PyTorch FP32) | 89.2663% | 92.0803% | 90.6515% | 82.9014% |
+| CPU ARM (ExecuTorch FP32) | 89.2663% | 92.0803% | 90.6515% | 82.9014% |
+| DPU (Vitis AI INT8) | 90.9764% | 90.3945% | 90.6845% | 82.9567% |
+
+F1 and IoU moved by +0.033 and +0.055 percentage points versus the FP32
+reference — quantizing for the DPU did not measurably cost segmentation quality
+on this test set.
+
+**Throughput** (best configuration found per platform, independently searched):
+
+| Target | `model-only` FPS | `end-to-end` FPS |
+| --- | ---: | ---: |
+| CPU x86 (notebook) | 6.076 | 5.305 |
+| CPU ARM (ZCU104, 4 threads) | 0.497 | 0.464 |
+| DPU (ZCU104, 2x `DPUCZDX8G_ISA1_B4096` @ 300 MHz) | **50.876** | **21.673** |
+
+The DPU reached roughly 102x the CPU ARM's throughput and 8.4x the CPU x86's
+throughput in `model-only` mode (47x and 4.1x respectively `end-to-end`, where
+TIFF reads/normalization/thresholding dominate more on the DPU because
+inference itself is so fast). Toolchain: PetaLinux 2022.2, Vitis AI 3.5 /
+VART+XIR (the benchmark code and the board's own `xdputil run` report slightly
+different version strings — 3.5 vs. 3.0.0 — kept as an open discrepancy rather
+than assumed to match, per the source report).
+
+**Scope caveat, stated explicitly so it is not overclaimed:** this result is
+evidence for the *architecture family* being convertible and fast on a DPU, not
+a claim that this project's own current checkpoint was itself deployed there —
+the collaborator's checkpoint is `mag1c + RGB` (3 named AVIRIS TOA bands plus
+mag1c), while this project's most recent local checkpoint at probe time used
+`mag1c` + 3 TOA bands under this repository's own training pipeline (Section
+6B.3). Same architecture family and input shape, different specific weights.
+
+### 6B.3 hls4ml on this project's own checkpoint: blocked, with a specific cause
+
+This project's own first hls4ml probe, run 2026-09-06 and logged in
+`internal-docs/model-experiments.md`, targeted this repository's own
+`unet_semseg`/MobileNetV2 checkpoint
+(`experiments/starcop_run/2026-08-23_02-05/final_checkpoint_model.ckpt`) — the
+same architecture family as Section 6B.2's DPU result, run through this
+project's own `train.py`, not a reference repository. `hls4ml==1.3.0`,
+`torch==2.12.1+cu130`.
+
+Three conversion paths were tried:
+
+1. **Legacy `torch.onnx.export` (TorchScript-based) -> hls4ml ONNX import.**
+   Export succeeded and passed `onnx.checker`, but hls4ml's ONNX importer failed
+   with `RuntimeError: Could not find the shape for input onnx::Sub_916` — a
+   shape-metadata gap in how the legacy exporter represents certain
+   constants/initializers that hls4ml 1.3.0's ONNX frontend does not tolerate.
+   Reproduced with the normalizer stripped out too, so it is not specific to
+   this project's normalization layer.
+2. **Newer `torch.export`-based ONNX exporter (`dynamo=True`) -> hls4ml ONNX
+   import.** Produces a much cleaner 6-op-type graph and gets further, but
+   requires converting to NHWC first (`qonnx-to-channels-last`), which hits a
+   separate `qonnx` bug: `Exception: Required attribute kernel_shape unspecified
+   in a Conv node` — the dynamo exporter validly omits `kernel_shape` (inferable
+   from the weight tensor), but `qonnx`'s channels-last transform assumes it is
+   always present. Not pursued further without patching `qonnx` or
+   pre-processing the graph.
+3. **hls4ml's native PyTorch converter (`convert_from_pytorch_model`), skipping
+   ONNX entirely.** Failed immediately and specifically at
+   `config_from_pytorch_model`: `Exception: Unsupported layer ReLU6`. `ReLU6` is
+   MobileNetV2's signature activation (used throughout its inverted-residual
+   blocks), and hls4ml 1.3.0's PyTorch frontend has no handler for it. This is
+   the real finding, not a tooling quirk — the ONNX paths (1–2) never hit it
+   because ONNX export already lowers `ReLU6` to `Clip`, which hls4ml's ONNX
+   frontend does accept.
+
+**Conclusion:** hls4ml conversion of this architecture is not proven
+*infeasible*, but is genuinely blocked today for three distinct reasons
+depending on the path (a legacy-exporter shape bug, a dynamo-exporter/`qonnx`
+attribute bug, and a real missing-layer gap in hls4ml's native PyTorch
+frontend). The ONNX route (path 2) may still be the more promising one to
+revisit, since it sidesteps the `ReLU6` gap entirely and only needs the
+`qonnx` attribute bug worked around.
+
+### 6B.4 What this means for toolchain choice
+
+Read together, Sections 6B.2 and 6B.3 say: **Vitis AI already has a fully
+proven path on this architecture family; hls4ml does not, and the specific
+blocker (`ReLU6`, MobileNetV2's activation) is architectural, not incidental.**
+This does not mean hls4ml should be abandoned — it means, concretely:
+
+- if the chosen encoder keeps MobileNetV2 (or any other block that uses
+  `ReLU6`), Vitis AI is the toolchain with a proven path today, and hls4ml
+  needs either a `ReLU6` handler upstream or the ONNX-path workaround in
+  Section 6B.3 before it is viable;
+- if a future candidate specifically avoids `ReLU6` (e.g. TinyDS-4/TinyU-4/
+  SpectralTiny-86 in Section 10, which are specified with plain `ReLU`), hls4ml
+  remains a live option and the rest of Section 8's conversion-risk analysis
+  still applies to those;
+- Vitis AI's own conversion-risk profile is not zero — see Section 6C for
+  corroborating evidence that U-Net-shaped networks can still hit resource
+  limits under HLS-style toolchains generally, and Section 9's Alternative F
+  for Vitis AI's own costs/risks.
+
+This directly revises Section 1's executive summary and Section 16's
+recommendations: see those sections for the corrected starting point.
+
+---
+
+## 6C. Corroborating hls4ml/HLS evidence on U-Net-shaped networks (medical-imaging case studies)
+
+Two independent, non-methane case studies from the reference corpus reinforce
+Section 8's existing caution about U-Net-shaped architectures as hls4ml/HLS
+targets, and are worth recording alongside Section 6B's direct evidence:
+
+- **Kang, Al-Qurri & Almekkawy (2025), *Fast and Resource-Efficient Ultrasound
+  Segmentation Using FPGAs*, IEEE IUS 2025.** Compresses a ~31M-parameter U-Net
+  to under 60k parameters, converts via Keras -> hls4ml -> Vitis HLS 2022.1,
+  targeting an XCU250. Reports Dice 0.7352 (HLS) vs. 0.7478 (Keras) and an
+  estimated FPGA latency of 8.201 ms (>13x faster than a T4 GPU, ~50x faster
+  than CPU) — but DSP utilization reaches 302% of the target FPGA's total
+  capacity (1211% per SLR), so the design as reported does not fit the target
+  part without further optimization. The authors themselves note a physical
+  board benchmark is still needed; this is HLS-simulation latency only.
+- **Neiso, Muchuka & Mambo (2024), *FPGA-based Implementation of a
+  Resource-Efficient UNET Model for Brain Tumour Segmentation*, IJACSA
+  15(1):622-630.** Reduces a U-Net by 99% of its parameters for brain-tumor
+  segmentation, converts via HLS4ML/Vivado HLS to a Kintex UltraScale
+  (`xcku085`), and reports IoU 74% in C/RTL co-simulation (not a physical board
+  run) — validating that FIFO/precision/reuse-factor optimization can bring a
+  reduced U-Net into a workable resource envelope, at the cost of a 99%
+  parameter cut.
+
+Both papers needed order-of-magnitude parameter reductions to make a U-Net
+hls4ml/Vitis-HLS-viable, and one still exceeded its DSP budget after that cut.
+This is independent corroboration — outside methane detection, outside this
+project's own architecture — for Section 8's existing position that U-Net-shaped
+networks are not safe drop-in HLS targets, and for keeping TinyDS-4/TinyU-4
+(Section 10) deliberately small rather than assuming a lightly-pruned baseline
+U-Net would convert cleanly.
+
+Separately, **Dorise, Bellizzi & Hlimi (2026), *Rethinking Satellite Image
+Restoration for Onboard AI: A Lightweight Learning-Based Approach***, is a
+different task (radiometric restoration, not segmentation) but a relevant
+parallel data point for **DPU-style deployment specifically** (not HLS): a
+lightweight residual CNN, ConvBEERS, deployed via DPU on a **Xilinx Versal
+VCK190**, achieving ~41x latency reduction versus a traditional pipeline (42s,
+7.2 FPS on 640x640 patches, 29.6W). Combined with Section 6B.2's ZCU104 result,
+this is a second, independent case of a DPU-accelerated lightweight CNN meeting
+an onboard latency target — evidence that Section 6B's result is a repeatable
+pattern for DPU-class Xilinx hardware, not a one-off specific to HyperSTARCOP.
+
+---
+
+## 6D. Herec, Růžička, Pitoňák & Sedmidubsky (2026): a direct on-board methane pipeline, flight-heritage hardware, open license
+
+### 6D.1 Why this paper is the closest existing analog to this project's goal
+
+*A Fast Methane Detection Pipeline on Board Satellites Based on Mag1c-SAS and
+LinkNet* (arXiv:2606.03675, 2026) is, of every paper analyzed in this document,
+the one whose task most closely matches this project's own: it trains on **the
+same STARCOP dataset** (Růžička et al. 2023, the same dataset this project
+trains on), uses the same RGB-plus-enhancement-product input pattern this
+project already uses (Section 4.1), and explicitly optimizes for
+**resource-constrained onboard hardware** rather than maximizing patch-level
+accuracy. **This supersedes the EDHPC 2025 version of the same work** (Herec,
+Růžička & Pitoňák, arXiv:2507.01472, cited in the 2026-09-08 revision of this
+section) — the 2026 paper adds a fourth author (Sedmidubsky), a new orbital
+dataset, a cross-sensor generalization result, a real flight-heritage hardware
+profile, and an open-source library release. Numbers below are from the 2026
+paper; where the two versions' STARCOP numbers differ slightly, that is noted
+in Section 6D.3, not treated as a contradiction.
+
+### 6D.2 Method and hardware
+
+The paper benchmarks classical spectral-detection methods — Matched Filter
+(MF), CEM, ACE, and Mag1c — against **Mag1c-SAS** ("Mag1c Sped up with
+Additional Sparsity"): the expensive iterative parameter estimation stage runs
+on only a small fraction (`f = 1%`) of the tile, then those parameters are
+reused to compute the product across the full tile. It then pairs each product
+with a lightweight segmentation model — **U-Net with a MobileNetV2 encoder**
+(6.6M params, the same encoder family as this project's own baseline) and
+**LinkNet with a MobileNetV3-small-minimal encoder** (0.851M params, 3.34 MB)
+— taking RGB bands plus the enhancement product as input, on the same "RGB
+removes false positives the product alone can't" rationale this project's own
+STARCOP-derived architecture already relies on.
+
+Training used an HPC cluster with NVIDIA Tesla V100 GPUs (~8 hours). Inference
+and the full deployment profile were measured on **Xiphos Q8J** — real
+flight-heritage hardware, not a proxy: a quad-core Cortex-A53 @ 1.2 GHz, 4 GB
+RAM, with over 100 units flown to date (per the paper's own citation of Xiphos
+2023 specifications). This replaces the earlier EDHPC 2025 version's Raspberry
+Pi 3 B+ proxy with an actual space-qualified board.
+
+### 6D.3 STARCOP results
+
+| Method | Recall | Precision | F1 | F1 strong | Product runtime | +Inference |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Mag1c (original, column-wise) | 58.42 | 30.57 | 40.14 | 67.50 | 98.52 s | +0.06 s |
+| Mag1c-SAS | 52.80 | 19.44 | 28.42 | 56.34 | 1.19 s | +0.06 s |
+| U-Net + Mag1c-SAS | 56.41 ± 7.0 | 34.62 ± 7.4 | 42.54 ± 6.7 | 61.38 ± 7.7 | 1.19 s | +2.78 s |
+| CEM | 39.92 | 11.42 | 17.76 | 39.25 | 0.68 s | +0.06 s |
+| LinkNet + Mag1c-SAS | 51.11 ± 7.2 | 40.43 ± 6.4 | **44.44 ± 3.9** | 60.37 ± 5.1 | 1.19 s | **+0.33 s** |
+
+(U-Net and LinkNet inference times above are the paper's own Q8J-measured
+figures, replacing the EDHPC 2025 version's Raspberry Pi timings of +4.75 s and
++0.43 s respectively.)
+
+Mag1c-SAS is now reported as roughly **80x** faster than the original Mag1c
+(down from the EDHPC 2025 version's ~100x claim — a real revision, not a typo,
+per the paper's own abstract) at a cost of about 11 strong-plume F1 points.
+**LinkNet + Mag1c-SAS still gets the highest overall F1 of any configuration
+tested (44.44 ± 3.9), about 4.3 points above original Mag1c's 40.14**, at a
+combined product+inference cost of roughly 1.5 s/tile versus original Mag1c's
+~98.5 s.
+
+**A discrepancy worth flagging, not silently resolving**: the paper's own
+Results text states combined LinkNet+Mag1c-SAS runtime as 1.58 s and
+U-Net+Mag1c-SAS as 5.9 s, but Table I's own numbers sum to ~1.52 s and ~3.97 s
+respectively — the text figures appear to be carried over from the EDHPC 2025
+preliminary version rather than recomputed for the 2026 numbers. Table I's
+numbers are used throughout this section as the authoritative ones.
+
+A band-selection study (relevant if an all-band variant is pursued) confirms
+the useful channel range saturates between 50 and 72 bands, with **Evenly
+Spaced** best at very low band counts (N=10) and **Variance Increase** best for
+Mag1c/Mag1c-SAS specifically on STARCOP — see Section 6D.4 for why that
+ranking flips on orbital EMIT scenes.
+
+### 6D.4 EMIT-MSeg: a new orbital dataset, and a zero-shot cross-sensor result
+
+The 2026 paper introduces **EMIT-MSeg**: 52 EMIT scenes (26 with methane, 26
+without), radiance-level L1B, 285 bands (381-2493 nm), 60 m spatial resolution,
+mostly 1280x1242 px, manually annotated in CVAT with multi-scale Mag1c
+visualization and reviewed by two additional remote-sensing experts. This is
+the first dataset in this document's reference corpus that lets a model
+trained purely on airborne AVIRIS-NG/STARCOP be evaluated on real **orbital**
+scenes from a different sensor — directly answering a gap this document
+previously flagged as unresolved (the old Section 6D.5 explicitly noted "the
+paper does not claim EMIT/PRISMA/EnMAP generalization either").
+
+**Zero-shot AVIRIS-NG -> EMIT generalization, no retraining:**
+
+| Configuration | Band selection | AUPRC | AUPRC strong | F1 | F1 strong |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Mag1c (baseline) | Evenly Spaced | 6.12 | 35.51 | 47.00 | 62.92 |
+| LinkNet + Mag1c-SAS, per-tile | Evenly Spaced | 40.89 | **67.47** | 39.52 | 50.89 |
+| LinkNet + Mag1c-SAS, full-scene | Variance Increase | **42.39** | 53.66 | **43.56** | 49.62 |
+
+LinkNet + Mag1c-SAS improves strong-plume AUPRC by **~32 percentage points**
+(35.51 -> 67.47) and overall AUPRC by **~35 points** (6.12 -> 40.89/42.39) over
+the Mag1c baseline, applied to a sensor and orbital-scene distribution the
+model never saw in training. The STARCOP-tuned decision threshold (0.5) is not
+directly transferable — recalibrating to 0.16 raises strong-plume F1 to
+62.62% on EMIT — so **threshold recalibration per sensor is a required step**,
+not free generalization, but the underlying representation clearly transfers.
+
+**Full-scene band-selection instability, distinct from the per-tile result
+above**: because Mag1c-SAS estimates its statistics from only 1% of pixels,
+that sample can fail to represent a full EMIT scene's heterogeneous background
+(clouds, mixed surfaces). Variance Increase — the best strategy on STARCOP
+tiles — becomes unstable at full-scene extent; **Highest Transmittance** is
+the more robust choice when Mag1c-SAS must run over a complete orbital scene
+rather than pre-cropped tiles.
+
+### 6D.5 Xiphos Q8J deployment profile
+
+52 EMIT scenes, 103.75 GB of raw 285-band data, processed end-to-end
+(Mag1c-SAS + tiled LinkNet inference) on the Q8J:
+
+| Metric | Mag1c-SAS + inference | Inference only |
+| --- | ---: | ---: |
+| Total time | 1407.89 s | 1069.20 s |
+| Mean per scene | 27.07 s | 20.55 s |
+| Throughput | 73.69 MB/s | 97.03 MB/s |
+| Idle power | 7.71 W | 7.71 W |
+| Active power (mean) | 8.20 W | 8.24 W |
+| Active power (peak) | 9.14 W | 9.07 W |
+| CPU utilization | 47.5-48.1% | 47.5-48.1% |
+| RAM (mean / peak) | 1874.7 / 2891.3 MB | 1665.4 / 3388.0 MB |
+
+Active processing draws only **~0.5 W above idle** — the paper's own framing
+is that a satellite already budgeting for an idle Q8J absorbs this workload at
+essentially no additional power cost. This is a materially different kind of
+hardware evidence from Section 6B's ZCU104 DPU numbers: no LUT/FF/DSP/BRAM or
+DPU-specific figures apply here (Q8J has no DPU), but it is real flight
+heritage (>100 units flown) rather than a benchmark proxy, filling a gap the
+old Section 6D explicitly flagged (the EDHPC 2025 version's Raspberry Pi 3 B+
+figures were noted as "a CPU proxy, not FPGA/DPU evidence").
+
+### 6D.6 `onboard-methane-detection`: an MIT/BSD-3-licensed release
+
+The pipeline (band selection, Mag1c-SAS, RGB/normalization handling for both
+EMIT and AVIRIS-NG, ONNX Runtime inference, optional tiling for
+memory-constrained environments) is released as a PyPI package,
+[`onboard-methane-detection`](https://pypi.org/project/onboard-methane-detection/)
+(v0.1.2 at the time of this revision), source at
+[`zaitra/onboard-methane-detection`](https://github.com/zaitra/onboard-methane-detection)
+— **a separate, newer repository from `zaitra/methane-filters-benchmark`**,
+the EDHPC-2025-era repo this document previously flagged as license-unreviewed
+(Section 16, item 9 in the 2026-09-08 revision). Confirmed from the package's
+PyPI metadata:
+
+- **License: primarily MIT (2025, Zaitra s.r.o.), with portions under BSD
+  3-Clause** (the parts derived from the original Mag1c project) — both
+  permissive, both compatible with this MIT-licensed project. **This resolves
+  the license blocker previously recorded against H1.5** (Section 10,
+  Section 16); reimplementation from the paper's description alone is no
+  longer required for the Mag1c-SAS/band-selection/inference pipeline code.
+- Dependencies: `numpy`, `onnxruntime`; Python >=3.9; can be built without
+  ONNX Runtime for lighter satellite-hardware footprints.
+- Pretrained model weights are **not bundled in the pip package** — they are
+  hosted separately on Hugging Face
+  ([`onboard-coop/fast-methane-filters-models`](https://huggingface.co/onboard-coop/fast-methane-filters-models)),
+  alongside the EMIT-MSeg test set
+  ([`onboard-coop/emit-test-dataset`](https://huggingface.co/datasets/onboard-coop/emit-test-dataset))
+  and precomputed products
+  ([`onboard-coop/STARCOP-fast-products`](https://huggingface.co/datasets/onboard-coop/STARCOP-fast-products)).
+  **The Hugging Face model/dataset licenses have not yet been checked** —
+  do not assume they inherit the PyPI package's MIT/BSD-3 terms; verify
+  independently before this project trains from, fine-tunes, or redistributes
+  anything from those repositories.
+
+### 6D.7 What is transferable to this project
+
+1. **Mag1c-SAS is a direct, already-published answer to this document's own
+   open problem** — Sections 5.5, 6.4, and 6A.2 all flag that matched-filter/
+   enhancement-product computation, not the network, dominates end-to-end
+   latency on ground and flight hardware alike. Mag1c-SAS is now evidenced at
+   ~80x speedup on real flight-heritage hardware, with a bounded, measured
+   accuracy cost, on the same dataset this project uses.
+2. **LinkNet/MobileNetV3-small is a smaller, evidence-backed alternative to
+   this project's own U-Net/MobileNetV2 baseline** — 0.851M vs. 6.6M
+   parameters, on the same task, same dataset family, same input pattern, now
+   with demonstrated cross-sensor generalization (Section 6D.4) and a real
+   flight-heritage power/throughput profile (Section 6D.5). It is a candidate
+   to convert via Vitis AI (Section 6B) alongside/after the existing baseline,
+   and is Hypothesis H1.5 (Section 10) — see that hypothesis's Origin note for
+   why this remains a reproduced architecture, not this project's own design.
+3. **The open-source library (Section 6D.6) changes the engineering-risk
+   picture for H1.5**: the previously-recorded blocker was license review and
+   possible reimplementation; with the pipeline code confirmed MIT/BSD-3, this
+   project can depend on `onboard-methane-detection` directly for Mag1c-SAS
+   and band selection, reserving original engineering effort for the Vitis AI
+   conversion work Section 6D.4's cross-sensor result and Section 6D.5's power
+   profile don't themselves cover (Section 6D.2's hardware is Q8J's CPU, not
+   an FPGA/DPU).
+4. **The paper's own stated deployment philosophy matches this document's
+   framing**: fast, no-training-required classical methods first, with more
+   accurate learned models fine-tuned later from orbital data — consistent with
+   this document's staged approach (Section 11.1) and with H9's on-board
+   adaptation framing (Section 10).
+
+### 6D.8 Limits of this evidence
+
+- Absolute F1 stays moderate (best STARCOP configuration ~44 overall, ~60 for
+  strong plumes only; EMIT strong-plume F1 ~63 after threshold recalibration)
+  — the paper explicitly prioritizes strong, large plumes for initial onboard
+  detection, not exhaustive recall.
+- STARCOP's labels were themselves created using Mag1c outputs, so classical
+  Mag1c-family methods may be evaluated on a benchmark subtly favorable to
+  them — the paper notes this itself.
+- The EMIT generalization result is real but requires **sensor-specific
+  threshold recalibration** (0.5 -> 0.16); it is not zero-configuration
+  transfer, and no third sensor (PRISMA/EnMAP) has been tested.
+- Mag1c-SAS's 1%-sample statistics are demonstrably less stable on
+  heterogeneous full orbital scenes than on STARCOP's pre-cropped tiles
+  (Section 6D.4) — full-scene deployment needs the more conservative Highest
+  Transmittance band-selection strategy, not the STARCOP-optimal Variance
+  Increase.
+- Q8J is real flight-heritage hardware but has **no DPU/FPGA fabric**; its
+  power/throughput profile (Section 6D.5) says nothing about hls4ml or Vitis
+  AI conversion behavior for LinkNet/MobileNetV3-small — that would need its
+  own conversion probe, parallel to Section 6B.3, before assuming either
+  toolchain handles it cleanly.
+- Experiments run on preprocessed data (STARCOP/EMIT L1B products), not raw
+  sensor telemetry — the paper's own Discussion notes performance may degrade
+  starting from unprocessed data.
+- Pretrained-weight licensing on Hugging Face is unverified (Section 6D.6) —
+  treat as a separate open item from the PyPI package's confirmed MIT/BSD-3
+  code license.
+
 ---
 
 ## 7. Comparison from multiple design angles
@@ -392,16 +827,18 @@ RaVAEn is a scene-level cloud-detection VAE, not a methane segmentation network,
 | ------------------------- | ------------------------ | ---------------------------------------- | --------------------------------------- | --------------------------------------------------- |
 | Input                     | 4ch Mag1c+RGB            | 4ch WMF+RGB                              | 60 AVIRIS or 86 EMIT bands              | 4ch minimizes I/O; all-band removes MF              |
 | Sensor scope              | AVIRIS, Permian only     | EMIT/PRISMA/EnMAP                        | EMIT and AVIRIS experiments             | Need sensor-specific validation                     |
-| Model                     | U-Net/MobileNetV2        | U-Net/MobileNetV3                        | SegFormer/EfficientViT                  | None is ideal as first hls4ml target                |
-| Parameters                | millions                 | 6.69M × 5 deployed                       | ~4.3–4.9M                               | Tiny student should target orders of magnitude less |
+| Model                     | U-Net/MobileNetV2        | U-Net/MobileNetV3                        | SegFormer/EfficientViT                  | Not an ideal hls4ml target as-is; **proven Vitis AI target** (Section 6B)   |
+| Parameters                | millions                 | 6.69M × 5 deployed                       | ~4.3–4.9M                               | Tiny student (or H1.5's 0.851M LinkNet, Section 10) should target orders of magnitude less |
 | Main operational weakness | limited domain evidence  | full-scene false alerts                  | sensor specificity and complexity       | Optimize full-scene event metrics                   |
-| Preprocessing             | Mag1c assumed            | WMF required                             | no MF, but L1B required                 | Define acceleration boundary first                  |
+| Preprocessing             | Mag1c assumed            | WMF required                             | no MF, but L1B required                 | Mag1c-SAS (Section 6D) is a measured ~80x-faster alternative to full Mag1c, now profiled on real flight-heritage hardware |
 | Generalization            | unproven outside AVIRIS  | strong via common RGB+WMF representation | not zero-shot across spectral samplings | Common feature vs sensor-specific bitstreams        |
-| Quantization evidence     | none                     | none                                     | FP16 TensorRT only                      | Need QAT/PTQ and fixed-point tests                  |
-| Hardware evidence         | CPU/MPS/GPU pipeline     | ground processing                        | CPU/VPU/GPU proxy                       | Need actual HLS synthesis                           |
+| Quantization evidence     | **INT8 on Xilinx DPU, F1/IoU within 0.06pp of FP32 (Section 6B.2)** | none                       | FP16 TensorRT only                      | Need QAT/PTQ and fixed-point tests for hls4ml; Vitis AI's PTQ already evidenced |
+| Hardware evidence         | CPU/MPS/GPU pipeline; **+ Xilinx ZCU104 DPU via Vitis AI (Section 6B.2)** | ground processing         | CPU/VPU/GPU proxy                       | hls4ml synthesis still unproven; DPU path proven    |
 | Software maturity         | tested MLOps composition | research code                            | research code                           | Reimplement students locally                        |
 
 RaVAEn (Section 6A) is omitted from this table because it solves a coarser task (scene-level cloud classification from a whole-tile VAE latent, not per-pixel methane segmentation) and so is not comparable row-for-row with the three segmentation systems above. Its value here is orthogonal: it is the only one of the four with **flight-measured**, not proxy or ground, hardware evidence, and it is the source of Alternative E (Section 9) and H9 (Section 10).
+
+Herec et al.'s LinkNet/MobileNetV3-small + Mag1c-SAS (Section 6D, H1.5) is likewise omitted from the table above for the same reason RaVAEn is: it is not one of the three systems this document analyzed for its original architecture comparison, and its evidence is on the same STARCOP dataset as the "Current STARCOP project" column rather than an independent sensor/architecture family. Its role is orthogonal too — it is the only one of the four with a **measured result on this project's own dataset, at a fraction of the current baseline's parameter count**, and it is the source of the Section 6D preprocessing/model updates above and of H1.5 (Section 10).
 
 ---
 
@@ -433,14 +870,20 @@ Important constraints found in the converter source:
 
 ### 8.2 Reference architecture conversion matrix
 
-| Architecture                      | Likely status                                 | Blocking/awkward operations                                                           | Recommendation                                          |
-| --------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| MARS U-Net/MobileNetV3            | Not drop-in                                   | Hardswish, squeeze/excitation/adaptive pooling, large skip buffers, third-party graph | Distill into a small ReLU CNN                           |
-| Current STARCOP U-Net/MobileNetV2 | High risk/large                               | third-party encoder, ReLU6, depthwise path, decoder skips, size                       | Use as teacher/baseline only                            |
-| HyperSegFormer                    | Not viable through direct PyTorch frontend    | attention unsupported, LayerNorm shape, GELU, dynamic interpolation, custom outputs   | Do not use as first FPGA target                         |
-| HyperEfficientViT                 | Not drop-in                                   | custom linear attention, SiLU, dynamic graph/dictionaries, interpolation              | Use as teacher; retain only spectral projection idea    |
-| HyperspectralViTs `SimpleCNN`     | Operator-compatible but computationally large | all convolutions remain at full resolution                                            | Useful conversion smoke test, not preferred final model |
-| Proposed TinyDS/TinyU             | Designed for compatibility                    | verify depthwise/dilation/resize on selected backend                                  | Preferred hls4ml path                                   |
+**hls4ml status confirmed 2026-09-06 for the current STARCOP row** (Section
+6B.3) rather than estimated; a **Vitis AI** column is added since Section 6B.2
+shows it succeeding end-to-end on that same row's architecture family — this
+table is no longer hls4ml-only.
+
+| Architecture                      | hls4ml status                                 | Blocking/awkward operations for hls4ml                                                | Vitis AI status                              | Recommendation                                          |
+| --------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------- |
+| MARS U-Net/MobileNetV3            | Not drop-in                                   | Hardswish, squeeze/excitation/adaptive pooling, large skip buffers, third-party graph | Not tested; MobileNetV3's Hardswish/SE blocks are a materially different risk profile from MobileNetV2 | Distill into a small ReLU CNN for hls4ml, or test directly via Vitis AI first |
+| Current STARCOP U-Net/MobileNetV2 | **Confirmed blocked** (Section 6B.3): `ReLU6` unsupported in the native PyTorch frontend; both ONNX export paths hit separate tooling bugs | third-party encoder, `ReLU6`, depthwise path, decoder skips, size | **Confirmed working** (Section 6B.2): INT8 on ZCU104 DPU, F1/IoU within 0.06pp of FP32, 8x-102x CPU throughput | Use Vitis AI directly on this architecture as the P0 baseline conversion (Section 16); use as teacher/baseline only for hls4ml |
+| HyperSegFormer                    | Not viable through direct PyTorch frontend    | attention unsupported, LayerNorm shape, GELU, dynamic interpolation, custom outputs   | Not tested; attention/LayerNorm are a similarly large risk for Vitis AI's compiler | Do not use as first FPGA target on either toolchain      |
+| HyperEfficientViT                 | Not drop-in                                   | custom linear attention, SiLU, dynamic graph/dictionaries, interpolation              | Not tested                                    | Use as teacher; retain only spectral projection idea    |
+| HyperspectralViTs `SimpleCNN`     | Operator-compatible but computationally large | all convolutions remain at full resolution                                            | Not tested; likely compatible given DPUs' broad Conv2D support | Useful conversion smoke test, not preferred final model |
+| Herec et al. LinkNet/MobileNetV3-small (Section 6D, H1.5) | Not tested                    | MobileNetV3-small also uses Hardswish/SE, not just `ReLU6` — likely a similar or larger hls4ml blocker than MobileNetV2 | Not tested; same architecture family as the confirmed-working MobileNetV2 row, so plausible but not proven | Probe via Vitis AI first, parallel to the P0 baseline conversion |
+| Proposed TinyDS/TinyU             | Designed for compatibility                    | verify depthwise/dilation/resize on selected backend                                  | Not tested; no blocking ops expected given the confirmed MobileNetV2 result | Preferred hls4ml path if hls4ml is the chosen toolchain (Section 16) |
 
 ### 8.3 `io_parallel` versus `io_stream`
 
@@ -567,11 +1010,83 @@ A cascade only saves compute if the scheduler can genuinely avoid Stage 2. Putti
 
 **Use when:** the FPGA resource/power budget is not yet the binding constraint, a faster path to a validated on-board system is more valuable than HLS-level control, or as a parallel benchmark to sanity-check whether hls4ml's added engineering cost is justified for this project's actual latency/power targets — **and** the toolchain pin and smoke tests in Section 8.5 have actually passed. Scheduling those steps is not itself sufficient. Until the toolchain is pinned and the smoke tests pass, keep this alternative in the experiment portfolio as motivating historical evidence only — not as a deployment option, a benchmark comparison, or a fallback.
 
+### F. FPGA DPU: Xilinx Vitis AI (proven on this project's own architecture, added 2026-09-08)
+
+Unlike Alternative E, this is not a fallback to a non-FPGA proxy — Vitis AI
+compiles a quantized model to run on an actual on-chip FPGA DPU (Deep Learning
+Processor Unit), the same class of hardware hls4ml/HLS targets, just through a
+vendor compiler and IR instead of hand-specified per-layer HLS. See Section 6B
+for the full evidence this alternative is built on.
+
+**Benefits**
+
+- **proven end-to-end on this project's own architecture family**, not a proxy
+  or a different model: `HyperSTARCOP` U-Net/MobileNetV2, `mag1c + RGB`,
+  quantized INT8 and run on a Xilinx ZCU104 DPU with F1/IoU within 0.06
+  percentage points of FP32 and 8x-102x the CPU throughput (Section 6B.2);
+- **succeeds specifically where hls4ml fails today** on this architecture —
+  hls4ml's native PyTorch frontend has no `ReLU6` handler (Section 6B.3), a
+  gap that does not block Vitis AI's compiler;
+- **current, actively supported toolchain** (PetaLinux 2022.2, Vitis AI
+  3.5/VART), unlike Alternative E's EOL OpenVino 2022.3 LTS pin — no
+  toolchain-pin caveat of the kind Section 8.5 requires for OpenVino;
+- broader supported-operator set than hls4ml's PyTorch frontend, similar to
+  Alternative E's advantage over hls4ml (Section 8.1–8.2), while still
+  targeting an actual FPGA rather than a CPU/VPU;
+- a second, independent DPU deployment (Dorise 2026, Section 6C) on a
+  different Xilinx board family (Versal VCK190) suggests this is a repeatable
+  pattern for lightweight CNNs, not a one-off result specific to HyperSTARCOP.
+
+**Costs/risks**
+
+- like Alternative E, trades away HLS's fine-grained per-layer fixed-point
+  precision and resource control for a fixed DPU architecture and compiler —
+  not a like-for-like substitute if per-layer bit-width tuning is the actual
+  requirement (Section 12.1's LUT/FF/DSP/BRAM metrics apply to the DPU's own
+  synthesis, not to a per-model HLS build);
+- the DPU IP core occupies a fixed FPGA resource footprint chosen at
+  bitstream-build time (`DPUCZDX8G_ISA1_B4096` x2 in the ZCU104 evidence) —
+  this is a coarser resource knob than hls4ml's per-layer reuse-factor/
+  precision tuning, and re-targeting a different DPU size/config is a
+  separate build, not a per-model parameter;
+- proven evidence so far covers one architecture family (U-Net/MobileNetV2)
+  and one board (ZCU104); HyperSegFormer/HyperEfficientViT-style attention
+  layers are untested on Vitis AI and may hit similar or different blockers
+  than hls4ml (Section 8.2);
+- the collaborator's benchmark used `STARCOP_mini` (nine test scenes) for
+  quality metrics, not this project's full `starcop_raw` test set (Section
+  4.2) — Section 12.3's go/no-go gates should be re-evaluated on the larger
+  split before treating the +0.03/+0.06pp F1/IoU result as final;
+- like Vitis AI generally, tied to Xilinx-specific hardware and its Vitis AI
+  runtime version cadence, a different vendor lock-in than hls4ml's
+  multi-backend support (Vivado HLS, Vitis HLS, Intel/Quartus, Catapult).
+
+**Use when:** the target architecture uses MobileNetV2/`ReLU6`-family blocks
+(or other operators hls4ml's PyTorch frontend does not yet support) and a
+Xilinx DPU-class board is an acceptable target — which, given Section 6B's
+evidence, is the default recommendation for this project's P0 work (Section
+16) unless HLS-level fixed-point/resource control specifically becomes the
+binding requirement later.
+
 ---
 
 ## 10. Falsifiable model hypotheses
 
+**Provenance labeling added 2026-09-08.** Each hypothesis below now opens with an
+**Origin** line, because they are not all the same kind of claim. Some (H1, H2,
+the H3/H4 pair) are architectures designed from scratch inside this project;
+one (H1.5) is a published architecture reproduced from a paper, where this
+project's own contribution is the conversion/deployment work around it, not
+the network itself; others are training strategies or system patterns applied
+on top of whichever backbone is chosen, not architectures in their own right.
+This distinction matters for representing the thesis's original contribution
+correctly — reproducing a published architecture (even well) is not the same
+claim as designing one, and Section 16's recommended order should not be read
+as "these are all equally this project's own models."
+
 ### H0 — Threshold/morphology is the hardware floor
+
+**Origin:** classical baseline technique (matched-filter threshold + morphology), not a learned architecture — a standard remote-sensing method, included to establish the accuracy/latency floor a learned model must beat, not as an originality claim.
 
 **Hypothesis:** a fixed WMF threshold plus 3x3 opening can meet a useful recall floor at negligible neural cost, but cannot meet the operational false-alert budget.
 
@@ -580,6 +1095,8 @@ A cascade only saves compute if the scheduler can genuinely avoid Stage 2. Putti
 **Value:** establishes the minimum latency/resource baseline and validates the system data path.
 
 ### H1 — TinyDS-4 can replace a large post-MF U-Net
+
+**Origin:** original design for this project (Section 10, first proposed 2026-08-19) — a from-scratch architecture, not a reproduction of any single published network. Its design principle (deliberately boring, hls4ml-compatible blocks) is informed by the conversion-risk analysis in Section 8, but the specific architecture is this project's own.
 
 **Architecture sketch, 128x128:**
 
@@ -598,7 +1115,87 @@ A representative 8/12/16 version is about **1.4k convolution weights** and **23.
 
 **Failure mode:** insufficient receptive field causes fragmented or missed plume tails.
 
+### H1.5 — LinkNet/MobileNetV3-small + Mag1c-SAS is a smaller, evidence-backed baseline replacement (added 2026-09-08, evidence updated 2026-09-09)
+
+**Origin:** reproduced architecture, not this project's own design — the LinkNet decoder, MobileNetV3-small-minimal encoder, and Mag1c-SAS product are all Herec, Růžička, Pitoňák & Sedmidubsky (2026)'s published combination (Section 6D), not derived independently here. Building it means reimplementing their architecture, not designing a new one — though "reimplementing" is now largely literal: the pipeline code (Mag1c-SAS, band selection, ONNX Runtime inference) is available under MIT/BSD-3 as the `onboard-methane-detection` PyPI package (Section 6D.6), so most of it can be depended on directly rather than rewritten from the paper's description. This project's own contribution around it remains methodological, not architectural: the paper only ever benchmarked it on CPU (Xiphos Q8J, Section 6D.5) — the Vitis AI quantization, DPU conversion, and on-board FPGA benchmark this document proposes (Section 16) is evaluation work nobody has published, even though the network itself is reused. Treat H1.5 the same way this document already treats MARS's U-Net/MobileNetV3 and HyperspectralViTs' SegFormer/EfficientViT (Section 8.2) — a reproduced reference/comparison point, not an original-architecture hypothesis like H1–H4.
+
+Unlike H1–H3, this is not a from-scratch design — it is Herec et al.
+(2026)'s already-measured result on this project's own dataset family
+(Section 6D), added as a lead hypothesis because it directly targets the same
+system-boundary problem Section 1 raises (matched-filter latency) with a
+result that already exists, rather than a proposal to validate from zero.
+
+**Architecture:** LinkNet with a MobileNetV3-small-minimal encoder (0.851M
+params, 3.34 MB) — an order of magnitude smaller than the current STARCOP
+U-Net/MobileNetV2 baseline (6.6M params) — taking RGB bands plus a
+methane-enhancement product as input, the same input pattern as this
+project's own architecture (Section 4.1). Paired with **Mag1c-SAS**, an
+accelerated Mag1c variant (~80x faster per the 2026 paper's Q8J measurement,
+~11 strong-plume F1 points cheaper than original Mag1c) that directly answers
+Section 5.5/6.4/6A.2's matched-filter-latency problem instead of assuming it
+away.
+
+**Hypothesis:** a MobileNetV3-small-encoder LinkNet, paired with Mag1c-SAS
+instead of full Mag1c, reproduces most of Herec et al.'s reported
+speed/accuracy compromise (highest overall F1 of any configuration they
+tested, 44.44 ± 3.9, at roughly 1.5s total per-tile product+inference cost on
+the Xiphos Q8J — Table I's own figures; the paper's Results text states 1.58s,
+a likely carryover from the 2025 preliminary version, see Section 6D.3) on
+this project's own full `starcop_raw` split, not just `STARCOP_mini` — making
+it a stronger P0 candidate than an unproven from-scratch tiny student for a
+first Vitis AI conversion beyond the existing baseline (Section 6B, Section 16).
+**Cross-sensor generalization is no longer purely hypothetical for this
+architecture**: the 2026 paper demonstrates zero-shot AVIRIS-NG-to-EMIT
+transfer for this exact LinkNet+Mag1c-SAS combination (+32pp strong-plume
+AUPRC, Section 6D.4), which strengthens the case that H1.5's result is not an
+AVIRIS-NG-specific artifact — though this project's own evaluation still needs
+to confirm it on `starcop_raw`, not assume it from the paper's numbers.
+
+**Toolchain note:** MobileNetV3-small uses Hardswish and squeeze/excitation
+blocks, not `ReLU6` — a different, likely equally- or more-blocking set of
+operators for hls4ml's PyTorch frontend (Section 8.1) than the current
+baseline's `ReLU6` blocker. Vitis AI is the toolchain with existing evidence
+on this architecture *family* (MobileNet-class CNN, Section 6B.2), but has
+not itself been tested against MobileNetV3-small/Hardswish specifically —
+treat as plausible, not proven, until probed (Section 8.2). Separately, the
+Xiphos Q8J CPU path (Section 6D.5) is now a proven, real flight-heritage
+fallback for this exact architecture if the target board has no DPU/FPGA
+fabric at all — a materially lower-risk option than Alternative E's
+EOL-pinned OpenVino/Myriad path (Section 8.5) for this specific candidate.
+
+**Relationship to H1–H3:** complementary, not competing — H1.5 tests whether
+an already-published, smaller real architecture meets this project's
+false-alert/latency targets before investing in the from-scratch TinyDS-4/
+TinyU-4/SpectralTiny-86 search space; H1–H3 remain the fallback if H1.5 does
+not hit its targets or if the chosen board has no DPU.
+
+**Failure modes:**
+
+- STARCOP's full `starcop_raw` split (Section 4.2) has a much lower positive
+  pixel fraction (0.32%) than the mini split Herec et al. evaluated on
+  (implicitly closer to the 1.13%-fraction mini split via the shared STARCOP
+  lineage) — the reported F1/precision numbers may not transfer directly to
+  this project's own harder full-scene evaluation without re-tuning;
+- Mag1c-SAS's `f=1%` parameter-estimation fraction was tuned for Herec et
+  al.'s tile size (512x512, matching STARCOP's native tile) and may need
+  re-validation for this project's own tile size/overlap contract (Section
+  4.1's 128x128) — and, per Section 6D.4, is demonstrably less stable at
+  full-scene extent than on pre-cropped tiles, which matters if this
+  project ever moves from patch-based to full-scene on-board inference;
+- the EMIT decision threshold needed recalibrating from 0.5 to 0.16 to reach
+  its best reported F1 (Section 6D.4) — any cross-sensor claim for this
+  project's own deployment needs its own threshold calibration step, not a
+  reused STARCOP threshold;
+- Hardswish/SE blocks may prove as hard to quantize cleanly for a DPU as they
+  are documented to be awkward for hls4ml (Section 8.2's MARS
+  U-Net/MobileNetV3 row) — not yet tested for this specific encoder;
+- the pipeline code's MIT/BSD-3 license is confirmed (Section 6D.6), but the
+  separately-hosted Hugging Face pretrained weights are not — do not assume
+  those model files carry the same permissive terms without checking.
+
 ### H2 — TinyU-4 improves morphology enough to justify skip buffers
+
+**Origin:** original design for this project (Section 10, first proposed 2026-08-19) — a from-scratch two-scale variant of H1's design principle, not a reproduction of any published U-Net.
 
 **Architecture sketch:**
 
@@ -619,6 +1216,8 @@ Use only two scales, nearest-neighbor `nn.Upsample`, and pairwise concatenation.
 **Failure mode:** skip FIFOs dominate BRAM, and tiled edges create artifacts.
 
 ### H3 — SpectralTiny-86 removes MF without transformer complexity
+
+**Origin:** original design for this project — not a reproduction of HyperspectralViTs' SegFormer/EfficientViT architecture. It is *inspired by* a design principle Section 6.3 extracts from that paper (explicit learnable spectral projection before spatial compression), but the actual network — a 1x1 spectral bottleneck plus small depthwise-separable CNN, with no attention — is this project's own, built specifically to test that principle without their architecture's conversion-blocking operators (Section 8.2).
 
 **Architecture sketch:**
 
@@ -642,6 +1241,8 @@ A 16-channel full-resolution version is approximately **3.0k convolution weights
 
 ### H4 — Fixed physical projection improves SpectralTiny generalization
 
+**Origin:** original ablation/variant of this project's own H3 design — not derived from a published architecture. The idea of physically-informed filter initialization is a general signal-processing technique, not attributed to any single source paper here.
+
 Initialize some 1x1 filters from methane transmittance/matched-filter templates and train them with either constraints or a mixture of fixed and learned filters.
 
 **Hypothesis:** physically informed initialization reduces data requirements and stabilizes low-bit training while learned channels model confounders/background.
@@ -649,6 +1250,8 @@ Initialize some 1x1 filters from methane transmittance/matched-filter templates 
 **Counter-test:** compare fully learned, fully fixed, and hybrid projection banks under identical parameter and bit budgets.
 
 ### H5 — Ensemble distillation captures operational false-positive suppression
+
+**Origin:** training strategy applied to an original student architecture, not itself an architecture. The deployed model is H1/H2/H3 (this project's own design); the teacher — MARS's 5-model U-Net/MobileNetV3 ensemble or a HyperSegFormer/EfficientViT ensemble — is reproduced published work, run only to generate distillation targets, and is never itself deployed or claimed as this project's architecture (same "teacher only" status Section 8.2 already gives those families).
 
 Teacher: average logits/probabilities from the five MARS U-Nets or a high-performing HyperSegFormer/EfficientViT ensemble. Student: H1, H2, or H3.
 
@@ -667,6 +1270,8 @@ L = BCE_or_Focal(student, label)
 
 ### H6 — Hard-negative curriculum matters more than another model block
 
+**Origin:** data/training strategy, backbone-agnostic — not an architecture. Applies to whichever of H1–H3 (or H1.5) is the participating candidate; nothing here is reproduced or original architecture in itself.
+
 Mine false positives from cities, roads, rivers, mountains, solar panels, roofs, dunes, and minerals. Include sensor, geography, sector, and season labels where possible.
 
 **Hypothesis:** adding diverse full-granule negatives produces a greater reduction in alerts/granule than doubling model channels.
@@ -675,6 +1280,8 @@ This follows MARS's conclusion that OOD background is underrepresented in plume-
 
 ### H7 — Lower-resolution proposals plus host postprocessing are sufficient
 
+**Origin:** output-resolution/system strategy, backbone-agnostic — not an architecture in itself; a variant applied within whichever H1–H3/H1.5 candidate is chosen.
+
 Predict at 1/2 or 1/4 resolution, use fixed nearest upsampling, and apply connected-component ranking externally.
 
 **Hypothesis:** for alert generation, exact boundaries are less important than event localization, so reduced-resolution output can greatly reduce compute without hurting event recall.
@@ -682,6 +1289,8 @@ Predict at 1/2 or 1/4 resolution, use fixed nearest upsampling, and apply connec
 **Failure mode:** small/weak plume events and narrow tails disappear. Evaluate by plume strength and size, not aggregate F1 only.
 
 ### H8 — A two-head confidence design improves ranking
+
+**Origin:** output-head design applied on top of an original backbone — the auxiliary confidence path is this project's own addition, proposed for whichever H1–H3/H1.5 candidate is chosen, not reproduced from a published architecture.
 
 Output:
 
@@ -693,6 +1302,8 @@ Output:
 Keep the pooling shape static. If multi-output conversion proves fragile, compute confidence in postprocessing instead.
 
 ### H9 — Frozen encoder + on-board retrainable head enables in-orbit adaptation
+
+**Origin:** system pattern borrowed from RaVAEn's demonstrated approach (Section 6A.2), not a reproduced architecture — RaVAEn's own VAE encoder and weights are not reused. Only the two-stage idea (freeze an encoder, retrain a small head on-board) is borrowed; the frozen encoder itself is this project's own H1–H3 backbone, and the trainable head is a new small linear/MLP layer, not RaVAEn's 129-parameter classifier reused as-is.
 
 Motivated directly by the RaVAEn flight result (Section 6A.2): a frozen spectral/spatial encoder produces a compact per-tile or per-pixel latent representation; a small trainable head (linear or shallow MLP, analogous to RaVAEn's 129-parameter classifier) is (re)trained **on-board** from a small number of newly labeled or newly confirmed tiles, without a ground uplink of new weights.
 
@@ -753,7 +1364,8 @@ Use a staged program:
 3. **OxHyperSyntheticCH4:** spectral-student pretraining.
 4. **OxHyperRealCH4 or MARS EMIT:** real EMIT fine-tuning.
 5. **MARS full-granule sets:** false-alert and object-level acceptance.
-6. **PRISMA/EnMAP:** cross-sensor tests for feature-based models; separate projection/fine-tuning tests for all-band models.
+6. **EMIT-MSeg** (added 2026-09-09, Section 6D.4): 52 orbital EMIT scenes (26 with methane, 26 without), expert-reviewed, released alongside Herec et al. (2026) — the first dataset available to this project for evaluating (not just hypothesizing about) cross-sensor AVIRIS-NG-to-EMIT generalization of an H1.5-class model. License not yet reviewed (Section 16, item 9).
+7. **PRISMA/EnMAP:** cross-sensor tests for feature-based models; separate projection/fine-tuning tests for all-band models.
 
 Track every dataset/split with DVC. Prevent source-granule, site, and temporal leakage.
 
@@ -1050,14 +1662,110 @@ A network-only speedup is not a deployment result.
 
 ## 16. Decisions recommended now
 
-1. **Adopt TinyDS-4 and SpectralTiny-86 as the two lead hypotheses.** They test the central system trade-off directly.
-2. **Use MARS U-Net ensemble and HyperSegFormer/EfficientViT only as teachers/reference points.** Do not make direct conversion the critical path.
-3. **Make full-granule false alerts and event recall primary promotion metrics.** Pixel F1 remains necessary but not sufficient.
-4. **Include preprocessing in every end-to-end benchmark.** Report WMF cost explicitly.
-5. **Keep the first graph deliberately boring.** Conv2D/depthwise Conv2D/BN/ReLU/fixed resize/simple merge gives the best chance of bit-accurate hls4ml success.
-6. **Treat hard-negative data and distillation as first-class model components.** The reference results imply they may matter more than model width.
-7. **Resolve software and dataset licenses before integrating any reference assets.**
-8. **Create an isolated Linux hardware environment.** The current macOS development machine is not a supported hls4ml/HLS synthesis platform.
+**Revised 2026-09-08, license item updated 2026-09-09 (item 9).** The original
+version of this section (2026-08-19) led
+with "adopt TinyDS-4 and SpectralTiny-86 as the two lead hypotheses" — a
+from-scratch design, chosen because neither reference model family looked
+like a safe hls4ml target. That premise is now out of date for two reasons
+proven since: (1) hls4ml is *specifically* blocked on this project's own
+architecture, not architectures in general (Section 6B.3: `ReLU6` unsupported,
+plus two separate ONNX-tooling bugs); (2) Vitis AI already converts and
+deploys that same architecture family successfully, with F1/IoU within 0.06
+percentage points of FP32 and 8x-102x CPU throughput (Section 6B.2). Starting
+from an unproven tiny student when a proven conversion of the real, more
+accurate baseline exists is no longer the lowest-risk path. The corrected
+order:
+
+1. **Reproduce the proven Vitis AI conversion on this project's existing
+   trained baseline, inside this project's own pipeline, first.** The
+   collaborator's ZCU104 result (Section 6B.2) is evidence for the
+   architecture family, not this project's own checkpoint or full
+   `starcop_raw` test set (Section 4.2) — redo the float -> INT8 -> DPU
+   conversion and quality/latency comparison on this project's own checkpoint
+   and the full test split, using the `src/comparison/`/`scripts/hardware/`
+   scaffolding already prepared for this
+   (see [the scaffolding plan](../../model-hypotheses-scaffolding-plan.md) —
+   note this links to the repo-root copy since that plan predates this
+   document's `internal-docs/plans/` reorganization).
+   This is the fastest path to a real, MLflow-logged on-board benchmark and de-risks
+   nothing about model design, only toolchain plumbing — which is exactly
+   what should be de-risked first.
+2. **In parallel, add LinkNet/MobileNetV3-small + Mag1c-SAS (H1.5, Section
+   10) as the first candidate beyond the existing baseline**, ahead of
+   TinyDS-4/SpectralTiny-86 — but see the provenance note in item 11 below:
+   H1.5 is a **reproduction of Herec et al.'s published architecture**, not
+   an original design, and should be presented and evaluated as a reproduced
+   reference/comparison point (the same status Section 8.2 already gives
+   MARS's and HyperspectralViTs' architectures), not as this project's own
+   contribution. It is worth building first regardless, because it is an
+   order of magnitude smaller than the current baseline (0.851M vs. 6.6M
+   params), already evidence-backed on this project's own dataset family
+   (Section 6D), and directly answers the matched-filter-latency problem this
+   document raises in Sections 5.5/6.4/6A.2 via Mag1c-SAS — and because Herec
+   et al. never touched FPGA/DPU hardware, so the Vitis AI
+   quantization/conversion/on-board-benchmark work around it is still new,
+   even though the network itself is not. Convert it via Vitis AI alongside
+   the baseline; probe hls4ml separately given its different (Hardswish/SE,
+   not `ReLU6`) operator profile (Section 8.2).
+3. **Keep TinyDS-4, TinyU-4, and SpectralTiny-86 as the P1/P2
+   architecture-search track**, not the starting point — pursue them once (1)
+   and (2) establish whether Vitis AI/LinkNet already meets this project's
+   false-alert/latency targets, or if a board without a DPU or a genuine
+   HLS-level fixed-point/resource-control requirement makes hls4ml's
+   deliberately-constrained-graph approach necessary.
+4. **Use MARS U-Net ensemble and HyperSegFormer/EfficientViT only as
+   teachers/reference points.** Do not make direct conversion of *those*
+   families the critical path — this is unchanged from the original
+   recommendation and does not apply to this project's own baseline, which is
+   architecturally simpler and already has a proven conversion (item 1).
+5. **Make full-granule false alerts and event recall primary promotion
+   metrics.** Pixel F1 remains necessary but not sufficient — applies equally
+   to the Vitis AI baseline/H1.5 track and the hls4ml architecture-search
+   track.
+6. **Include preprocessing in every end-to-end benchmark.** Report matched-filter/enhancement-product cost explicitly — and, given Section 6D, specifically compare Mag1c vs. Mag1c-SAS cost as part of that reporting, not just "MF is a cost."
+7. **Keep any new from-scratch graph (TinyDS-4/TinyU-4/SpectralTiny-86)
+   deliberately boring.** Conv2D/depthwise Conv2D/BN/ReLU/fixed resize/simple
+   merge gives the best chance of bit-accurate hls4ml success if that track is
+   pursued (item 3) — Vitis AI's broader operator support (Section 6B.4,
+   Section 9 Alternative F) means this constraint applies specifically to the
+   hls4ml track, not to every candidate.
+8. **Treat hard-negative data and distillation as first-class model
+   components.** The reference results imply they may matter more than model
+   width.
+9. **Resolve software and dataset licenses before integrating any reference
+   assets.** Updated 2026-09-09: the pipeline code for H1.5 is no longer an
+   open license question — `onboard-methane-detection` (Section 6D.6) is
+   confirmed MIT (Zaitra s.r.o.) with BSD-3-Clause portions from the Mag1c
+   project, both permissive and usable directly. Two license items remain
+   open, and should not be conflated with that resolved one: (a) the
+   pretrained model weights on Hugging Face
+   (`onboard-coop/fast-methane-filters-models`) are hosted separately and
+   have **not** been license-checked — do not assume they inherit the PyPI
+   package's terms; (b) the earlier, EDHPC-2025-era
+   [`zaitra/methane-filters-benchmark`](https://github.com/zaitra/methane-filters-benchmark)
+   repository remains unreviewed and is now superseded by
+   `zaitra/onboard-methane-detection` for anything H1.5 needs — prefer the
+   newer, MIT/BSD-3-confirmed repository rather than reviewing the older one.
+   This item still covers MARS/HyperspectralViTs' own unreviewed licenses
+   unchanged (Section 3.1).
+10. **Create an isolated Linux hardware environment.** The current macOS
+    development machine is not a supported hls4ml/HLS synthesis platform, and
+    Vitis AI's own toolchain (Section 6B.2: PetaLinux, Vitis AI 3.5) is
+    Linux-only too — this requirement is now reinforced by *two* toolchains,
+    not conditional on choosing hls4ml specifically (`internal-docs/decisions.md`
+    D-07 already draws this conclusion independently).
+11. **State each hypothesis's provenance explicitly, and do not represent a
+    reproduced architecture as this project's own design.** Section 10 now
+    tags every hypothesis with an **Origin** line for this reason. H1, H2,
+    H3/H4, and H8's confidence head are original designs built for this
+    project; H1.5's architecture (LinkNet/MobileNetV3-small) and H5's teacher
+    (MARS's ensemble or HyperSegFormer/EfficientViT) are reproduced published
+    work, valuable as evidence and comparison points but not as claims of
+    original architecture; H6, H7, and H9's on-board-adaptation pattern are
+    strategies applied on top of whichever backbone is chosen, not
+    architectures at all. This matters most for H1.5: it is worth building
+    first (item 2), but the thesis contribution there is the Vitis AI
+    on-board deployment work, not the network design.
 
 ---
 
@@ -1069,6 +1777,10 @@ A network-only speedup is not a deployment result.
 - [previtus/HyperspectralViTs](https://github.com/previtus/HyperspectralViTs), analyzed at `a184a25`.
 - [spaceml-org/STARCOP](https://github.com/spaceml-org/STARCOP), project-pinned submodule.
 - [fastmachinelearning/hls4ml](https://github.com/fastmachinelearning/hls4ml), converter source inspected at `b90fb06`.
+- [Thifjj/Projeto_VITISAI_hyperstarcop](https://github.com/Thifjj/Projeto_VITISAI_hyperstarcop) — collaborator's ZCU104 Vitis AI feasibility study, analyzed in Section 6B.2.
+- [zaitra/onboard-methane-detection](https://github.com/zaitra/onboard-methane-detection) — Herec et al. (2026)'s packaged pipeline (Section 6D.6); also published as [`onboard-methane-detection` on PyPI](https://pypi.org/project/onboard-methane-detection/), v0.1.2 at time of review. **License confirmed**: MIT (Zaitra s.r.o.) with BSD-3-Clause portions from Mag1c — both permissive (Section 16, item 9).
+- [zaitra/methane-filters-benchmark](https://github.com/zaitra/methane-filters-benchmark) — the earlier, EDHPC-2025-era code/data release analyzed for the original Section 6D; **superseded** by `zaitra/onboard-methane-detection` above and left license-unreviewed (Section 16, item 9).
+- Hugging Face collections released alongside Herec et al. (2026), analyzed in Section 6D.4/6D.6, licenses **not yet reviewed** (Section 16, item 9): [STARCOP all-bands](https://huggingface.co/collections/previtus/starcop-67f13cf30def71591f281a41), [EMIT-MSeg test dataset](https://huggingface.co/datasets/onboard-coop/emit-test-dataset), [STARCOP-fast-products](https://huggingface.co/datasets/onboard-coop/STARCOP-fast-products), [fast-methane-filters-models](https://huggingface.co/onboard-coop/fast-methane-filters-models) (pretrained weights).
 
 ### Papers
 
@@ -1076,6 +1788,12 @@ A network-only speedup is not a deployment result.
 - Růžička and Markham, [HyperspectralViTs: General Hyperspectral Models for On-Board Remote Sensing](https://arxiv.org/abs/2410.17248), IEEE JSTARS 2025.
 - Růžička et al., [Semantic segmentation of methane plumes with hyperspectral machine learning models](https://www.nature.com/articles/s41598-023-44918-6), Scientific Reports 2023.
 - Růžička et al., [Fast Model Inference and Training On-Board of Satellites](https://arxiv.org/abs/2307.08700), arXiv:2307.08700, 2023 — analyzed in Section 6A; motivates H9 and Alternative E.
+- Růžička et al., [RaVÆn: unsupervised change detection of extreme events using ML on-board satellites](https://doi.org/10.1038/s41598-022-19437-5), Scientific Reports 12:16939, 2022 — analyzed in Section 6A.5; a distinct, earlier RaVAEn paper from the arXiv:2307.08700 flight paper above, reporting Xilinx PYNQ FPGA evidence.
+- Herec, Růžička, Pitoňák & Sedmidubsky, [A Fast Methane Detection Pipeline on Board Satellites Based on Mag1c-SAS and LinkNet](https://arxiv.org/abs/2606.03675), arXiv:2606.03675, 2026 — analyzed in Section 6D; motivates H1.5. **Primary citation as of 2026-09-09**, superseding the entry below.
+- Herec, Růžička & Pitoňák, [Optimizing Methane Detection On Board Satellites: Speed, Accuracy, and Low-Power Solutions for Resource-Constrained Hardware](https://arxiv.org/abs/2507.01472), arXiv:2507.01472, EDHPC 2025 — the preliminary version of the entry above, substantially expanded by it (added author, EMIT-MSeg, cross-sensor generalization, Xiphos Q8J profile, open-source library). Kept here for provenance; no longer the citation to use for H1.5's numbers.
+- Kang, Al-Qurri & Almekkawy, [Fast and Resource-Efficient Ultrasound Segmentation Using FPGAs](https://doi.org/10.1109/IUS62464.2025.11201783), IEEE IUS 2025 — analyzed in Section 6C.
+- Neiso, Muchuka & Mambo, [FPGA-based Implementation of a Resource-Efficient UNET Model for Brain Tumour Segmentation](https://doi.org/10.14569/IJACSA.2024.0150161), IJACSA 15(1):622-630, 2024 — analyzed in Section 6C.
+- Dorise, Bellizzi & Hlimi, [Rethinking Satellite Image Restoration for Onboard AI: A Lightweight Learning-Based Approach](https://arxiv.org/abs/2604.12807), AI4SPACE@CVPR / arXiv:2604.12807, 2026 — analyzed in Section 6C.
 
 ### hls4ml documentation
 
@@ -1096,3 +1814,6 @@ A network-only speedup is not a deployment result.
 - [`configs/dataset/starcop_raw.yaml`](../../configs/dataset/starcop_raw.yaml)
 - [`../../src/baselines/starcop/training/train.py`](../../src/baselines/starcop/training/train.py)
 - [`../../src/baselines/starcop/serving/inference.py`](../../src/baselines/starcop/serving/inference.py)
+- [`docs/results/hardware-benchmark.md`](../../docs/results/hardware-benchmark.md) — public curation of the collaborator's ZCU104 Vitis AI benchmark, analyzed in full in Section 6B.2.
+- [`model-experiments.md`](../model-experiments.md) — logs the 2026-09-06 hls4ml probe analyzed in Section 6B.3, and the living hypothesis-backlog table this document's Section 10 feeds.
+- [`decisions.md`](../decisions.md) — D-07's 2026-09-06 update draws the same hls4ml-vs-Vitis-AI conclusion independently; cross-referenced in Section 16, item 10.

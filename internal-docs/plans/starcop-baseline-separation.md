@@ -520,7 +520,7 @@ Explicit checklist:
 Preserve historical experiment/journal text as historical evidence. Add a migration
 note where old commands may otherwise look current; do not rewrite old checkpoint
 paths or falsify previous run provenance. Update active architecture references in
-`internal-docs/plans/hls4ml-methane-model-hypotheses.md` and link this follow-up from
+`internal-docs/plans/onboard-methane-segmentation-hypotheses.md` and link this follow-up from
 the completed scaffold instead of rewriting that scaffold as if it moved code.
 
 ### 4. Validate before declaring the migration ready

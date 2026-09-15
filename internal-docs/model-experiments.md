@@ -11,30 +11,52 @@
 ## Hypothesis backlog
 
 Research rationale and hypothesis definitions live in
-[the model hypotheses document](plans/hls4ml-methane-model-hypotheses.md#10-falsifiable-model-hypotheses).
+[the model hypotheses document](plans/onboard-methane-segmentation-hypotheses.md#10-falsifiable-model-hypotheses).
 This table is the living status source. The
-[implementation layout](plans/hls4ml-methane-model-hypotheses.md#phase-1--conversion-spike)
+[implementation layout](plans/onboard-methane-segmentation-hypotheses.md#phase-1--conversion-spike)
 defines the per-model structure; only placeholder directories exist so far, not
 model implementations. “Unassigned” means the portfolio does not specify a
 priority. Training strategies and variants reuse candidate folders rather than
 becoming independent architecture packages.
 
-| ID | Candidate / strategy | Priority | Target folder | Dependencies / blockers | Status |
-| --- | --- | --- | --- | --- | --- |
-| H0 | MF threshold + morphology | Control | TBD — no folder created | Pin MF input contract, threshold/morphology rules, and event evaluation protocol | 🔲 Not started |
-| H1 | TinyDS-4 | P0 | `src/models/tiny_ds/` | Versioned four-channel input contract and matching STARCOP evaluation | 🔲 Not started |
-| H2 | TinyU-4 | P1 | `src/models/tiny_u/` | Four-channel evaluation contract; validate skip/resize conversion and buffering | 🔲 Not started |
-| H3 | SpectralTiny-86 | P0 | `src/models/spectral_tiny/` | Blocked on suitable spectral datasets, licensing, and versioned input contracts; matching baseline evaluation required | 🔲 Not started |
-| H4 | Physical spectral projection | Unassigned | `src/models/spectral_tiny/` | H3 data/backbone and physical templates; fixed/learned/hybrid ablation | 🔲 Not started |
-| H5 | Ensemble distillation | P1 | Chosen H1–H3 student folder | Validated teacher, student, and suitable full-granule distillation data | 🔲 Not started |
-| H6 | Hard-negative curriculum | Unassigned | Participating H1–H3 folders | Suitable full-scene hard-negative data and candidate error mining | 🔲 Not started |
-| H7 | Lower-resolution proposals | Unassigned | Chosen H1–H3 candidate folder | Candidate backbone, host postprocessing, and size/strength-stratified event evaluation | 🔲 Not started |
-| H8 | Two-head confidence ranking | Unassigned | Chosen H1–H3 candidate folder | Candidate backbone and ranking protocol; validate static pooling/multi-output conversion | 🔲 Not started |
-| H9 | On-board retrainable head | P2 / exploratory | TBD — no folder created | Validated frozen H1–H3 encoder; separate H9.1 protocol and H9.2 gates; feasible CPU/VPU adaptation path | 🔲 Not started |
+**Revised 2026-09-08**: re-reading the reference corpus alongside the
+2026-09-06 hls4ml probe below and the collaborator's Vitis AI result changed
+the recommended starting point — see
+[Section 16 of the hypotheses document](plans/onboard-methane-segmentation-hypotheses.md#16-decisions-recommended-now).
+The P0 starting point is no longer H1/TinyDS-4 from scratch; it is reproducing
+the proven Vitis AI conversion on the existing trained baseline, in parallel
+with the new H1.5 candidate below. H1–H3 remain P0/P1 as the architecture-search
+track once that is established. Priorities in the table are unchanged from
+their hypothesis-document source but should be read alongside that section.
+
+**Origin column, added 2026-09-08**: distinguishes architectures designed for
+this project from published architectures reproduced here — reproducing a
+paper's model (even well) is a different claim than designing one, and this
+table should not read as if every row is this project's own architecture. See
+[Section 10's Origin lines](plans/onboard-methane-segmentation-hypotheses.md#10-falsifiable-model-hypotheses)
+and [Section 16, item 11](plans/onboard-methane-segmentation-hypotheses.md#16-decisions-recommended-now)
+for the full reasoning per hypothesis.
+
+| ID | Candidate / strategy | Priority | Origin | Target folder | Dependencies / blockers | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| H0 | MF threshold + morphology | Control | Classical baseline, not a learned architecture | TBD — no folder created | Pin MF input contract, threshold/morphology rules, and event evaluation protocol | 🔲 Not started |
+| — | Existing STARCOP baseline via Vitis AI (reproduce collaborator's ZCU104 result in this project's own pipeline) | P0 | This project's own trained checkpoint | `src/comparison/`, `scripts/hardware/` | Existing trained checkpoint; ZCU104 or equivalent DPU board access | 🔲 Not started |
+| H1.5 | LinkNet + MobileNetV3-small + Mag1c-SAS | P0 | **Reproduced** from Herec et al. 2026 (arXiv:2606.03675) — not this project's own architecture; the new work is the Vitis AI conversion around it | TBD — likely `src/models/linknet_lite/` (naming not yet confirmed) | Pipeline code license resolved 2026-09-09 (MIT/BSD-3, `onboard-methane-detection` — see hypotheses doc §6D.6); pretrained weights on Hugging Face still license-unreviewed | 🔲 Not started |
+| H1 | TinyDS-4 | P1 | Original design, this project | `src/models/tiny_ds/` | Versioned four-channel input contract and matching STARCOP evaluation | 🔲 Not started |
+| H2 | TinyU-4 | P2 | Original design, this project | `src/models/tiny_u/` | Four-channel evaluation contract; validate skip/resize conversion and buffering | 🔲 Not started |
+| H3 | SpectralTiny-86 | P1 | Original design, this project (inspired by, not reproducing, HyperspectralViTs' spectral-projection principle) | `src/models/spectral_tiny/` | Blocked on suitable spectral datasets, licensing, and versioned input contracts; matching baseline evaluation required | 🔲 Not started |
+| H4 | Physical spectral projection | Unassigned | Original ablation of this project's own H3 | `src/models/spectral_tiny/` | H3 data/backbone and physical templates; fixed/learned/hybrid ablation | 🔲 Not started |
+| H5 | Ensemble distillation | P1 | Strategy on an original student; MARS/HyperSegFormer/EfficientViT ensemble reproduced as teacher only, never deployed | Chosen H1–H3 student folder | Validated teacher, student, and suitable full-granule distillation data | 🔲 Not started |
+| H6 | Hard-negative curriculum | Unassigned | Data/training strategy, backbone-agnostic | Participating H1–H3 folders | Suitable full-scene hard-negative data and candidate error mining | 🔲 Not started |
+| H7 | Lower-resolution proposals | Unassigned | Output-resolution strategy, backbone-agnostic | Chosen H1–H3 candidate folder | Candidate backbone, host postprocessing, and size/strength-stratified event evaluation | 🔲 Not started |
+| H8 | Two-head confidence ranking | Unassigned | Output-head design on an original backbone | Chosen H1–H3 candidate folder | Candidate backbone and ranking protocol; validate static pooling/multi-output conversion | 🔲 Not started |
+| H9 | On-board retrainable head | P2 / exploratory | System pattern borrowed from RaVAEn; encoder is this project's own H1–H3 backbone, not RaVAEn's VAE | TBD — no folder created | Validated frozen H1–H3 encoder; separate H9.1 protocol and H9.2 gates; feasible CPU/VPU adaptation path | 🔲 Not started |
 
 The [2026-09-06 conversion probe](#hls4ml-onnxpytorch-conversion--first-probe-2026-09-06)
 is shared toolchain reconnaissance on **STARCOP's U-Net/MobileNetV2**, not H1/TinyDS
-conversion progress or validation. All hypotheses therefore remain not started.
+conversion progress or validation. All hypotheses therefore remain not started. This
+probe, together with the collaborator's ZCU104 result, is now written up in full in
+[Section 6B of the hypotheses document](plans/onboard-methane-segmentation-hypotheses.md#6b-vitis-ai-on-this-projects-own-architecture-proven-feasibility).
 
 Future promotion comparisons use STARCOP quality metrics and separately measured
 inference times on CPU, GPU, and the dedicated target hardware's CPU, under

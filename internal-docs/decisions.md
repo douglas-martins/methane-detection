@@ -29,6 +29,13 @@ collaborator's ZCU104 benchmark). Doesn't resolve D-07, but weakens the case for
 hls4ml specifically as part of "why go Linux" — Vitis AI alone would justify the
 same Linux requirement.
 
+**Update, 2026-09-08**: the model hypotheses document
+([`plans/onboard-methane-segmentation-hypotheses.md`](plans/onboard-methane-segmentation-hypotheses.md))
+has been revised accordingly — Vitis AI is now documented there (Section 6B) as the
+toolchain with a proven path on this project's own architecture, and Section 16's
+recommended starting point leads with reproducing that Vitis AI result before any
+from-scratch hls4ml-targeted student. Still doesn't resolve D-07 itself.
+
 ---
 
 ## Resolved
