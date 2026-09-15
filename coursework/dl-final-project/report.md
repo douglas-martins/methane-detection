@@ -521,18 +521,24 @@ configurações), treinamento completo em `starcop_mini` (392 patches de
 treino), schedule fixo idêntico às três (máx. 50 épocas, paciência 10 em
 `val_loss`, mesmo otimizador/perda). Números lidos diretamente de
 `mlflow.db` (experimento `dl-final-project`, execuções `E1-mini`,
-`E2-mini`, `E3-mini`, parâmetro `seed=42`), não dos logs de terminal:
+`E2-mini`, `E3-mini`, parâmetro `seed=42`), não dos logs de terminal.
+
+**Re-executado após a correção de reprodutibilidade** (ver a seção
+"Limitação de reprodutibilidade" em Resultados) — os números abaixo são
+os re-executados sob `cudnn.deterministic=True`, verificados como
+reprodutíveis bit a bit entre execuções independentes:
 
 | Configuração | Parâmetros | Melhor época / total | `val_loss` (melhor) | `val_f1` (melhor) | Degenerado? |
 | --- | ---: | ---: | ---: | ---: | :---: |
-| E1 (do zero) | 487.361 | 47/50 | 0,0142 | 0,4455 | Não |
-| E2 (U-Net + MobileNetV2) | 6.629.233 | 50/50 (ainda melhorando no limite) | 0,0300 | 0,2618 | Não |
-| E3 (LinkNet + MobileNetV3-small) | 856.635 | 50/50 (ainda melhorando no limite) | 0,4849 | 0,0194 | Não |
+| E1 (do zero) | 487.361 | 50/50 (ainda melhorando no limite) | 0,0142 | 0,6272 | Não |
+| E2 (U-Net + MobileNetV2) | 6.629.233 | 42/50 | 0,0354 | 0,3160 | Não |
+| E3 (LinkNet + MobileNetV3-small) | 856.635 | 50/50 (ainda melhorando no limite) | 0,4845 | 0,0194 | Não |
 
-**Ordem por `val_f1`: E1 > E2 > E3** — a mesma ordem seria surpreendente
-sob a hipótese H1.5 (E3 deveria se aproximar de E2 apesar de ser ~7,7×
-menor), e o resultado observado aqui é o oposto: E3 fica muito atrás dos
-outros dois neste schedule fixo de 50 épocas.
+**Ordem por `val_f1`: E1 > E2 > E3** — inalterada em relação à execução
+pré-correção (apenas os valores absolutos mudaram). A mesma ordem seria
+surpreendente sob a hipótese H1.5 (E3 deveria se aproximar de E2 apesar
+de ser ~7,7× menor), e o resultado observado aqui é o oposto: E3 fica
+muito atrás dos outros dois neste schedule fixo de 50 épocas.
 
 Isso não é um colapso do modelo (`degenerate=False` nas três) nem uma
 falha do laço de treino — a curva de `val_loss` de E3 cai de forma
@@ -563,34 +569,43 @@ palavra final sobre H1.5.
 Mesma semente (`seed=42`), mesmo schedule (máx. 50 épocas, paciência 10),
 agora no subconjunto amostrado de `starcop_raw` (manifesto de 6.076
 patches de treino / 3.136 de validação, ~15,5× mais dados de treino que
-`mini`, Seção 0.1). Números lidos diretamente de `mlflow.db` (execuções
-`E1-r2`, `E2-r2`, `E3-r2`, parâmetro `seed=42`):
+`mini`, Seção 0.1). **Re-executado após a correção de reprodutibilidade**
+(ver "Limitação de reprodutibilidade" em Resultados) — números lidos
+diretamente de `mlflow.db` (execuções `E1-r2`, `E2-r2`, `E3-r2`,
+parâmetro `seed=42`):
 
 | Configuração | Parâmetros | Melhor época / total | `val_loss` (melhor) | `val_f1` (melhor) | Degenerado? |
 | --- | ---: | ---: | ---: | ---: | :---: |
-| E1 (do zero) | 487.361 | 11/21 (early stop) | 0,1685 | 0,2529 | Não |
-| E2 (U-Net + MobileNetV2) | 6.629.233 | 24/34 (early stop) | 0,1883 | 0,3825 | Não |
-| E3 (LinkNet + MobileNetV3-small) | 856.635 | 39/49 (early stop) | 0,2013 | 0,3625 | Não |
+| E1 (do zero) | 487.361 | 22/32 (early stop) | 0,1478 | 0,3667 | Não |
+| E2 (U-Net + MobileNetV2) | 6.629.233 | 10/20 (early stop) | 0,2120 | 0,3295 | Não |
+| E3 (LinkNet + MobileNetV3-small) | 856.635 | 31/41 (early stop) | 0,2159 | 0,3321 | Não |
 
-**Ordem por `val_f1` em `r2`: E2 (0,3825) > E3 (0,3625) > E1 (0,2529).**
+**Ordem por `val_f1` em `r2`: E1 (0,3667) > E3 (0,3321) > E2 (0,3295)**
+— E2 e E3 praticamente empatados (diferença de 0,0026).
 
-**A ordem se inverteu em relação a `mini` (E1 > E2 > E3 → E2 > E3 > E1),
-e este é o achado mais importante deste projeto.** O motivo aparece
-diretamente na curva: em `mini`, E3 mal havia começado a convergir depois
-de 50 épocas (`val_f1`=0,0194); em `r2`, com ~15,5× mais patches de
-treino — portanto ~15,5× mais passos de gradiente por época no mesmo
-número de épocas — E3 teve passos suficientes para convergir de fato, e
-seu `val_f1` salta para 0,3625, ficando a apenas 0,02 do valor de E2
-(0,3825) e superando E1 (0,2529) com folga. Isso é evidência direta a
-favor da leitura da Seção 7 do plano: a comparação de `mini` isolada não
-media a qualidade relativa das três arquiteturas — media, em boa parte,
-qual delas convergia mais rápido dado um orçamento fixo de 50 épocas e
-392 patches. Assim que o orçamento de dados deixa de ser o fator
-limitante, E3 (um modelo ~7,7× menor que E2) se aproxima da qualidade de
-E2, exatamente a leitura otimista de H1.5 (um modelo bem menor sustenta a
-maior parte da qualidade do modelo grande) — e supera claramente E1, que
-por sua vez teve o pior resultado em `r2` apesar de ter sido o melhor em
-`mini`.
+**Esta ordem é diferente da encontrada antes da correção de
+reprodutibilidade, e não apenas nos números** — a versão anterior (não
+reprodutível, descartada) mostrava E1 caindo para o **último** lugar em
+`r2` (E2 > E3 > E1), uma inversão total em relação a `mini`. Sob os
+números corretos e reprodutíveis, **E1 se mantém em primeiro lugar nas
+duas camadas** (`mini` e `r2`) — o que muda entre as camadas é a posição
+relativa de E2 e E3, que passam de uma diferença clara em `mini` (E2
+0,3160 vs. E3 0,0194) para um empate técnico em `r2` (E3 0,3321 vs. E2
+0,3295, com E3 muito ligeiramente à frente).
+
+Isso ainda é um resultado relevante para H1.5, só que mais moderado do
+que a versão anterior sugeria: em `mini`, E3 mal havia começado a
+convergir depois de 50 épocas (`val_f1`=0,0194, curva ainda caindo
+acentuadamente); em `r2`, com ~15,5× mais patches de treino — portanto
+~15,5× mais passos de gradiente por época no mesmo número de épocas — E3
+teve passos suficientes para convergir de fato, fechando a diferença com
+E2 e ficando marginalmente à frente. A leitura correta não é "E3 supera
+E2 com folga" nem "E1 colapsa" — é **"E3 (~7,7× menor que E2) alcança
+paridade prática com E2 assim que o orçamento de dados deixa de ser o
+fator limitante, enquanto E1 permanece competitivo nas duas escalas"**,
+uma leitura ainda favorável a H1.5, mas sem o drama do achado anterior
+(que era, ele mesmo, um artefato da falta de reprodutibilidade, não uma
+descoberta real).
 
 Não há colapso em nenhuma das três (`degenerate=False`), e `pos_weight`
 (269,73) é idêntico nas três execuções — confirmando que todas leram o
@@ -625,9 +640,9 @@ filtrando pelo registro `step=0` (a média real,
 
 | Configuração | Parâmetros | Melhor `val_loss` | Melhor `val_f1` | Tempo/época | Tempo total |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| E1 (do zero) | 487.361 | 0,0142 | 0,4455 | 2,15 s | 107,5 s (1,8 min) |
-| E2 (U-Net + MobileNetV2) | 6.629.233 | 0,0300 | 0,2618 | 2,56 s | 127,8 s (2,1 min) |
-| E3 (LinkNet + MobileNetV3-small) | 856.635 | 0,4849 | 0,0194 | 2,47 s | 123,4 s (2,1 min) |
+| E1 (do zero) | 487.361 | 0,0142 | 0,6272 | 2,17 s | 108,6 s (1,8 min) |
+| E2 (U-Net + MobileNetV2) | 6.629.233 | 0,0354 | 0,3160 | 2,37 s | 118,4 s (2,0 min) |
+| E3 (LinkNet + MobileNetV3-small) | 856.635 | 0,4845 | 0,0194 | 2,34 s | 117,2 s (2,0 min) |
 
 **Ordem por `val_f1`: E1 > E2 > E3** — ver "Comparação E1/E2/E3 — mini"
 acima para a discussão de por que essa ordem reflete velocidade de
@@ -635,7 +650,10 @@ convergência sob um orçamento fixo de 50 épocas, não necessariamente
 qualidade de arquitetura (E3 ainda caindo de forma acentuada na época 50,
 não convergido).
 
-*Rastreabilidade (`run_id`): E1=`55abf9c8`, E2=`fb408e9b`, E3=`47d2e0f4`.*
+*Números re-executados sob a correção de reprodutibilidade
+(`cudnn.deterministic=True`) — ver "Limitação de reprodutibilidade"
+abaixo. Rastreabilidade (`run_id`): E1=`f8e6ee1b`, E2=`13e0b073`,
+E3=`04afec08`.*
 
 ### Tabela de confirmação — camada `starcop_raw` (R2 e R3, Seção 0.1)
 
@@ -644,37 +662,38 @@ substitui os de `mini`, são a confirmação em escala do plano.
 
 | Configuração | Camada | Parâmetros | Melhor `val_loss` | Melhor `val_f1` | Melhor época / total | Tempo/época | Tempo total |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| E1 | R2 (subamostra, 6.076 patches) | 487.361 | 0,1685 | 0,2529 | 11/21 (early stop) | 40,39 s | 848,2 s (14,1 min) |
-| E2 | R2 (subamostra, 6.076 patches) | 6.629.233 | 0,1883 | 0,3825 | 24/34 (early stop) | 44,09 s | 1.499,1 s (25,0 min) |
-| E3 | R2 (subamostra, 6.076 patches) | 856.635 | 0,2013 | 0,3625 | 39/49 (early stop) | 42,37 s | 2.076,0 s (34,6 min) |
-| E2 | R3 (`raw-full`, 141.218 patches) | 6.629.233 | 0,0583 | 0,2795 | 17/20 (atingiu o teto) | 833,48 s | 16.669,6 s (4,63 h) |
-| E3 | R3 (`raw-full`, 141.218 patches) | 856.635 | 0,0715 | 0,2477 | 9/19 (early stop) | 790,88 s | 15.026,8 s (4,17 h) |
+| E1 | R2 (subamostra, 6.076 patches) | 487.361 | 0,1478 | 0,3667 | 22/32 (early stop) | 39,08 s | 1.250,5 s (20,8 min) |
+| E2 | R2 (subamostra, 6.076 patches) | 6.629.233 | 0,2120 | 0,3295 | 10/20 (early stop) | 45,57 s | 911,5 s (15,2 min) |
+| E3 | R2 (subamostra, 6.076 patches) | 856.635 | 0,2159 | 0,3321 | 31/41 (early stop) | 45,01 s | 1.845,3 s (30,8 min) |
+| E2 | R3 (`raw-full`, 141.218 patches) | 6.629.233 | 0,0623 | 0,2885 | 18/20 (atingiu o teto) | 860,47 s | 17.209,3 s (4,78 h) |
+| E3 | R3 (`raw-full`, 141.218 patches) | 856.635 | 0,0693 | 0,2538 | 10/20 (early stop, exatamente no teto) | 848,01 s | 16.960,2 s (4,71 h) |
 
-**Ordem por `val_f1` em R2: E2 > E3 > E1** — inversão em relação a
-`mini` (E1 > E2 > E3), o achado mais importante deste projeto (ver seção
-"Comparação E1/E2/E3 — r2" acima). **Ordem em R3: E2 > E3** (E1
-deliberadamente excluído da Fase E — Seção 6/7 do plano) — mesma ordem
-relativa de R2, não uma nova inversão. Note que os valores absolutos de
-`val_f1` de E2 e E3 *caíram* de R2 para R3 (E2: 0,3825→0,2795; E3:
-0,3625→0,2477) apesar de ~23× mais passos de treino por época —
-plausivelmente porque o split de validação de `raw-full` (26.607
-patches) é muito maior e mais diverso que o de R2 (3.136 patches,
-curado), um teste mais difícil e mais representativo, não uma regressão
-real de qualidade do modelo. Também vale registrar uma assimetria de
-convergência: E2 usou todo o teto de 20 épocas sem esgotar a paciência
-(ainda tinha margem para melhorar), enquanto E3 convergiu de fato e
-parou sozinho — uma leitura mais otimista para E2 nesta camada do que o
-número isolado de `val_f1` sugere por si só.
+**Ordem por `val_f1` em R2: E1 (0,3667) > E3 (0,3321) > E2 (0,3295)**,
+E2/E3 praticamente empatados — ver a discussão completa em "Comparação
+E1/E2/E3 — r2" acima, incluindo por que isso é diferente do achado
+pré-correção (E1 caindo para último lugar), que era ele mesmo um
+artefato da falta de reprodutibilidade. **Ordem em R3 (E1 excluído,
+Seção 6/7): E2 (0,2885) > E3 (0,2538)** — a mesma ordem relativa de
+antes da correção (E2 à frente), diferente do padrão de R2 nesta
+re-execução (onde E3 fica marginalmente à frente) — ou seja, a ordem
+E2-vs-E3 não é estável entre R2 e R3 nem antes nem depois da correção,
+apenas os valores mudaram. Os valores absolutos de `val_f1` de E2 e E3
+voltam a cair de R2 para R3 (E2: 0,3295→0,2885; E3: 0,3321→0,2538),
+reforçando a mesma explicação já registrada antes da correção: o split
+de validação de `raw-full` (26.607 patches) é maior e mais diverso que o
+de R2 (3.136, curado), um teste mais difícil, não uma regressão real de
+qualidade.
 
 `pos_weight` idêntico dentro de cada camada (87,27 em `mini`, 269,73 em
 R2, 314,48 em R3) confirma que todas as execuções de uma mesma camada
 leram exatamente o mesmo split/manifesto — não uma amostra redesenhada
 por execução.
 
-*Rastreabilidade (`run_id`): E1-R2=`1d4c6ac6`, E2-R2=`6e8e4e90`,
-E3-R2=`0791a33d`, E2-R3=`0c1de1bf`, E3-R3=`4f0ee075`.*
+*Rastreabilidade (`run_id`), todas as execuções abaixo re-executadas sob
+a correção de reprodutibilidade: E1-R2=`ea7da10c`, E2-R2=`d5eaeb84`,
+E3-R2=`37edfff4`, E2-R3=`31769759`, E3-R3=`f0d4856b`.*
 
-### Limitação de reprodutibilidade encontrada após os resultados acima
+### Bug de reprodutibilidade — encontrado, corrigido, e resultados re-executados
 
 **Um terceiro bug real, encontrado só agora** (ao executar o item do plano
 "confirme reprodutibilidade re-rodando um treino"): re-rodar E1/`mini` com
@@ -688,23 +707,39 @@ numpy) mas nunca fixava `torch.backends.cudnn.deterministic=True` — o
 cuDNN pode escolher um algoritmo de convolução diferente (não
 determinístico) a cada execução mesmo com sementes idênticas, e essa
 diferença se acumula ao longo de muitos passos de treino. **Corrigido**
-(TDD, 82/82 testes) e **reverificado de forma concreta**: duas execuções
-completas de 50 épocas de E1/`mini` sob a correção agora produzem
-resultados **idênticos bit a bit** (`val_loss=0,011957116425037384` nas
-duas).
+(TDD, 82/82 testes) e **reverificado de forma concreta, duas vezes**:
+(1) chamando `fit()` diretamente duas vezes no mesmo processo Python —
+resultados idênticos bit a bit entre si (`val_loss=0,011957116425037384`
+nas duas); (2) o teste que importa de verdade — **duas invocações
+separadas e independentes da CLI real** (`train.py architecture=E1
+dataset=starcop_mini tier=mini seed=42`, processos totalmente novos a
+cada vez) — também idênticas bit a bit entre si
+(`val_loss=0,014174979878589511`, `val_f1=0,6272246272246272` nas duas).
+Os dois valores acima diferem entre si (0,0120 vs. 0,0142) porque vieram
+de dois caminhos de código/processo diferentes — o que importa é que
+**cada um é internamente reprodutível**, e o segundo é o padrão real de
+uso (toda execução futura passa pela CLI). É exatamente esse segundo
+número (0,0142 / 0,6272) que aparece na tabela `mini` acima.
 
-**O que isso significa para os números acima**: a correção garante
-reprodutibilidade **daqui para frente**, mas não torna retroativamente
-reprodutíveis os 8 números já registrados nas tabelas desta seção — todos
-foram treinados antes da correção, e uma nova execução de qualquer um
-deles hoje provavelmente produziria um resultado diferente (porém, a
-partir de agora, ele mesmo reprodutível). Os números em si continuam
-sendo reais — execuções que de fato ocorreram, não inventadas — apenas a
-propriedade específica de "reprodutibilidade bit a bit" não se sustenta
-para eles como registrados. Re-rodar as 8 configurações sob o código
-corrigido é uma decisão de custo real (R3 sozinho consome ~4h por
-arquitetura) e foi deixada explicitamente para o usuário decidir, não
-tomada unilateralmente.
+**Decisão tomada, e concluída**: em vez de manter os números
+não-reprodutíveis com esta limitação apenas documentada, o usuário optou
+por re-executar as 8 configurações sob o código corrigido — um custo
+real de tempo de GPU (as duas execuções de R3 sozinhas consumiram
+~9,5 h combinadas), mas a única forma de ter uma tabela de resultados
+genuinamente reprodutível de ponta a ponta. **As 8 configurações
+(`mini`, R2 e R3) foram todas re-executadas** e as tabelas desta seção
+já refletem os números finais.
+
+**Um achado notável da re-execução**: a comparação `mini` vs. R2 mudou
+de forma qualitativa, não apenas numérica. A versão pré-correção mostrava
+E1 caindo para o último lugar em R2 (inversão total E1>E2>E3 → E2>E3>E1)
+— esse era, ele mesmo, o achado mais divulgado nesta seção antes da
+correção. Sob os números reprodutíveis, E1 permanece em primeiro lugar
+nas duas camadas, e o que de fato varia entre camadas é E2/E3 convergindo
+para um empate técnico em R2. Isso é uma lição direta sobre por que este
+bug importava: a "descoberta" mais interessante do projeto, antes da
+correção, era em si um artefato de não-reprodutibilidade — não um
+resultado real sobre as arquiteturas.
 
 ## Discussão
 
