@@ -615,6 +615,256 @@ esgotar o limite de 50 épocas, então a comparação não está sendo cortada
 artificialmente por um teto de época — cada uma parou quando de fato
 deixou de melhorar dentro da paciência de 10 épocas.
 
+## Métricas de avaliação
+
+**Exigência do curso** (PDF Seções 8.1, 8.4): métricas de classificação —
+Accuracy, Precision, Recall, F1, matriz de confusão, ROC-AUC/PR-AUC — com a
+ressalva explícita de que Accuracy sozinha é insuficiente sob
+desbalanceamento de classes. A segmentação binária por pixel é, pixel a
+pixel, uma classificação binária — as métricas de classificação do curso
+aplicam-se diretamente, sem adaptação.
+
+### Por que Accuracy não é a métrica principal
+
+A Seção "Análise exploratória" já mediu o desbalanceamento pixel a pixel
+nos splits de **treino** (1,13% em `starcop_mini`, 0,32% em
+`starcop_raw`). Para a avaliação, a taxa relevante é a do split de
+**teste** especificamente — medida diretamente a partir das matrizes de
+confusão desta seção (contagem de pixels rotulados positivos ÷ total de
+pixels, idêntica nas três arquiteturas por usar o mesmo split de rótulos)
+e conferida de forma independente via `frac_positives.mean()` sobre o CSV
+de teste:
+
+| Split de teste | Pixels positivos / total | Taxa |
+| --- | ---: | ---: |
+| `starcop_mini` | 155.652 / 7.225.344 | **2,15%** |
+| `starcop_raw` | 701.907 / 274.563.072 | **0,26%** |
+
+Um classificador trivial que prevê "sem pluma" em todo pixel atingiria
+Accuracy ≈97,85% em `starcop_mini`/teste e ≈99,74% em `starcop_raw`/teste
+— altíssima, e completamente inútil (zero plumas detectadas). Isso é
+exatamente a ressalva da Seção 8.1 do PDF, agora com o número medido de
+verdade, não hipotético. Por isso a tabela principal desta seção lidera
+com Precision/Recall/F1/PR-AUC, e Accuracy não aparece como métrica de
+comparação em nenhuma tabela abaixo.
+
+### Implementação: Precision/Recall/F1/matriz de confusão, PR-AUC e detecção por patch
+
+`coursework/dl-final-project/metrics.py` (TDD, RED-GREEN) ganhou a
+contrapartida completa da métrica de treino da Seção 6 (`pixel_f1`, que
+passou a delegar para as mesmas contagens): `confusion_matrix_counts`/
+`add_counts`/`precision_from_counts`/`recall_from_counts`/
+`f1_from_counts`/`confusion_matrix_from_counts` (matriz `[[TN, FP], [FN,
+TP]]`), `sweep_confusion_counts`/`precision_recall_points_from_sweep`/
+`average_precision_from_sweep` (PR-AUC não-interpolada, varredura de 101
+pontos de limiar) e `patch_detection_counts`/`detection_rate_from_counts`
+(detecção por patch). Novo `coursework/dl-final-project/evaluate.py`
+(`evaluate_full_metrics` + `load_checkpoint`, testados; `main()` é *thin
+glue* como o próprio `train.py`, exercitado por execuções reais) acumula
+tudo **incrementalmente por lote** — nunca materializa as previsões do
+split inteiro em memória, mesma razão de design do bug de OOM já corrigido
+em `train.py::evaluate()` (Metodologia, acima).
+
+**Decisão de reuso, tomada e registrada** (convenção de honestidade de
+proveniência do plano): `vendor/starcop/starcop/metrics.py` já implementa
+a mesma matemática de matriz de confusão (`precision`/`recall`/`f1score`
+sobre `[[TN, FP], [FN, TP]]`), consumida em `src/baselines/starcop/
+evaluation/paper_metrics.py`. **Não foi importada** — este projeto de
+curso permanece fisicamente isolado de `src/`/`vendor/` desde a Seção 0 (nenhum
+outro arquivo em `coursework/` importa de lá), e a matemática em si é
+trivial o suficiente para reimplementar sem risco de divergência. A
+convenção de PR-AUC não-interpolada (ordenar por recall ascendente, somar
+`(recall_n − recall_{n-1}) × precision_n`, `recall_0 = 0`) é a mesma que
+`paper_metrics.py::non_interpolated_average_precision` já usa para o
+AUPRC da tese — reimplementada aqui pelo mesmo motivo de isolamento, não
+importada.
+
+**Limiar fixo e curva PR**: a tabela principal usa um limiar de decisão
+fixo (0,5) em todas as configurações e camadas, mas cada avaliação também
+reporta a curva Precision-Recall completa (101 pontos) e o PR-AUC — exatamente
+para que uma diferença causada pelo limiar não seja confundida com uma
+diferença real de qualidade (ver "Curvas Precision-Recall" abaixo, onde
+isso de fato acontece).
+
+**Detecção por patch — definição distinta da Seção "Análise exploratória"**:
+a coluna `positive_patches` desta seção conta patches com **pelo menos um
+pixel positivo real** (`frac_positives > 0`), respondendo literalmente "o
+modelo detecta *alguma* pluma neste patch?". Isso é **diferente** da
+coluna `has_plume` usada na tabela de balanço por patch da Análise
+Exploratória, que aplica o limiar mais estrito do próprio STARCOP
+(`configs/data.yaml`'s `has_plume_threshold=0,00244`, equivalente a ~10
+pixels ativos — o mesmo critério de classificação de tile do artigo
+original). No split de teste de `starcop_raw`, por exemplo: 1.706 patches
+têm `frac_positives > 0`, mas apenas 1.067 passam do limiar `has_plume`
+mais estrito — os dois números estão corretos, cada um respondendo a uma
+pergunta diferente; esta seção usa deliberadamente o critério mais
+literal ("alguma pluma"), por ser exatamente o que o plano pede.
+
+### R1 — confirmação sobre o split de teste completo de `starcop_raw`
+
+`confirm_raw.py` ganhou `check_metric_code_on_full_test_split` (E2 não
+treinado, apenas para exercitar a mecânica de acumulação, não a acurácia
+do modelo), executado como parte do mesmo comando único de R1
+(`make coursework-confirm-raw`). **Executado de fato**: processou os
+**16.758 patches** completos do split de teste de `starcop_raw` em
+**77,9s** na GPU, sem OOM e sem truncamento — verificado por
+`patches_processed == 16758`, não apenas pela execução terminar sem erro.
+Essa mesma verificação (`patches_processed == len(split)`) roda em **toda**
+execução de `evaluate.py`, não somente neste teste dedicado.
+
+### Tabela — `mini` (val e teste)
+
+Todos os números lidos diretamente de `mlflow.db` (execuções
+`<arquitetura>-mini-eval`), nunca retranscritos de log de terminal.
+
+| Configuração | Camada (treino) | Split (avaliação) | Precision | Recall | F1 | PR-AUC | Patches com pluma detectados |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| E1 | `mini` | val (49) | 0,4569 | 1,0000 | 0,6272 | 0,8599 | 9/9 |
+| E1 | `mini` | test (441) | 0,9328 | 0,6960 | 0,7972 | 0,8314 | 113/125 |
+| E2 | `mini` | val (49) | 0,1878 | 0,9954 | 0,3160 | 0,6170 | 9/9 |
+| E2 | `mini` | test (441) | 0,6811 | 0,8165 | 0,7427 | 0,8031 | 115/125 |
+| E3 | `mini` | val (49) | 0,0098 | 0,9969 | 0,0194 | 0,7196 | 9/9 |
+| E3 | `mini` | test (441) | 0,1925 | 0,9296 | 0,3190 | 0,6766 | 125/125 |
+
+O `val_f1` desta tabela reproduz **bit a bit** o número já registrado na
+Seção "Experimentos" a partir da curva de treino (0,6272 / 0,3160 /
+0,0194) — checagem cruzada entre a métrica de treino (`train.py::evaluate`)
+e a nova implementação independente (`evaluate.py::evaluate_full_metrics`),
+confirmando que ambas calculam o mesmo TP/FP/FN sobre os mesmos dados.
+**O número de teste é o que importa para a comparação final** (checklist
+de validação desta seção: métricas finais vêm do split de teste, não
+apenas de val) — a ordem por F1 de teste é a mesma de val (E1 > E2 > E3).
+**Por PR-AUC, porém, a ordem muda entre val e teste**: em val, E3
+(0,7196) fica à frente de E2 (0,6170); em teste, a posição se inverte —
+E2 (0,8031) fica à frente de E3 (0,6766), com E1 (0,8314) na liderança
+nos dois splits. Mais um lembrete de que val (49 patches) é pequeno
+demais para ordenar E2/E3 com confiança — o número de teste (441
+patches) é o que deve valer para a comparação final, consistente com o
+item de validação acima.
+
+*Rastreabilidade (`run_id`): E1=`68f9856f`, E2=`33ef5df4`, E3=`9a1f4dd6`.*
+
+### Avaliação cross-tier: modelos treinados em `mini`, avaliados no teste real de `starcop_raw`
+
+Responde à pergunta que a Seção 10 do PDF pede explicitamente: um modelo
+treinado com 392 patches se sustenta na distribuição real? Mesmos
+checkpoints da tabela acima, agora avaliados sobre o split de teste
+**completo** de `starcop_raw` (16.758 patches, `patches_processed`
+conferido nas três execuções):
+
+| Configuração | Camada (treino) | Split (avaliação) | Precision | Recall | F1 | PR-AUC | Patches com pluma detectados |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| E1 | `mini` | `starcop_raw` test (16.758) | 0,7247 | 0,3816 | 0,5000 | 0,4835 | 966/1.706 |
+| E2 | `mini` | `starcop_raw` test (16.758) | 0,5071 | 0,4664 | 0,4859 | 0,3997 | 936/1.706 |
+| E3 | `mini` | `starcop_raw` test (16.758) | 0,0369 | 0,8253 | 0,0706 | 0,2562 | 1.706/1.706 |
+
+**A ordem de F1 de `mini` (E1 > E2 > E3) se mantém** sob avaliação
+cross-tier — evidência de que a comparação em escala `mini` não é
+puramente um artefato de dado pequeno. Todas as três degradam de forma
+substancial (nenhuma foi treinada na distribuição de `starcop_raw`), mas
+não uniformemente: E3 colapsa muito mais (F1 0,3190→0,0706) que E1/E2
+(~0,80→~0,49). A detecção por patch inverte a leitura da Seção anterior:
+E3 ainda "detecta" 100% dos patches positivos (1.706/1.706), mas apenas
+porque prevê positivo em quase tudo (FP=15.137.797, contra apenas
+TP=579.317 — ver matriz de confusão completa em `mlflow.db`) — o mesmo
+comportamento de "over-triggering" já visível em `mini`/teste, agora
+muito mais extremo contra a taxa de pixels positivos ~8,4× mais rara de
+`starcop_raw` (0,26% vs. 2,15%, tabela acima). E1/E2 detectam ~55–57% dos
+patches positivos com uma contagem de falsos positivos muito mais contida.
+
+*Rastreabilidade (`run_id`): E1=`16fd740b`, E2=`39931939`, E3=`ecad8721`.*
+
+### Camada `starcop_raw` — R2 e R3 no teste real (números "cabeçalho" da camada)
+
+R2 (subamostra, 6.076 patches de treino) e R3 (`raw-full`, 141.218
+patches — E1 opcional e não treinado nesta escala, por decisão já
+registrada na Seção 7), avaliados sobre o mesmo split de teste completo
+de `starcop_raw` (16.758 patches) das duas tabelas acima:
+
+| Configuração | Camada (treino) | Split (avaliação) | Precision | Recall | F1 | PR-AUC | Patches com pluma detectados |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| E1 | R2 | `starcop_raw` test (16.758) | 0,0823 | 0,9770 | 0,1518 | 0,2610 | 1.668/1.706 |
+| E2 | R2 | `starcop_raw` test (16.758) | 0,0614 | 0,9847 | 0,1156 | 0,1783 | 1.636/1.706 |
+| E3 | R2 | `starcop_raw` test (16.758) | 0,0895 | 0,9594 | 0,1637 | 0,2968 | 1.686/1.706 |
+| E2 | R3 (`raw-full`) | `starcop_raw` test (16.758) | 0,1524 | 0,9739 | 0,2636 | 0,4445 | 1.671/1.706 |
+| E3 | R3 (`raw-full`) | `starcop_raw` test (16.758) | 0,1302 | 0,9826 | 0,2300 | 0,4389 | 1.684/1.706 |
+
+**R3 supera R2 com clareza no mesmo split real de teste** — E2: F1
+0,1156→0,2636 (mais que dobra), PR-AUC 0,1783→0,4445; E3: F1
+0,1637→0,2300, PR-AUC 0,2968→0,4389. Esta é a evidência mais limpa deste
+projeto de que "mais dado real de treino ajuda": os números de val do
+próprio R2 (tabela da Seção "Experimentos", E1 > E3 > E2 por `val_f1`)
+pareciam razoáveis, mas aquele split de val curado (3.136 patches) não
+revelava o quanto R2 generaliza mal para a distribuição real e maior de
+`starcop_raw`. **A ordem de F1 de R2 no teste real (E3 > E1 > E2) não
+coincide com a ordem do próprio val de R2 (E1 > E3 > E2)** — mais um caso
+(como a inversão mini-vs-r2 pré-correção de reprodutibilidade) de um
+split verdadeiramente independente mudando a conclusão; a ordem de R3
+(E2 > E3) **coincide** com a ordem de val de R3, então essa instabilidade
+é específica do val pequeno/curado de R2, não um problema geral de seleção
+por val.
+
+**Todos os cinco modelos treinados em dados de `starcop_raw` operam com
+recall alto e precision baixa no limiar fixo de 0,5** (recall 0,94–0,98,
+precision 0,06–0,15) — bem diferente dos modelos `mini` avaliados no
+mesmo split (E1/E2 com precision 0,51–0,72, tabela acima). Isso acompanha
+a escala de `pos_weight` por camada (`mini`≈87, R2≈270, R3≈314 —
+Metodologia, acima): a perda de um modelo treinado em `starcop_raw`
+compensa tanto a raridade do positivo que 0,5 deixa de ser um ponto de
+corte bem calibrado especificamente para esses modelos. **Isso é
+exatamente o efeito que a orientação de limiar desta seção antecipava**
+("reportar uma curva PR por modelo para que a escolha do limiar não
+esconda uma diferença real") — PR-AUC (independente de limiar) conta uma
+história mais honesta que F1 em um único ponto fixo aqui, e a Seção de
+Resultados deve liderar com PR-AUC para a comparação da camada `raw`, com
+este efeito de calibração de limiar nomeado explicitamente em vez de lido
+como uma lacuna de qualidade do modelo `raw`.
+
+*Rastreabilidade (`run_id`): E1-R2=`8ce931b7`, E2-R2=`05f1e133`,
+E3-R2=`fce97e40`, E2-R3=`654b13b8`, E3-R3=`3a347b4b`.*
+
+### Curvas Precision-Recall
+
+`coursework/dl-final-project/pr_curve_plots.py` gera as duas figuras
+exigidas por este checklist, ambas com o split de avaliação **fixo** para
+que a comparação não seja confundida por testes diferentes:
+
+**Dentro de uma camada** (E1 vs. E2 vs. E3, todos treinados *e* avaliados
+em `mini`, split de teste):
+
+![Curvas PR — E1 vs E2 vs E3, camada mini](figures/pr_curve_within_tier_mini.png)
+
+Confirma visualmente a ordem de PR-AUC (curva de E1 domina a de E2, ambas
+dominam a de E3).
+
+**Entre camadas** (uma configuração fixa, E2, variando a camada de
+treino — `mini` via avaliação cross-tier, `r2`, `raw-full` — todas as três
+avaliadas sobre o **mesmo** split de teste de `starcop_raw`, do contrário
+"entre camadas" estaria apenas comparando testes diferentes, não dados de
+treino diferentes):
+
+![Curvas PR — E2 entre camadas](figures/pr_curve_across_tiers_e2.png)
+
+Esta é a figura mais reveladora da seção: E2 treinado em `mini` atinge um
+pico de precision ~0,83 (bem acima do pico de `raw-full`, ~0,51), mas
+colapsa de forma acentuada a partir de recall≈0,55; `raw-full` sustenta
+precision moderada por uma faixa de recall muito mais ampla, caindo só
+perto de recall→1. Confirmação visual do efeito de calibração de limiar
+já descrito acima: no limiar fixo de 0,5, o ponto de operação de
+`raw-full` cai numa região da própria curva ainda razoável (recall 0,97,
+F1=0,2636), enquanto o ponto de `mini`-cross-tier (recall 0,47,
+F1=0,4859) já passou do pico da própria curva — as duas configurações
+estão sendo comparadas em pontos não-equivalentes de suas próprias curvas,
+exatamente por isso a comparação da camada `raw` deve liderar com
+PR-AUC/curvas, não com a tabela de F1 em limiar fixo isoladamente. A curva
+de `r2` fica visivelmente abaixo das outras duas, confirmando também
+R3 > R2.
+
+**Reprodutibilidade**: `coursework/dl-final-project/metrics.py`,
+`evaluate.py`, `confirm_raw.py`, `pr_curve_plots.py`, com testes em seus
+respectivos `__tests__/*.py` (116 testes no total do projeto até esta
+seção).
+
 ## Resultados
 
 Todos os números abaixo foram lidos diretamente de `mlflow.db`
