@@ -1,8 +1,9 @@
-"""R1 contract confirmation (plan Section 0.1 / Sections 4-5): the coursework's own
-preprocessing, loader, and architecture code, run against real patches from
+"""R1 contract confirmation (plan Section 0.1 / Sections 4-5-8): the coursework's own
+preprocessing, loader, architecture, and metric code, run against real patches from
 the configured dataset -- shapes, dtypes, post-normalization ranges, band
-order, label passthrough, and (Section 5) a forward+backward pass for every
-model on a real batch. Minutes, not hours; no training.
+order, label passthrough, (Section 5) a forward+backward pass for every
+model on a real batch, and (Section 8) the metric-accumulation code over an
+entire real test split. Minutes, not hours; no training.
 
 Deliberately not a pytest suite: `data/` is entirely gitignored/DVC-tracked,
 so a real slice of it cannot be committed as a test fixture, and a test that
@@ -10,19 +11,21 @@ so a real slice of it cannot be committed as a test fixture, and a test that
 real path -- see Section 4's "Decisions taken at review time" note. This
 script *is* the R1 check; its output is what gets recorded in the plan, the
 same way Section 0.1's `dvc repro` run was recorded as a real run, not a
-test result. Built in Section 4, extended here in Section 5 rather than
-each section inventing its own check, per that same decision.
+test result. Built in Section 4, extended in Section 5 and again in Section 8
+rather than each section inventing its own check, per that same decision.
 
 Usage: python confirm_raw.py [dataset=starcop_raw]
 """
 
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
 import torch
 from architectures import build_e1, build_e2, build_e3
 from dataset import PatchDataset
+from evaluate import evaluate_full_metrics
 from omegaconf import OmegaConf
 from preprocessing import BAND_NORMALIZATION
 from torch.utils.data import DataLoader
@@ -30,6 +33,7 @@ from torch.utils.data import DataLoader
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SAMPLE_SIZE = 300
 _SEED = 42
+_METRIC_CHECK_BATCH_SIZE = 32
 
 
 def _parse_dataset_arg(argv: list[str]) -> str:
@@ -86,6 +90,43 @@ def check_architectures(patch_dataset: PatchDataset, batch_size: int = 8) -> Non
         print(f"  {name}: {n_params:,} params, loss={loss.item():.4f}, all gradients present")
 
 
+def check_metric_code_on_full_test_split(dataset: str) -> None:
+    """R1 (Section 8): `evaluate.evaluate_full_metrics` runs over `dataset`'s *entire*
+    test split -- 16,758 patches for `starcop_raw` -- with incremental accumulation,
+    no OOM, and no silent truncation (verified by `patches_processed` matching the
+    split's own row count, not by this function merely returning).
+
+    Uses a freshly built (untrained) E2 model, inference only: this check is about
+    the accumulation code's mechanics at real scale, not model accuracy -- Section 8's
+    real evaluation runs against trained checkpoints already cover accuracy.
+    """
+    test_path = _REPO_ROOT / "data" / "processed" / dataset / "patches" / "test_tiled_128_128.csv"
+    test_df = pd.read_csv(test_path, low_memory=False)
+    print(f"  metric code: full test split for {dataset} has {len(test_df)} patches")
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = build_e2(pretrained=False).to(device)
+    loader = DataLoader(
+        PatchDataset(test_df, dataset=dataset, augment=False),
+        batch_size=_METRIC_CHECK_BATCH_SIZE,
+        num_workers=4,
+    )
+
+    start = time.perf_counter()
+    result = evaluate_full_metrics(model, loader, device)
+    elapsed = time.perf_counter() - start
+
+    assert result["patches_processed"] == len(test_df), (
+        f"processed {result['patches_processed']} patches, expected {len(test_df)} "
+        "-- the split was silently truncated"
+    )
+    print(
+        f"  metric code: processed all {result['patches_processed']} patches in "
+        f"{elapsed:.1f}s on {device}, no OOM, no truncation "
+        f"(confusion_matrix={result['confusion_matrix']})"
+    )
+
+
 def run(dataset: str) -> None:
     """Run every R1 check against a real sample of `dataset` and print a pass/fail summary."""
     print(f"R1 confirmation -- dataset={dataset}")
@@ -139,6 +180,7 @@ def run(dataset: str) -> None:
     )
 
     check_architectures(patch_dataset)
+    check_metric_code_on_full_test_split(dataset)
     print("R1 PASSED")
 
 
