@@ -26,7 +26,9 @@ SCRIPTS_TEST_PATHS := scripts/__tests__
 ENV_COURSEWORK_PYTHON := .venv/bin/python
 COURSEWORK_PATH := coursework/dl-final-project
 
-.PHONY: coursework-test coursework-lint coursework-train coursework-confirm-raw
+.PHONY: coursework-test coursework-lint coursework-train coursework-confirm-raw \
+	coursework-evaluate-mini coursework-evaluate-cross-tier coursework-evaluate-r2 \
+	coursework-evaluate-r3 coursework-evaluate coursework-pr-curves
 
 coursework-test:
 	$(ENV_COURSEWORK_PYTHON) -m pytest $(COURSEWORK_PATH) -v
@@ -47,6 +49,52 @@ coursework-train:
 #   dvc repro normalize@starcop_raw split@starcop_raw patch_extract@starcop_raw
 coursework-confirm-raw:
 	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/confirm_raw.py dataset=starcop_raw
+
+# --- Section 8 evaluation sweep -----------------------------------------
+# Per-pixel Precision/Recall/F1/confusion-matrix/PR-AUC/per-patch-detection
+# scoring (evaluate.py) against the checkpoints Section 7 already trained --
+# see report.md's "Métricas de avaliação" for the numbers these produced.
+# `-cross-tier`/`-r2`/`-r3` require data/processed/starcop_raw/ to exist
+# (same prerequisite as coursework-confirm-raw, above) and their checkpoints
+# to already be trained (checkpoints/<arch>-{r2,raw-full}.pt).
+
+# mini tier: val+test for each of E1/E2/E3's own checkpoint.
+coursework-evaluate-mini:
+	for arch in E1 E2 E3; do \
+		$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate.py architecture=$$arch dataset=starcop_mini tier=mini; \
+	done
+
+# Cross-tier: mini-trained checkpoints scored on starcop_raw's own test split
+# -- does a model trained on 392 patches hold up on the real distribution?
+coursework-evaluate-cross-tier:
+	for arch in E1 E2 E3; do \
+		$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate.py architecture=$$arch dataset=starcop_raw tier=raw-full checkpoint_tier=mini splits=test; \
+	done
+
+# R2 (raw subsample-trained) checkpoints, scored on starcop_raw's own full test split.
+coursework-evaluate-r2:
+	for arch in E1 E2 E3; do \
+		$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate.py architecture=$$arch dataset=starcop_raw tier=r2 splits=test; \
+	done
+
+# R3 (raw-full-trained) checkpoints -- E2/E3 only, E1 optional per Section 7's
+# own decision -- scored on starcop_raw's own full test split.
+coursework-evaluate-r3:
+	for arch in E2 E3; do \
+		$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate.py architecture=$$arch dataset=starcop_raw tier=raw-full splits=test; \
+	done
+
+# Everything above, in one shot -- reproduces every evaluate.py run Section 8
+# executed (11 total). Minutes, not hours, but real GPU inference over up to
+# 16,758 patches per run -- expect roughly 15-20 minutes end to end.
+coursework-evaluate: coursework-evaluate-mini coursework-evaluate-cross-tier coursework-evaluate-r2 coursework-evaluate-r3
+
+# PR-curve comparison plots (Section 8's final Activities item) -- reads the
+# MLflow artifacts the targets above log, so run coursework-evaluate first
+# (or at least -mini, -cross-tier, and -r2/-r3 for the E2 configurations it
+# plots) if those runs aren't already in mlflow.db.
+coursework-pr-curves:
+	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/pr_curve_plots.py
 
 .PHONY: test-baseline coverage test-research coverage-research badges badges-research test docstring-coverage test-scripts lint docs-serve docs-build mutation-research mutation-baseline mutation-gate
 
