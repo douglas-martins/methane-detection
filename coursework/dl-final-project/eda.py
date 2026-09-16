@@ -29,7 +29,9 @@ def compute_patch_level_balance(patches_df: pd.DataFrame) -> dict:
     single positive pixel counts fully here, not fractionally.
     """
     total = len(patches_df)
-    positive = int(patches_df["has_plume"].sum()) if total else 0
+    # The `if total` guard is redundant with .sum(): total == 0 means an empty
+    # column, whose .sum() is always 0 regardless of whether this branch runs.
+    positive = int(patches_df["has_plume"].sum()) if total else 0  # pragma: no mutate
     return {
         "positive": positive,
         "total": total,

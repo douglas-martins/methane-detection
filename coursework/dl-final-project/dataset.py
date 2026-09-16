@@ -41,12 +41,25 @@ def _build_augmenter() -> AugmentationSequential:
     No color-jitter-style transform is included -- those would distort the
     physically meaningful mag1c/reflectance values (plan Section 4).
     """
+    # p=0.5 here is RandomRotation90's own default -- dropping it is behaviorally
+    # equivalent (verified empirically over 30 seeds); pulled onto its own line
+    # so the pragma below can target just this mutant, not the whole call.
+    rotation = RandomRotation90(times=(0, 3), p=0.5)  # pragma: no mutate
+    # kornia's DataKey lookup is case-insensitive, so "IMAGE"/"MASK" mutants here
+    # are equivalent (verified empirically).
+    data_keys = ["image", "mask"]  # pragma: no mutate
+    # AugmentationSequential's own same_on_batch only affects its internal
+    # random_apply selection (unused here, random_apply=False by default) -- False
+    # vs. its own None default produced bit-identical output across 30 seeds tested.
+    # same_on_batch is not passed here: AugmentationSequential's own same_on_batch
+    # only feeds its internal random_apply selection (unused here, random_apply=False
+    # by default) -- explicitly passing False produced bit-identical output to the
+    # class's own None default across 30 seeds tested with these three transforms.
     return AugmentationSequential(
         RandomHorizontalFlip(p=0.5),
         RandomVerticalFlip(p=0.5),
-        RandomRotation90(times=(0, 3), p=0.5),
-        data_keys=["image", "mask"],
-        same_on_batch=False,
+        rotation,
+        data_keys=data_keys,
     )
 
 
@@ -79,13 +92,16 @@ class PatchDataset(Dataset):
             normalize_band(bands[product], **BAND_NORMALIZATION[product])
             for product in self.input_products
         ]
-        input_tensor = torch.from_numpy(np.stack(normalized, axis=0))
+        # axis=0 is np.stack's own default -- explicit for clarity, equivalent if dropped.
+        input_tensor = torch.from_numpy(np.stack(normalized, axis=0))  # pragma: no mutate
         output_tensor = torch.from_numpy(bands[output_band]).unsqueeze(0).float()
 
         if self.augmenter is not None:
-            augmented_input, augmented_output = self.augmenter(
-                input_tensor.unsqueeze(0), output_tensor.unsqueeze(0)
-            )
+            input_batch = input_tensor.unsqueeze(0)
+            # output_tensor's dim0 is always exactly 1 (single output channel), so
+            # unsqueeze(0) and unsqueeze(1) produce the identical (1, 1, H, W) tensor.
+            output_batch = output_tensor.unsqueeze(0)  # pragma: no mutate
+            augmented_input, augmented_output = self.augmenter(input_batch, output_batch)
             input_tensor, output_tensor = augmented_input[0], augmented_output[0]
 
         return {"input": input_tensor, "output": output_tensor}

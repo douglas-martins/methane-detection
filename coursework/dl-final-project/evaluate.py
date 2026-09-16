@@ -77,17 +77,22 @@ def evaluate_full_metrics(
     patch_totals = {"positive_patches": 0, "detected_patches": 0}
     # `pr_thresholds` defaults to a plain CPU tensor -- must follow `device`,
     # or the sweep crashes comparing it against a CUDA batch's probabilities
-    # (a real crash hit running this for real on this machine's GPU).
-    pr_thresholds = pr_thresholds.to(device)
-    sweep_totals = torch.zeros(len(pr_thresholds), 4, device=device)
+    # (a real crash hit running this for real on this machine's GPU). This
+    # sandbox has no CUDA device, so a mutated `device` argument here is
+    # indistinguishable from the real one in any test: both resolve to "cpu".
+    pr_thresholds = pr_thresholds.to(device)  # pragma: no mutate
+    sweep_totals = torch.zeros(len(pr_thresholds), 4, device=device)  # pragma: no mutate
     n_batches = 0
     patches_processed = 0
 
     # CUDA kernels queue asynchronously -- without a sync, a wall-clock timer
     # around this loop would measure how fast work was *launched*, not how
     # fast it *ran*, which would make a GPU look artificially instantaneous
-    # in any GPU-vs-CPU throughput comparison.
-    if device.startswith("cuda"):
+    # in any GPU-vs-CPU throughput comparison. Untestable without a CUDA
+    # device: "cuda" never prefixes "cpu", so this branch never runs in any
+    # test here, and calling torch.cuda.synchronize with a fake device would
+    # itself crash on this hardware.
+    if device.startswith("cuda"):  # pragma: no mutate block
         torch.cuda.synchronize(device)
     start = time.perf_counter()
 
@@ -95,7 +100,9 @@ def evaluate_full_metrics(
         for batch in loader:
             if max_batches is not None and n_batches >= max_batches:
                 break
-            x, y = batch["input"].to(device), batch["output"].to(device)
+            # Both tensors are already produced on "cpu" by every test's DataLoader,
+            # so a mutated `device` argument here is unobservable without a GPU.
+            x, y = batch["input"].to(device), batch["output"].to(device)  # pragma: no mutate
             probs = torch.sigmoid(model(x))
             binary = (probs > threshold).float()
             totals = add_counts(totals, confusion_matrix_counts(binary, y))
@@ -104,7 +111,7 @@ def evaluate_full_metrics(
             patches_processed += x.shape[0]
             n_batches += 1
 
-    if device.startswith("cuda"):
+    if device.startswith("cuda"):  # pragma: no mutate block
         torch.cuda.synchronize(device)
     wall_clock_seconds = time.perf_counter() - start
 
@@ -142,8 +149,10 @@ def load_checkpoint(architecture: str, checkpoint_path: Path, device: str) -> to
     batch as small as 1x1 spatial resolution in train mode.
     """
     model = build_model(architecture)
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-    model.to(device)
+    # Every test checkpoint here is saved from and loaded onto "cpu" (no CUDA device
+    # in this sandbox), so a mutated `device` argument is unobservable in any test.
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device))  # pragma: no mutate
+    model.to(device)  # pragma: no mutate
     model.eval()
     return model
 

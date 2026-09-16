@@ -98,8 +98,11 @@ def sweep_confusion_counts(
     tensor addition), so PR-AUC over a large split never requires holding
     every prediction in memory at once.
     """
-    flat_probs = probs.reshape(1, -1)
-    flat_targets = targets.reshape(1, -1)
+    # The leading size-1 dim from reshape(1, -1) is only there for readability --
+    # broadcasting against thresholds.reshape(-1, 1) gives an identical (T, N)
+    # result whether or not it's present, so dropping it is behaviorally equivalent.
+    flat_probs = probs.reshape(1, -1)  # pragma: no mutate
+    flat_targets = targets.reshape(1, -1)  # pragma: no mutate
     predicted = (flat_probs > thresholds.reshape(-1, 1)).float()
     true_positive = (predicted * flat_targets).sum(dim=1)
     false_positive = (predicted * (1 - flat_targets)).sum(dim=1)
@@ -125,7 +128,10 @@ def precision_recall_points_from_sweep(sweep_counts: torch.Tensor) -> list[tuple
         true_positive / (true_positive + false_negative),
         torch.zeros_like(true_positive),
     )
-    return list(zip(recall.tolist(), precision.tolist(), strict=True))
+    # recall and precision are both derived via torch.where over tensors of the
+    # same shape (unbound from the same sweep_counts rows), so their .tolist()
+    # lengths can never differ -- strict=True can never actually raise here.
+    return list(zip(recall.tolist(), precision.tolist(), strict=True))  # pragma: no mutate
 
 
 def sort_points_by_recall(points: list[tuple[float, float]]) -> list[tuple[float, float]]:

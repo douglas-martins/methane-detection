@@ -21,7 +21,9 @@ def sample_flightlines(patches_df: pd.DataFrame, n_flightlines: int, seed: int) 
             f"Not enough flightlines: need {n_flightlines}, have {len(unique_flightlines)}"
         )
     rng = np.random.default_rng(seed)
-    selected = rng.choice(unique_flightlines, size=n_flightlines, replace=False)
+    selected = rng.choice(
+        unique_flightlines, size=n_flightlines, replace=False
+    )  # pragma: no mutate -- replace=None is equivalent (falsy, numpy treats it as False)
     return sorted(selected.tolist())
 
 
