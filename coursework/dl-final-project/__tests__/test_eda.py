@@ -77,6 +77,56 @@ class TestSelectExamplePatches:
         with pytest.raises(ValueError, match="negative"):
             select_example_patches(df, n_positive=1, n_negative=2, seed=42)
 
+    def test_does_not_raise_when_exactly_enough_positive_patches(self):
+        df = _patches_df(has_plume=[True, True, False], frac_positives=[0.1, 0.2, 0.0])
+        selected = select_example_patches(df, n_positive=2, n_negative=1, seed=42)
+        assert selected["has_plume"].sum() == 2
+
+    def test_does_not_raise_when_exactly_enough_negative_patches(self):
+        df = _patches_df(has_plume=[True, False, False], frac_positives=[0.1, 0.0, 0.0])
+        selected = select_example_patches(df, n_positive=1, n_negative=2, seed=42)
+        assert (~selected["has_plume"]).sum() == 2
+
+    def test_result_has_a_clean_contiguous_index(self):
+        # hardest/extra_positive/chosen_negative each keep their original
+        # (non-contiguous) index from patches_df; the concat must reset it.
+        df = _patches_df(
+            has_plume=[True, True, True, False, False, False],
+            frac_positives=[0.05, 0.003, 0.2, 0.0, 0.0, 0.0],
+        )
+        selected = select_example_patches(df, n_positive=2, n_negative=2, seed=42)
+        assert list(selected.index) == list(range(len(selected)))
+
+    def test_sampling_uses_the_correct_count_and_seed_for_each_group(self, monkeypatch):
+        # A spy on DataFrame.sample, rather than relying on output randomness,
+        # deterministically verifies n_positive-1/n_negative and seed are
+        # actually threaded through to both sample() calls.
+        df = _patches_df(
+            has_plume=[True, True, True, False, False, False],
+            frac_positives=[0.05, 0.003, 0.2, 0.0, 0.0, 0.0],
+        )
+        captured = []
+        original_sample = pd.DataFrame.sample
+
+        def spy_sample(self, *args, **kwargs):
+            captured.append(
+                {
+                    "n_rows": len(self),
+                    "n": kwargs.get("n"),
+                    "random_state": kwargs.get("random_state"),
+                }
+            )
+            return original_sample(self, *args, **kwargs)
+
+        monkeypatch.setattr(pd.DataFrame, "sample", spy_sample)
+
+        select_example_patches(df, n_positive=3, n_negative=2, seed=99)
+
+        # remaining_positive: 3 positives - 1 hardest = 2 rows, request n=2 (n_positive-1).
+        assert {"n_rows": 2, "n": 2, "random_state": 99} in captured
+        # negatives: 3 available, request n=2 (n_negative).
+        assert {"n_rows": 3, "n": 2, "random_state": 99} in captured
+
 
 class TestReadPatchBands:
     def test_reads_the_requested_window_from_each_band(self, tmp_path, tiny_geotiff_factory):
@@ -122,3 +172,26 @@ class TestRgbComposite:
         }
         composite = rgb_composite(bands, "r", "g", "b")
         assert not np.isnan(composite).any()
+
+    def test_scales_relative_to_the_bands_own_min_not_from_zero(self):
+        # min=2, max=6 -> span=4: a min-blind formula (e.g. summing instead of
+        # subtracting the min) would only be caught by a nonzero band_min.
+        bands = {
+            "r": np.array([[2.0, 6.0]], dtype="float32"),
+            "g": np.array([[0.0, 1.0]], dtype="float32"),
+            "b": np.array([[0.0, 1.0]], dtype="float32"),
+        }
+        composite = rgb_composite(bands, "r", "g", "b")
+        np.testing.assert_allclose(composite[0, :, 0], [0.0, 1.0])
+
+    def test_output_is_always_float32_regardless_of_input_dtype(self):
+        # r is constant (zeros_like branch), g/b are not (scale branch) --
+        # covers both branches' dtype cast in one composite array, since
+        # np.stack would upcast the whole result if either returned float64.
+        bands = {
+            "r": np.array([[5.0, 5.0]], dtype="float64"),
+            "g": np.array([[0.0, 1.0]], dtype="float64"),
+            "b": np.array([[0.0, 1.0]], dtype="float64"),
+        }
+        composite = rgb_composite(bands, "r", "g", "b")
+        assert composite.dtype == np.float32

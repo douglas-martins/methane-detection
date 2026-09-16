@@ -21,6 +21,38 @@ import rasterio
 from rasterio.transform import from_origin
 
 
+def _find_repo_root_containing_configs(start: Path) -> Path:
+    """Climb from `start` until a directory containing `configs/dataset/` is found."""
+    candidate = start
+    while not (candidate / "configs" / "dataset").is_dir():
+        if candidate.parent == candidate:
+            raise RuntimeError(f"no configs/dataset/ found above {start}")
+        candidate = candidate.parent
+    return candidate
+
+
+@pytest.fixture(autouse=True)
+def _fix_dataset_repo_root_for_copied_trees():
+    """Repatch `dataset._REPO_ROOT` to the real repo root, independent of copy depth.
+
+    `dataset.py` computes its repo root via a fixed `Path(__file__).parents[2]`
+    climb, which assumes it lives exactly two directories below the repo
+    root. Any tool that copies this file to a different relative depth (e.g.
+    mutmut's `mutants/` copy inserts one extra directory) breaks that fixed
+    climb. Repatched here -- a test-only fix, no change to dataset.py's
+    runtime behavior -- by walking up from this conftest's own (also-copied)
+    location instead, which finds the real root regardless of copy depth.
+    """
+    if "dataset" not in sys.modules:
+        yield
+        return
+    dataset_module = sys.modules["dataset"]
+    original_repo_root = dataset_module._REPO_ROOT
+    dataset_module._REPO_ROOT = _find_repo_root_containing_configs(Path(__file__).resolve().parent)
+    yield
+    dataset_module._REPO_ROOT = original_repo_root
+
+
 @pytest.fixture
 def tiny_geotiff_factory():
     """Write a tiny single-band GeoTIFF with a given pixel array.

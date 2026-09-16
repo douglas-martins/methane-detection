@@ -20,6 +20,13 @@ class TestComputePosWeight:
         with pytest.raises(ValueError, match="no positive pixels"):
             compute_pos_weight(df)
 
+    def test_raises_with_the_exact_documented_message(self):
+        df = pd.DataFrame({"frac_positives": [0.0]})
+        with pytest.raises(
+            ValueError, match="^patches_df has no positive pixels at all; pos_weight is undefined$"
+        ):
+            compute_pos_weight(df)
+
 
 class TestBuildLoss:
     def test_returns_a_bce_with_logits_loss_carrying_pos_weight(self):
@@ -51,3 +58,13 @@ class TestIsDegenerate:
         predictions = torch.zeros(4, 1, 8, 8)
         predictions[0, 0, 0, 0] = 1.0
         assert is_degenerate(predictions) is False
+
+    def test_value_exactly_at_the_lower_epsilon_boundary_is_not_flagged(self):
+        # Strict `<` -- a value exactly equal to epsilon is not collapsed.
+        predictions = torch.full((4, 1, 8, 8), 1e-6)
+        assert is_degenerate(predictions, epsilon=1e-6) is False
+
+    def test_value_exactly_at_the_upper_epsilon_boundary_is_not_flagged(self):
+        # Strict `>` -- a value exactly equal to 1 - epsilon is not collapsed.
+        predictions = torch.full((4, 1, 8, 8), 1 - 1e-6)
+        assert is_degenerate(predictions, epsilon=1e-6) is False

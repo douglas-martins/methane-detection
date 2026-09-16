@@ -37,6 +37,11 @@ class TestSampleFlightlines:
         except ValueError as error:
             assert "flightline" in str(error)
 
+    def test_does_not_raise_when_exactly_enough_flightlines(self):
+        df = _patches_df([f"fl{i}" for i in range(5)])
+        selected = sample_flightlines(df, n_flightlines=5, seed=42)
+        assert len(selected) == 5
+
 
 class TestBuildR2Manifest:
     def test_keeps_only_patches_from_sampled_flightlines(self):
@@ -62,3 +67,9 @@ class TestBuildR2Manifest:
         first = build_r2_manifest(df, n_flightlines=4, seed=99)
         second = build_r2_manifest(df, n_flightlines=4, seed=99)
         assert list(first["id"]) == list(second["id"])
+
+    def test_index_is_reset_not_kept_as_a_column(self):
+        df = _patches_df([f"fl{i}" for i in range(10) for _ in range(2)])
+        manifest = build_r2_manifest(df, n_flightlines=3, seed=1)
+        assert list(manifest.columns) == ["id", "name"]
+        assert list(manifest.index) == list(range(len(manifest)))

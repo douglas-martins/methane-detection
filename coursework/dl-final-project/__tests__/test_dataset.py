@@ -4,8 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
-from dataset import PatchDataset
+from dataset import PatchDataset, _load_dataset_config
 from kornia.augmentation import AugmentationSequential
+from omegaconf import OmegaConf
 
 
 def _make_scene(tiny_geotiff_factory, tmp_path, name="scene", size=8):
@@ -51,6 +52,56 @@ class TestPatchDatasetShapesAndDtypes:
         assert item["input"].dtype == torch.float32
         assert item["output"].shape == (1, 8, 8)
 
+    def test_reads_only_the_declared_window_not_the_whole_file(
+        self, tmp_path, tiny_geotiff_factory
+    ):
+        # Scene is larger than the declared patch window, with a distinctive
+        # marker placed outside it -- reading the whole file instead of the
+        # declared window (e.g. a dropped/None window) would leak it in.
+        folder, bands = _make_scene(tiny_geotiff_factory, tmp_path, size=16)
+        bands["mag1c"][12, 12] = 1e9  # outside the 0:8, 0:8 window below
+        _write_scene(tiny_geotiff_factory, folder, bands)
+        row = _patch_row(folder, size=16)
+        row["window_width"] = 8
+        row["window_height"] = 8
+        df = pd.DataFrame([row])
+
+        item = PatchDataset(df, dataset="starcop_mini", augment=False)[0]
+
+        assert item["input"].shape == (4, 8, 8)
+        assert item["input"][0].max().item() < 1.0
+
+
+class TestLoadDatasetConfig:
+    def test_reads_from_the_exact_lowercase_configs_dataset_path(self, monkeypatch):
+        # Assert the literal path components, not just that some file was
+        # found -- a case-mismatched path (e.g. "CONFIGS") still resolves on
+        # macOS's default case-insensitive filesystem, silently masking a bug
+        # that would fail on a case-sensitive one.
+        captured = {}
+
+        def fake_load(path):
+            captured["path"] = path
+            return OmegaConf.create({"dataset_cfg": {"input_products": [], "output_products": []}})
+
+        monkeypatch.setattr("dataset.OmegaConf.load", fake_load)
+
+        _load_dataset_config("starcop_mini")
+
+        assert captured["path"].parts[-3:] == ("configs", "dataset", "starcop_mini.yaml")
+
+
+class TestPatchDatasetInit:
+    def test_patches_df_index_is_reset(self, tmp_path, tiny_geotiff_factory):
+        folder, bands = _make_scene(tiny_geotiff_factory, tmp_path)
+        _write_scene(tiny_geotiff_factory, folder, bands)
+        df = pd.DataFrame([_patch_row(folder)], index=[7])
+
+        dataset = PatchDataset(df, dataset="starcop_mini", augment=False)
+
+        assert list(dataset.patches_df.index) == [0]
+        assert "index" not in dataset.patches_df.columns
+
 
 class TestPatchDatasetBandOrder:
     def test_channel_order_matches_the_dataset_config(self, tmp_path, tiny_geotiff_factory):
@@ -67,8 +118,11 @@ class TestPatchDatasetBandOrder:
 
         item = PatchDataset(df, dataset="starcop_mini", augment=False)[0]
 
+        from conftest import _find_repo_root_containing_configs
+
+        repo_root = _find_repo_root_containing_configs(Path(__file__).resolve().parent)
         expected_config = __import__("omegaconf").OmegaConf.load(
-            Path(__file__).resolve().parents[3] / "configs" / "dataset" / "starcop_mini.yaml"
+            repo_root / "configs" / "dataset" / "starcop_mini.yaml"
         )
         input_products = list(expected_config.dataset_cfg.input_products)
         expected_means = {
@@ -137,3 +191,27 @@ class TestPatchDatasetAugmentation:
             marker_row, marker_col = (mask == 1).nonzero(as_tuple=True)
             mag1c_channel = item["input"][0]
             assert mag1c_channel[marker_row, marker_col].item() == pytest.approx(2.0)
+
+    def test_augmenter_includes_90_degree_rotation_not_only_flips(
+        self, tmp_path, tiny_geotiff_factory
+    ):
+        # Horizontal + vertical flip alone can only reach 4 marker positions
+        # (identity, hflip, vflip, hflip+vflip); a real 90-degree rotation
+        # reaches 8. Distinguishes an augmenter missing RandomRotation90 from
+        # one that has it -- the marker-stays-aligned test above can't, since
+        # alignment holds regardless of which transforms are included.
+        folder, bands = _make_scene(tiny_geotiff_factory, tmp_path, size=8)
+        bands["mag1c"][1, 5] = 1e9
+        bands["labelbinary"][1, 5] = 1.0
+        _write_scene(tiny_geotiff_factory, folder, bands)
+        df = pd.DataFrame([_patch_row(folder, size=8)])
+        dataset = PatchDataset(df, dataset="starcop_mini", augment=True)
+
+        torch.manual_seed(0)
+        positions = set()
+        for _ in range(200):
+            item = dataset[0]
+            row, col = (item["output"][0] == 1).nonzero(as_tuple=True)
+            positions.add((row.item(), col.item()))
+
+        assert len(positions) > 4

@@ -40,3 +40,13 @@ class TestNormalizeBand:
         array = np.array([[0.0, 1.0]], dtype="float64")
         result = normalize_band(array, offset=0, factor=1, clip=(0, 2))
         assert result.dtype == np.float32
+
+    def test_input_is_cast_to_float32_before_subtracting_offset(self):
+        # 2**24 + 1 has no exact float32 representation, so casting the raw
+        # input to float32 *before* subtracting the offset (STARCOP's own
+        # order) rounds it down to 2**24 -- the subtraction then yields 0,
+        # not 1. Casting only at the end (skipping the intermediate cast)
+        # would keep float64 precision through the subtraction and give 1.
+        array = np.array([[16777217.0]], dtype="float64")
+        result = normalize_band(array, offset=16777216, factor=1, clip=(0, 1_000_000))
+        assert result[0, 0] == 0.0

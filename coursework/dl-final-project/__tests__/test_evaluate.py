@@ -110,6 +110,68 @@ class TestEvaluateFullMetrics:
 
         assert result["recall"] == 1.0
 
+    def test_stops_after_exactly_max_batches_out_of_more_than_two(self):
+        # 3 batches with max_batches=2 -- distinguishes a broken n_batches
+        # accumulator (e.g. always resetting to 1, or incrementing by 2 each
+        # time) from a real running count, which test_stops_after_max_batches
+        # above (only 2 batches) can't: after exactly one increment, a
+        # hardcoded "= 1" and a real "+= 1" both happen to read 1.
+        batches = [
+            {"input": torch.zeros(1, 4, 1, 1), "output": torch.tensor([[[[1.0]]]])}
+            for _ in range(3)
+        ]
+        model = _FixedLogitModel([torch.zeros(1, 1, 1, 1)] * 3)
+
+        result = evaluate_full_metrics(model, batches, device="cpu", max_batches=2)
+
+        assert result["patches_processed"] == 2
+
+    def test_model_receives_the_batchs_actual_input_tensor(self):
+        # A model that ignores its argument (like _FixedLogitModel) can't
+        # distinguish a correctly-passed input from a dropped one -- record
+        # what's actually received instead.
+        received = []
+
+        class _RecordingModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.dummy = torch.nn.Parameter(torch.zeros(1))
+
+            def forward(self, x):
+                received.append(x)
+                return torch.zeros(1, 1, 1, 1)
+
+        batch_input = torch.full((1, 4, 1, 1), 3.0)
+        batches = [{"input": batch_input, "output": torch.zeros(1, 1, 1, 1)}]
+
+        evaluate_full_metrics(_RecordingModel(), batches, device="cpu")
+
+        assert received[0] is not None
+        torch.testing.assert_close(received[0], batch_input)
+
+    def test_probability_exactly_at_threshold_is_not_predicted_positive(self):
+        # Strict `>` -- sigmoid(0) == 0.5 exactly, so this must miss the one
+        # true positive (fn=1), not count it (tp=1).
+        batches = [{"input": torch.zeros(1, 4, 1, 1), "output": torch.tensor([[[[1.0]]]])}]
+        model = _FixedLogitModel([torch.zeros(1, 1, 1, 1)])
+
+        result = evaluate_full_metrics(model, batches, device="cpu", threshold=0.5)
+
+        assert result["confusion_matrix"] == [[0.0, 0.0], [1.0, 0.0]]
+
+    def test_wall_clock_is_the_elapsed_duration_not_a_sum_of_timestamps(self, monkeypatch):
+        # perf_counter() is an arbitrary large reference point, not zero-based
+        # -- summing two calls instead of subtracting would give a huge wrong
+        # duration that a mere "> 0" check can't distinguish from a real one.
+        timestamps = iter([1000.0, 1000.25])
+        monkeypatch.setattr("evaluate.time.perf_counter", lambda: next(timestamps))
+        batches = [{"input": torch.zeros(1, 4, 1, 1), "output": torch.zeros(1, 1, 1, 1)}]
+        model = _FixedLogitModel([torch.zeros(1, 1, 1, 1)])
+
+        result = evaluate_full_metrics(model, batches, device="cpu")
+
+        assert result["wall_clock_seconds"] == pytest.approx(0.25)
+
 
 class TestEvaluateFullMetricsPRAUC:
     def test_computes_pr_auc_over_the_given_threshold_sweep(self):
@@ -134,6 +196,23 @@ class TestEvaluateFullMetricsPRAUC:
         assert result["precision_recall_curve"] == pytest.approx(
             [(1.0, 0.5), (0.5, 0.5), (0.0, 0.0)], abs=1e-4
         )
+
+    def test_sweep_pools_across_batches_not_just_the_last_one(self):
+        # Batch 1: tp=1 at threshold 0.5 (correct positive). Batch 2: fn=1
+        # (missed positive). Pooled: recall=0.5, precision=1.0 -> AP=0.5.
+        # If only the last batch's sweep counted (a broken `=` instead of
+        # `+=` accumulator), it would see only batch 2's tp=0, fn=1 -> AP=0.0.
+        batches = [
+            {"input": torch.zeros(1, 4, 1, 1), "output": torch.tensor([[[[1.0]]]])},
+            {"input": torch.zeros(1, 4, 1, 1), "output": torch.tensor([[[[1.0]]]])},
+        ]
+        model = _FixedLogitModel([torch.full((1, 1, 1, 1), 5.0), torch.full((1, 1, 1, 1), -5.0)])
+
+        result = evaluate_full_metrics(
+            model, batches, device="cpu", pr_thresholds=torch.tensor([0.5])
+        )
+
+        assert result["pr_auc"] == pytest.approx(0.5)
 
     def test_defaults_to_a_101_point_threshold_sweep(self):
         batches = [{"input": torch.zeros(1, 4, 1, 1), "output": torch.tensor([[[[1.0]]]])}]

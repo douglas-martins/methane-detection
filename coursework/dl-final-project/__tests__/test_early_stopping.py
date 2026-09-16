@@ -32,3 +32,23 @@ class TestEarlyStopper:
         assert stopper.is_best is True
         stopper.step(1.5)
         assert stopper.is_best is False
+
+    def test_mode_defaults_to_min(self):
+        stopper = EarlyStopper(patience=1)
+        stopper.step(0.5)  # best so far
+        assert stopper.step(0.6) is True  # higher is worse under min-mode default
+
+    def test_initial_state_before_any_step(self):
+        stopper = EarlyStopper(patience=2, mode="min")
+        assert stopper.counter == 0
+        assert stopper.is_best is False
+
+    def test_equal_value_does_not_count_as_improvement_in_min_mode(self):
+        stopper = EarlyStopper(patience=1, mode="min")
+        stopper.step(1.0)  # best so far
+        assert stopper.step(1.0) is True  # tie is not an improvement, patience exhausted
+
+    def test_equal_value_does_not_count_as_improvement_in_max_mode(self):
+        stopper = EarlyStopper(patience=1, mode="max")
+        stopper.step(1.0)  # best so far
+        assert stopper.step(1.0) is True  # tie is not an improvement, patience exhausted

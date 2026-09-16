@@ -105,6 +105,16 @@ class TestPrecisionRecallF1FromCounts:
         assert result == 0.0
         assert not torch.isnan(torch.tensor(result))
 
+    def test_denominator_of_exactly_one_is_still_a_valid_denominator(self):
+        # Regression for a `> 0` vs `> 1` boundary slip: denominator == 1 must
+        # still take the division branch, not fall through to the 0.0 default.
+        assert precision_from_counts({"tp": 1.0, "fp": 0.0, "fn": 0.0, "tn": 0.0}) == 1.0
+        assert recall_from_counts({"tp": 1.0, "fp": 0.0, "fn": 0.0, "tn": 0.0}) == 1.0
+        # f1's denominator is `2*tp + fp + fn`, always even when tp>0 is an
+        # integer count, so it can only equal exactly 1 with a fractional tp
+        # -- exercise that directly rather than only through pixel counts.
+        assert f1_from_counts({"tp": 0.5, "fp": 0.0, "fn": 0.0, "tn": 0.0}) == 1.0
+
 
 class TestConfusionMatrixFromCounts:
     def test_layout_is_tn_fp_fn_tp(self):
@@ -143,6 +153,18 @@ class TestSweepConfusionCounts:
         # tp=1 (0,0), fp=1 (1,1), fn=1 (1,0), tn=1 (0,1).
         assert torch.equal(counts, torch.tensor([[1.0, 1.0, 1.0, 1.0]]))
 
+    def test_probability_exactly_at_threshold_is_not_predicted_positive(self):
+        # Strict `>` -- a probability exactly equal to the threshold does not
+        # count as a positive prediction.
+        probs = torch.tensor([0.5])
+        targets = torch.tensor([1.0])
+        thresholds = torch.tensor([0.5])
+
+        counts = sweep_confusion_counts(probs, targets, thresholds)
+
+        # Not predicted positive -> tp=0, fn=1 (the one true positive was missed).
+        assert torch.equal(counts, torch.tensor([[0.0, 0.0, 1.0, 0.0]]))
+
 
 class TestPrecisionRecallPointsFromSweep:
     def test_matches_hand_computed_points(self):
@@ -161,6 +183,15 @@ class TestPrecisionRecallPointsFromSweep:
 
         assert points[0] == (0.0, 0.0)
 
+    def test_denominator_of_exactly_one_is_still_a_valid_denominator(self):
+        # tp=1, fp=0, fn=0 -> precision denom = recall denom = 1. Regression
+        # for a `> 0` vs `> 1` boundary slip in either torch.where condition.
+        sweep_counts = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+
+        points = precision_recall_points_from_sweep(sweep_counts)
+
+        assert points == [(1.0, 1.0)]
+
 
 class TestSortPointsByRecall:
     def test_sorts_ascending_by_recall(self):
@@ -173,6 +204,13 @@ class TestSortPointsByRecall:
         points = [(0.0, 0.0), (0.5, 0.5), (1.0, 0.5)]
 
         assert sort_points_by_recall(points) == points
+
+    def test_sorts_only_by_recall_ties_keep_original_relative_order(self):
+        # Two points share the same recall but differ in precision, in an
+        # order that a full-tuple sort (not a recall-only key) would flip.
+        points = [(0.5, 0.9), (0.5, 0.1)]
+
+        assert sort_points_by_recall(points) == [(0.5, 0.9), (0.5, 0.1)]
 
 
 class TestAveragePrecisionFromSweep:
@@ -195,6 +233,14 @@ class TestAveragePrecisionFromSweep:
 
         assert result == 0.0
         assert not torch.isnan(torch.tensor(result))
+
+    def test_first_recall_step_is_measured_from_zero(self):
+        # A single point at (recall=0.5, precision=1.0): AP must be
+        # (0.5 - 0) * 1.0 = 0.5, not (0.5 - 1.0) * 1.0 = -0.5 -- regression
+        # for previous_recall starting anywhere but 0.0.
+        sweep_counts = torch.tensor([[1.0, 0.0, 1.0, 0.0]])
+
+        assert average_precision_from_sweep(sweep_counts) == pytest.approx(0.5)
 
 
 class TestPatchDetectionCounts:
@@ -224,6 +270,25 @@ class TestPatchDetectionCounts:
 
         assert counts == {"positive_patches": 0, "detected_patches": 0}
 
+    def test_counts_per_patch_across_a_multi_channel_batch(self):
+        # 4 patches, 2 channels each: patch 0 positive (detected), patch 1
+        # positive in a different channel (missed), patch 2 positive across
+        # both channels (detected via one channel), patch 3 negative.
+        # Regression for reducing over the wrong dims (batch, or only some
+        # of channel+spatial) instead of every per-patch dim.
+        predictions = torch.zeros(4, 2, 3, 3)
+        targets = torch.zeros(4, 2, 3, 3)
+        targets[0, 0, 0, 0] = 1.0
+        predictions[0, 0, 0, 0] = 1.0
+        targets[1, 1, 1, 1] = 1.0
+        targets[2, 0, 2, 2] = 1.0
+        targets[2, 1, 0, 1] = 1.0
+        predictions[2, 0, 2, 2] = 1.0
+
+        counts = patch_detection_counts(predictions, targets)
+
+        assert counts == {"positive_patches": 3, "detected_patches": 2}
+
 
 class TestDetectionRateFromCounts:
     def test_matches_hand_computed_fraction(self):
@@ -235,3 +300,7 @@ class TestDetectionRateFromCounts:
         result = detection_rate_from_counts(counts)
         assert result == 0.0
         assert not torch.isnan(torch.tensor(result))
+
+    def test_total_of_exactly_one_is_still_a_valid_denominator(self):
+        counts = {"positive_patches": 1, "detected_patches": 1}
+        assert detection_rate_from_counts(counts) == 1.0

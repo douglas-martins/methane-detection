@@ -3,16 +3,50 @@ import pandas as pd
 import pytest
 import segmentation_models_pytorch as smp
 import torch
+import train
 from losses import build_loss
 from train import (
     _epoch_marker,
     augment_for,
+    build_model,
     count_parameters,
     evaluate,
     fit,
     library_versions,
     set_seed,
 )
+
+
+class TestBuildModel:
+    def test_e1_is_built_with_no_pretrained_argument(self, monkeypatch):
+        # E1 (architectures.build_e1) takes no `pretrained` parameter at all --
+        # calling it with one would be a TypeError, so build_model must call
+        # it bare. Spies rather than building a real E1 (cheap, but keeps this
+        # test focused on which call is made, not the model itself).
+        calls = []
+        monkeypatch.setattr(
+            train, "_ARCHITECTURE_BUILDERS", {"E1": lambda **kwargs: calls.append(kwargs)}
+        )
+
+        build_model("E1")
+
+        assert calls == [{}]
+
+    def test_e2_and_e3_are_built_with_pretrained_true(self, monkeypatch):
+        # Spies instead of building a real (pretrained) E2/E3: constructing
+        # one for real would download ImageNet encoder weights over the
+        # network, which a unit test must not depend on.
+        for architecture in ("E2", "E3"):
+            calls = []
+            monkeypatch.setattr(
+                train,
+                "_ARCHITECTURE_BUILDERS",
+                {architecture: lambda **kwargs: calls.append(kwargs)},
+            )
+
+            build_model(architecture)
+
+            assert calls == [{"pretrained": True}]
 
 
 class TestAugmentFor:
