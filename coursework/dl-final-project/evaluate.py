@@ -14,6 +14,7 @@ number Section 9's headline table actually reports.
 """
 
 import sys
+import time
 from pathlib import Path
 
 import mlflow
@@ -82,6 +83,14 @@ def evaluate_full_metrics(
     n_batches = 0
     patches_processed = 0
 
+    # CUDA kernels queue asynchronously -- without a sync, a wall-clock timer
+    # around this loop would measure how fast work was *launched*, not how
+    # fast it *ran*, which would make a GPU look artificially instantaneous
+    # in any GPU-vs-CPU throughput comparison.
+    if device.startswith("cuda"):
+        torch.cuda.synchronize(device)
+    start = time.perf_counter()
+
     with torch.no_grad():
         for batch in loader:
             if max_batches is not None and n_batches >= max_batches:
@@ -94,6 +103,10 @@ def evaluate_full_metrics(
             sweep_totals += sweep_confusion_counts(probs, y, pr_thresholds)
             patches_processed += x.shape[0]
             n_batches += 1
+
+    if device.startswith("cuda"):
+        torch.cuda.synchronize(device)
+    wall_clock_seconds = time.perf_counter() - start
 
     return {
         "precision": precision_from_counts(totals),
@@ -111,6 +124,12 @@ def evaluate_full_metrics(
         # exiting 0. Not inferred from `n_batches * batch_size`: a real
         # split's last batch is usually smaller than the configured size.
         "patches_processed": patches_processed,
+        # For a GPU-vs-CPU inference comparison: end-to-end wall clock
+        # (data loading + model forward + metric accumulation, matching
+        # `train.py::fit`'s own `wall_clock_seconds` convention -- not an
+        # isolated forward-pass-only timer) and the derived throughput.
+        "wall_clock_seconds": wall_clock_seconds,
+        "patches_per_second": patches_processed / wall_clock_seconds,
         **totals,
     }
 
@@ -158,12 +177,34 @@ def _load_eval_splits(dataset: str, tier: str) -> tuple[pd.DataFrame, pd.DataFra
     return val_df, test_df
 
 
+def _build_run_name(
+    architecture: str,
+    tier: str,
+    checkpoint_tier: str,
+    device_override: str | None,
+    device: str,
+) -> str:
+    """Build the MLflow run name for one `evaluate.py` invocation.
+
+    An explicit `device_override` (a GPU-vs-CPU comparison run) gets a
+    `-{device}` suffix so it can never collide with -- or be mistaken for --
+    the canonical, un-suffixed same-tier/cross-tier run name already logged
+    and referenced from `report.md`'s "Métricas de avaliação".
+    """
+    name = (
+        f"{architecture}-{tier}-eval"
+        if checkpoint_tier == tier
+        else f"{architecture}-{checkpoint_tier}-on-{tier}-eval"
+    )
+    return f"{name}-{device}" if device_override else name
+
+
 def main() -> None:
     """CLI entry point.
 
     Usage: python evaluate.py architecture=E1 dataset=starcop_mini tier=mini
            [checkpoint_tier=mini] [splits=val,test] [batch_size=16] [threshold=0.5]
-           [num_workers=4]
+           [num_workers=4] [device=cuda|cpu]
 
     Loads `checkpoints/<architecture>-<checkpoint_tier>.pt` (default
     `checkpoint_tier=tier`, the usual same-tier case) and scores it against
@@ -178,6 +219,13 @@ def main() -> None:
     `<architecture>-<checkpoint_tier>-on-<tier>-eval` when cross-tier --
     metrics prefixed `val_`/`test_`, so Section 9 can trace every number to
     a `run_id` the same way the training numbers already are.
+
+    `device` (default: auto-detect, `cuda` if available else `cpu`) forces a
+    specific device -- the knob a GPU-vs-CPU inference comparison needs,
+    since auto-detection alone can't run CPU-only on a machine that has a
+    GPU. Passing it appends `-{device}` to the run name (see
+    `_build_run_name`) so a comparison run never overwrites the identity of
+    the canonical, auto-detected-device run already used elsewhere.
     """
     args = _parse_kv_args(sys.argv[1:])
     architecture = args.get("architecture", "E1")
@@ -188,18 +236,15 @@ def main() -> None:
     batch_size = int(args.get("batch_size", _DEFAULT_BATCH_SIZE))
     threshold = float(args.get("threshold", _DEFAULT_THRESHOLD))
     num_workers = int(args.get("num_workers", _DEFAULT_NUM_WORKERS))
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device_override = args.get("device")
+    device = device_override or ("cuda" if torch.cuda.is_available() else "cpu")
 
     checkpoint_path = _CHECKPOINT_DIR / f"{architecture}-{checkpoint_tier}.pt"
     model = load_checkpoint(architecture, checkpoint_path, device)
     val_df, test_df = _load_eval_splits(dataset, tier)
     available_splits = {"val": val_df, "test": test_df}
 
-    run_name = (
-        f"{architecture}-{tier}-eval"
-        if checkpoint_tier == tier
-        else f"{architecture}-{checkpoint_tier}-on-{tier}-eval"
-    )
+    run_name = _build_run_name(architecture, tier, checkpoint_tier, device_override, device)
 
     mlflow.set_tracking_uri(_MLFLOW_TRACKING_URI)
     mlflow.set_experiment(_MLFLOW_EXPERIMENT)
@@ -252,6 +297,8 @@ def main() -> None:
                     f"{split_name}_patch_detected": result["per_patch_detected_patches"],
                     f"{split_name}_patch_detection_rate": result["per_patch_detection_rate"],
                     f"{split_name}_patches_processed": result["patches_processed"],
+                    f"{split_name}_wall_clock_seconds": result["wall_clock_seconds"],
+                    f"{split_name}_patches_per_second": result["patches_per_second"],
                 }
             )
             # The full curve isn't a scalar MLflow metric -- logged as a JSON
@@ -266,10 +313,12 @@ def main() -> None:
                 f"pr_auc={result['pr_auc']:.4f} "
                 f"detected_patches={result['per_patch_detected_patches']}/"
                 f"{result['per_patch_positive_patches']} "
-                f"confusion_matrix={result['confusion_matrix']}"
+                f"confusion_matrix={result['confusion_matrix']} "
+                f"[{device}] {result['patches_per_second']:.1f} patches/s "
+                f"({result['wall_clock_seconds']:.2f}s total)"
             )
 
-    print(f"architecture={architecture} tier={tier} dataset={dataset}")
+    print(f"architecture={architecture} tier={tier} dataset={dataset} device={device}")
 
 
 if __name__ == "__main__":

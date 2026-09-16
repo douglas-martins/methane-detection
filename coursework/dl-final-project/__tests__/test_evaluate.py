@@ -1,7 +1,7 @@
 import pytest
 import torch
 from architectures import build_e1
-from evaluate import evaluate_full_metrics, load_checkpoint
+from evaluate import _build_run_name, evaluate_full_metrics, load_checkpoint
 
 
 class _FixedLogitModel(torch.nn.Module):
@@ -180,6 +180,49 @@ class TestEvaluateFullMetricsPerPatchDetection:
         assert result["per_patch_positive_patches"] == 2
         assert result["per_patch_detected_patches"] == 1
         assert result["per_patch_detection_rate"] == 0.5
+
+
+class TestEvaluateFullMetricsTiming:
+    def test_returns_positive_wall_clock_and_consistent_throughput(self):
+        # GPU-vs-CPU inference comparison needs a real, checkable throughput
+        # number -- not just a duration -- so `patches_per_second` must be
+        # derivable and consistent with `patches_processed`, the same
+        # consistency contract `train.py::fit`'s own `seconds_per_epoch`
+        # already has against `wall_clock_seconds`/`epochs_run`.
+        batches = [
+            {"input": torch.zeros(2, 4, 1, 1), "output": torch.zeros(2, 1, 1, 1)},
+            {"input": torch.zeros(1, 4, 1, 1), "output": torch.zeros(1, 1, 1, 1)},
+        ]
+        model = _FixedLogitModel([torch.zeros(2, 1, 1, 1), torch.zeros(1, 1, 1, 1)])
+
+        result = evaluate_full_metrics(model, batches, device="cpu")
+
+        assert result["wall_clock_seconds"] > 0
+        assert result["patches_per_second"] == pytest.approx(
+            result["patches_processed"] / result["wall_clock_seconds"]
+        )
+
+
+class TestBuildRunName:
+    def test_same_tier_default_device_has_no_suffix(self):
+        # Default (auto-detected) device must not change any existing run
+        # name already referenced in report.md's "Métricas de avaliação".
+        assert _build_run_name("E1", "mini", "mini", None, "cuda") == "E1-mini-eval"
+
+    def test_cross_tier_default_device_has_no_suffix(self):
+        assert _build_run_name("E2", "raw-full", "mini", None, "cuda") == "E2-mini-on-raw-full-eval"
+
+    def test_explicit_device_appends_a_suffix(self):
+        # An explicit `device=` override means a GPU-vs-CPU comparison run --
+        # it must not collide with (or overwrite the identity of) the
+        # canonical same-tier run already logged under the un-suffixed name.
+        assert _build_run_name("E1", "mini", "mini", "cpu", "cpu") == "E1-mini-eval-cpu"
+
+    def test_cross_tier_with_explicit_device_appends_a_suffix(self):
+        assert (
+            _build_run_name("E2", "raw-full", "mini", "cpu", "cpu")
+            == "E2-mini-on-raw-full-eval-cpu"
+        )
 
 
 class TestLoadCheckpoint:
