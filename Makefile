@@ -41,6 +41,23 @@ coursework-lint:
 coursework-train:
 	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/train.py dataset=starcop_mini
 
+# Standalone mutmut run for coursework/dl-final-project (its own setup.cfg, gate
+# separate from this repo's [tool.mutmut] -- see that file's own comment). ALWAYS
+# use this target, never invoke mutmut directly here: train.py's fit() mutates real
+# loop-control code and generates many genuinely-infinite-looping mutants, and
+# without OMP_NUM_THREADS/MKL_NUM_THREADS capped to 1, mutmut's default 12 parallel
+# workers x torch's default 6 threads each = 72 threads fighting over 12 real
+# cores -- that oversubscription (not broken mutations) previously made ~100% of
+# fit()'s mutants time out and spammed dozens of SIGXCPU crash notifications in
+# under half an hour. Capping threads fixed it: a ~97-mutant fit() batch went from
+# not finishing in 500s to 0 timeouts, all killed, in 26s. Pass MUTANTS="'train.x_fit*'"
+# (quoted, mutmut's own glob syntax) to scope a run; omit it to run everything in
+# only_mutate. See setup.cfg's own [mutmut] comment for the full story.
+coursework-mutation:
+	cd $(COURSEWORK_PATH) && rm -rf mutants .mutmut-cache
+	cd $(COURSEWORK_PATH) && OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+		$(abspath $(ENV_COURSEWORK_PYTHON)) -m mutmut run $(MUTANTS)
+
 # One-time on-disk patch cache precompute (see patch_cache.py's own docstring for why:
 # starcop_raw's real bottleneck is disk I/O, and the RAM-bound LRU cache in dataset.py
 # barely helps at that scale). ~27GB total for both datasets, all splits, float16/uint8 --
