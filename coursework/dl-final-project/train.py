@@ -121,6 +121,28 @@ def _seed_worker(worker_id: int, base_seed: int) -> None:
     torch.manual_seed(worker_seed)
 
 
+def _loader_kwargs(device: str, num_workers: int, seed: int, *, persistent_workers: bool) -> dict:
+    """Build one DataLoader's kwargs: `pin_memory` plus, when `num_workers>0`, the worker knobs.
+
+    `pin_memory` is set whenever `device` is CUDA, independent of
+    `num_workers` -- pinning host memory speeds up the host->device copy
+    itself and costs nothing when there's no multiprocessing worker
+    involved at all.
+
+    `persistent_workers` is the caller's choice per loader, never turned on
+    when `num_workers=0` (torch raises a `ValueError` if it is) -- see
+    `fit()`'s own docstring for why its train and val loaders pass
+    different values here.
+    """
+    kwargs: dict = {"pin_memory": device.startswith("cuda")}
+    if num_workers > 0:
+        kwargs["num_workers"] = num_workers
+        kwargs["worker_init_fn"] = partial(_seed_worker, base_seed=seed)
+        if persistent_workers:
+            kwargs["persistent_workers"] = True
+    return kwargs
+
+
 def _epoch_marker(is_best: bool) -> str:
     """One-glyph marker for an epoch's outcome, for `fit(verbose=True)`'s printed line.
 
@@ -252,19 +274,27 @@ def fit(
     `num_workers=0` (the default) is right for tests -- worker-process
     startup is pure overhead against a handful of synthetic patches. Real
     training runs should pass `num_workers>0`: with `PatchDataset`'s
-    per-item rasterio reads and no cross-epoch caching, a single-process
-    loader re-reads every patch from disk every epoch serially -- measured
-    at ~8s/epoch on `starcop_mini`'s 392 patches; `num_workers=4` with
-    `persistent_workers=True` cuts that to ~1.5-2s/epoch (real GeoTIFFs,
-    not a synthetic fixture) by parallelizing that I/O across worker
-    processes that stay alive between epochs instead of respawning every
-    time. **`num_workers` applies to both the train and val loader**, each
-    with its own persistent pool alive for the whole call -- on this
-    machine's 12-thread CPU, `num_workers=8` (16 workers total, both
-    pools) measurably thrashes (a 300-step + one-eval smoke run went from
-    ~18s isolated to hanging past a 200s timeout); `num_workers=4` (8
-    total) was verified fast for the same real workload. Keep
-    `num_workers * 2` comfortably under the machine's thread count.
+    per-item rasterio reads, a single-process loader re-reads every patch
+    from disk every epoch serially -- measured at ~8s/epoch on
+    `starcop_mini`'s 392 patches before `PatchDataset` cached decoded
+    patches per index; `num_workers=4` with `persistent_workers=True` (on
+    the train loader; see below) cuts that further to ~1.5-2s/epoch (real
+    GeoTIFFs, not a synthetic fixture) by parallelizing that I/O across
+    worker processes that stay alive between epochs instead of respawning
+    every time.
+
+    **`num_workers` applies to both the train and val loader, but only the
+    train loader's pool is `persistent_workers=True`.** The train loader
+    iterates every epoch, so keeping its workers alive avoids re-spawning
+    them each time; the val loader runs once per epoch right after it, so a
+    *second* full persistent pool held alive for the whole call would just
+    double concurrent worker processes for no benefit. That doubling is
+    exactly what measurably thrashed this machine's 12-thread CPU at
+    `num_workers=8` (16 workers total, both persistent at the time) -- a
+    300-step + one-eval smoke run went from ~18s isolated to hanging past a
+    200s timeout; `num_workers=4` (8 total, both persistent at the time)
+    was verified fast for the same real workload. Keep `num_workers * 2`
+    comfortably under the machine's thread count regardless.
     """
     set_seed(seed)
     model.to(device)
@@ -274,27 +304,18 @@ def fit(
 
     generator = torch.Generator()
     generator.manual_seed(seed)
-    loader_kwargs = (
-        {
-            "num_workers": num_workers,
-            "persistent_workers": True,
-            "worker_init_fn": partial(_seed_worker, base_seed=seed),
-        }
-        if num_workers > 0
-        else {}
-    )
     train_loader = DataLoader(
         PatchDataset(train_df, dataset=dataset, augment=augment),
         batch_size=batch_size,
         shuffle=True,
         generator=generator,
-        **loader_kwargs,
+        **_loader_kwargs(device, num_workers, seed, persistent_workers=True),
     )
     val_loader = DataLoader(
         PatchDataset(val_df, dataset=dataset, augment=False),
         batch_size=batch_size,
         shuffle=False,
-        **loader_kwargs,
+        **_loader_kwargs(device, num_workers, seed, persistent_workers=False),
     )
 
     stopper = EarlyStopper(patience=patience, mode="min")

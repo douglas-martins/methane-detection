@@ -7,6 +7,7 @@ import train
 from losses import build_loss
 from train import (
     _epoch_marker,
+    _loader_kwargs,
     augment_for,
     build_model,
     count_parameters,
@@ -250,6 +251,86 @@ class TestFit:
 
         assert result["steps_run"] == 3
         assert result["epochs_run"] < 50
+
+
+class TestLoaderKwargs:
+    def test_pins_memory_for_a_cuda_device(self):
+        # Pinning host memory speeds up the host->device copy itself --
+        # independent of num_workers, and worth it whenever there's an
+        # actual GPU to copy to.
+        kwargs = _loader_kwargs("cuda", num_workers=0, seed=1, persistent_workers=True)
+        assert kwargs["pin_memory"] is True
+
+    def test_does_not_pin_memory_for_cpu(self):
+        kwargs = _loader_kwargs("cpu", num_workers=0, seed=1, persistent_workers=True)
+        assert kwargs["pin_memory"] is False
+
+    def test_omits_worker_kwargs_when_num_workers_is_zero(self):
+        # persistent_workers=True with num_workers=0 is a torch ValueError --
+        # num_workers=0 must never let a worker-only kwarg through, regardless
+        # of what the caller asked for.
+        kwargs = _loader_kwargs("cpu", num_workers=0, seed=1, persistent_workers=True)
+        assert "num_workers" not in kwargs
+        assert "persistent_workers" not in kwargs
+        assert "worker_init_fn" not in kwargs
+
+    def test_sets_persistent_workers_only_when_requested(self):
+        # The train loader iterates every epoch and should stay resident;
+        # the val loader only runs once per epoch right after it -- keeping
+        # a second full persistent pool alive for the whole `fit()` call
+        # doubles concurrent worker processes for no benefit (measured: two
+        # 8-worker persistent pools, 16 processes total, saturated this
+        # machine's 12 threads and hung a run past 200s that took ~18s
+        # isolated; see fit()'s own docstring).
+        persistent = _loader_kwargs("cpu", num_workers=4, seed=1, persistent_workers=True)
+        not_persistent = _loader_kwargs("cpu", num_workers=4, seed=1, persistent_workers=False)
+
+        assert persistent["persistent_workers"] is True
+        assert "persistent_workers" not in not_persistent
+        # Both still get workers -- val's I/O still benefits from
+        # parallelism, it just isn't kept alive between epochs.
+        assert not_persistent["num_workers"] == 4
+
+    def test_worker_init_fn_seeds_from_the_given_base_seed(self):
+        kwargs = _loader_kwargs("cpu", num_workers=2, seed=99, persistent_workers=True)
+        assert kwargs["worker_init_fn"].keywords == {"base_seed": 99}
+
+
+class TestFitLoaderConcurrency:
+    def test_only_the_train_loader_is_requested_with_persistent_workers(
+        self, tmp_path, tiny_geotiff_factory, monkeypatch
+    ):
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        real_loader_kwargs = train._loader_kwargs
+        captured = []
+
+        def _recording_loader_kwargs(*args, **kwargs):
+            captured.append(kwargs)
+            return real_loader_kwargs(*args, **kwargs)
+
+        monkeypatch.setattr(train, "_loader_kwargs", _recording_loader_kwargs)
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=1,
+            patience=10,
+            max_steps=1,
+            log_to_mlflow=False,
+        )
+
+        train_call_kwargs, val_call_kwargs = captured
+        assert train_call_kwargs["persistent_workers"] is True
+        assert val_call_kwargs["persistent_workers"] is False
 
 
 class TestSetSeed:
