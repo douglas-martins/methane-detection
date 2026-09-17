@@ -5,6 +5,7 @@ import segmentation_models_pytorch as smp
 import torch
 import train
 from losses import build_loss
+from precompute_patch_cache import build_cache_for_split
 from train import (
     _epoch_marker,
     _loader_kwargs,
@@ -331,6 +332,84 @@ class TestFitLoaderConcurrency:
         train_call_kwargs, val_call_kwargs = captured
         assert train_call_kwargs["persistent_workers"] is True
         assert val_call_kwargs["persistent_workers"] is False
+
+
+class TestFitOnDiskCache:
+    def test_uses_a_matching_on_disk_cache_for_both_loaders(
+        self, tmp_path, tiny_geotiff_factory, monkeypatch
+    ):
+        # starcop_raw's real bottleneck is disk I/O, not RAM caching (see
+        # patch_cache.py) -- fit() must pick up a matching on-disk cache
+        # automatically for both loaders when one exists, with zero calls
+        # to the live GeoTIFF read path.
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        cache_root = tmp_path / "patch_cache"
+        monkeypatch.setattr(train, "_CACHE_ROOT", cache_root)
+        build_cache_for_split(
+            "starcop_mini", train_df, cache_root / "starcop_mini" / "train", num_workers=0
+        )
+        build_cache_for_split(
+            "starcop_mini", val_df, cache_root / "starcop_mini" / "val", num_workers=0
+        )
+
+        import dataset as dataset_module
+
+        calls = []
+        monkeypatch.setattr(
+            dataset_module, "read_patch_bands", lambda *a, **k: calls.append(a) or {}
+        )
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=1,
+            patience=10,
+            log_to_mlflow=False,
+        )
+
+        assert calls == []
+
+    def test_falls_back_to_live_reads_when_no_cache_matches(
+        self, tmp_path, tiny_geotiff_factory, monkeypatch
+    ):
+        # E.g. an r2/raw-smoke-val tier, or simply no cache built yet --
+        # fit() must keep working exactly as before, not error.
+        folder = tmp_path / "scene0"
+        _make_scene(tiny_geotiff_factory, folder, size=16, positive_pixels=5)
+        train_df = _patches_df(folder, n_rows=4, size=16)
+        val_df = _patches_df(folder, n_rows=2, size=16)
+
+        cache_root = tmp_path / "patch_cache"
+        monkeypatch.setattr(train, "_CACHE_ROOT", cache_root)
+        # A cache exists, but for a different (mismatched) train split.
+        other_df = _patches_df(folder, n_rows=99, size=16)
+        build_cache_for_split(
+            "starcop_mini", other_df, cache_root / "starcop_mini" / "train", num_workers=0
+        )
+
+        model = torch.nn.Conv2d(4, 1, 1)
+        result = fit(
+            model,
+            train_df,
+            val_df,
+            dataset="starcop_mini",
+            lr=1e-3,
+            batch_size=2,
+            max_epochs=1,
+            patience=10,
+            log_to_mlflow=False,
+        )
+
+        assert result["epochs_run"] == 1
 
 
 class TestSetSeed:

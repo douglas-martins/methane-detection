@@ -19,6 +19,7 @@ from pathlib import Path
 
 import mlflow
 import pandas as pd
+import patch_cache
 import torch
 from dataset import PatchDataset
 from metrics import (
@@ -40,6 +41,7 @@ from train import build_model
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _COURSEWORK_ROOT = Path(__file__).resolve().parent
 _CHECKPOINT_DIR = _COURSEWORK_ROOT / "checkpoints"
+_CACHE_ROOT = _COURSEWORK_ROOT / "patch_cache"
 _MLFLOW_TRACKING_URI = f"sqlite:///{_COURSEWORK_ROOT / 'mlflow.db'}"
 _MLFLOW_EXPERIMENT = "dl-final-project"
 
@@ -277,8 +279,9 @@ def main() -> None:
         )
         for split_name in splits:
             split_df = available_splits[split_name]
+            cache_dir = patch_cache.resolve_cache_dir(_CACHE_ROOT, dataset, split_name, split_df)
             loader = DataLoader(
-                PatchDataset(split_df, dataset=dataset, augment=False),
+                PatchDataset(split_df, dataset=dataset, augment=False, cache_dir=cache_dir),
                 batch_size=batch_size,
                 shuffle=False,
                 num_workers=num_workers,

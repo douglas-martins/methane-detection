@@ -205,6 +205,11 @@ mlruns/
 # already covers this project's SQLite MLflow tracking store.
 coursework/dl-final-project/checkpoints/
 
+# DL course final project -- on-disk patch cache (see patch_cache.py's own
+# docstring), ~27GB for both datasets/all splits, regenerable any time via
+# `make coursework-precompute-cache`, same category as checkpoints/ above.
+coursework/dl-final-project/patch_cache/
+
 # DL course final project (plan Section 7.2) -- per-run training logs
 # (tee'd stdout from train.py), regenerable output, same category as
 # checkpoints/ above.

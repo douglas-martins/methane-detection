@@ -24,6 +24,7 @@ from pathlib import Path
 import mlflow
 import numpy as np
 import pandas as pd
+import patch_cache
 import segmentation_models_pytorch as smp
 import torch
 from architectures import build_e1, build_e2, build_e3
@@ -37,6 +38,7 @@ _DEFAULT_SEED = 42
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _COURSEWORK_ROOT = Path(__file__).resolve().parent
 _CHECKPOINT_DIR = _COURSEWORK_ROOT / "checkpoints"
+_CACHE_ROOT = _COURSEWORK_ROOT / "patch_cache"
 _MLFLOW_TRACKING_URI = f"sqlite:///{_COURSEWORK_ROOT / 'mlflow.db'}"
 _MLFLOW_EXPERIMENT = "dl-final-project"
 
@@ -295,6 +297,17 @@ def fit(
     200s timeout; `num_workers=4` (8 total, both persistent at the time)
     was verified fast for the same real workload. Keep `num_workers * 2`
     comfortably under the machine's thread count regardless.
+
+    Both loaders also auto-detect a matching `patch_cache`-built on-disk
+    cache under `_CACHE_ROOT/<dataset>/{train,val}` (`patch_cache.
+    resolve_cache_dir`) and use it transparently when present -- this is
+    what actually fixes `starcop_raw`'s disk-I/O bottleneck (benchmarked
+    ~95x faster than the live GeoTIFF read it replaces), since the RAM
+    cache above barely helps at that scale (see `patch_cache.py`'s own
+    docstring). Falls back to live reads with no error when no matching
+    cache exists (a tier whose data doesn't match what was cached, e.g.
+    `r2`'s subsample or `raw-smoke`'s sliced val, or simply nothing
+    precomputed yet) -- build one with `precompute_patch_cache.py`.
     """
     set_seed(seed)
     model.to(device)
@@ -304,15 +317,17 @@ def fit(
 
     generator = torch.Generator()
     generator.manual_seed(seed)
+    train_cache_dir = patch_cache.resolve_cache_dir(_CACHE_ROOT, dataset, "train", train_df)
+    val_cache_dir = patch_cache.resolve_cache_dir(_CACHE_ROOT, dataset, "val", val_df)
     train_loader = DataLoader(
-        PatchDataset(train_df, dataset=dataset, augment=augment),
+        PatchDataset(train_df, dataset=dataset, augment=augment, cache_dir=train_cache_dir),
         batch_size=batch_size,
         shuffle=True,
         generator=generator,
         **_loader_kwargs(device, num_workers, seed, persistent_workers=True),
     )
     val_loader = DataLoader(
-        PatchDataset(val_df, dataset=dataset, augment=False),
+        PatchDataset(val_df, dataset=dataset, augment=False, cache_dir=val_cache_dir),
         batch_size=batch_size,
         shuffle=False,
         **_loader_kwargs(device, num_workers, seed, persistent_workers=False),

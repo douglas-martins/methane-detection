@@ -8,10 +8,12 @@ from that contract. Reuses `eda.py`'s `read_patch_bands` (Section 3)
 rather than re-implementing windowed GeoTIFF reads.
 """
 
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import patch_cache
 import torch
 from eda import read_patch_bands
 from kornia.augmentation import (
@@ -63,15 +65,76 @@ def _build_augmenter() -> AugmentationSequential:
     )
 
 
+# Caching every decoded patch (see PatchDataset.__getitem__) is unbounded
+# memory growth on starcop_raw's 141k-patch train split -- ~320 KB/patch
+# (128x128, 4 input channels + 1 label, float32) adds up to ~45 GB in a
+# single worker's cache alone, and `train.py`'s persistent train loader
+# forks one such cache per `num_workers`. 2 GiB keeps that bounded (LRU
+# eviction below) to a few GiB per worker regardless of dataset size, while
+# staying far larger than starcop_mini's entire ~125 MB train split, so
+# mini still gets today's zero-eviction, fully-cached behavior unchanged.
+_DEFAULT_MAX_CACHE_BYTES = 2 * 1024**3
+
+
 class PatchDataset(Dataset):
     """One 128x128 (or fixture-sized) patch per item: normalized input stack + raw label."""
 
-    def __init__(self, patches_df: pd.DataFrame, dataset: str, augment: bool):
-        """Store `patches_df`, resolve `dataset`'s band contract, and build the augmenter."""
+    def __init__(
+        self,
+        patches_df: pd.DataFrame,
+        dataset: str,
+        augment: bool,
+        max_cache_bytes: int = _DEFAULT_MAX_CACHE_BYTES,
+        cache_dir: Path | None = None,
+    ):
+        """Store `patches_df`, resolve `dataset`'s band contract, and build the augmenter.
+
+        `max_cache_bytes` bounds the decoded-patch RAM cache (see
+        `__getitem__`) with LRU eviction, so caching stays safe at any
+        dataset size instead of growing without limit.
+
+        `cache_dir` (optional) points at a `patch_cache`-built on-disk
+        cache (see that module's own docstring for why it exists) -- when
+        given, it **must** match `patches_df` exactly (`patch_cache.
+        is_valid`); this is an explicit opt-in contract, not a hint, so a
+        stale or mismatched cache fails loudly here rather than silently
+        serving wrong patches or silently falling back to live reads. When
+        active, every access reads from the on-disk cache instead of doing
+        a live GeoTIFF windowed read, and the RAM cache above is unused --
+        the on-disk cache is already far faster than the RAM cache could
+        make live reads.
+        """
         self.patches_df = patches_df.reset_index(drop=True)
         self.input_products, self.output_products = _load_dataset_config(dataset)
         self.augmenter = _build_augmenter() if augment else None
-        self._cache: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
+        self._cache: OrderedDict[int, tuple[torch.Tensor, torch.Tensor]] = OrderedDict()
+        self._max_cache_bytes = max_cache_bytes
+        self._cache_bytes_used = 0
+        self._disk_cache: tuple[np.ndarray, np.ndarray] | None = None
+        if cache_dir is not None:
+            if not patch_cache.is_valid(cache_dir, self.patches_df):
+                # Message text pulled onto its own statement, bracketed by an explicit
+                # start/end pragma range (rather than a trailing comment, which would
+                # attach to the whole raise statement below and hide its own real
+                # "message replaced entirely" mutant): a case-garbled mutant of this
+                # sentence is equivalent -- pytest.raises' own match="cache" already
+                # matches earlier, on "cache_dir"/"patches_df", regardless of this
+                # sentence's casing.
+                # pragma: no mutate start
+                detail = "rebuild it with precompute_patch_cache.py before using it here."
+                # pragma: no mutate end
+                raise ValueError(
+                    f"cache_dir {cache_dir!r} does not match the given patches_df -- {detail}"
+                )
+            self._disk_cache = patch_cache.load(cache_dir)
+
+    @staticmethod
+    def _entry_bytes(input_tensor: torch.Tensor, output_tensor: torch.Tensor) -> int:
+        """Byte size of one cached (input, output) pair."""
+        return (
+            input_tensor.numel() * input_tensor.element_size()
+            + output_tensor.numel() * output_tensor.element_size()
+        )
 
     def __len__(self) -> int:
         """Number of patches."""
@@ -88,8 +151,21 @@ class PatchDataset(Dataset):
         still runs fresh on every call from a clone of the cached pair, since
         it must vary per epoch and must never let one caller's in-place
         mutation of a returned tensor corrupt a later read of the same index.
+
+        The cache is LRU-bounded by `max_cache_bytes` (see `__init__`): an
+        entry that would push total cached bytes over budget evicts the
+        least-recently-used entries first, and an entry larger than the
+        whole budget is served but never cached.
+
+        When `cache_dir` was given at construction, this reads from that
+        on-disk cache instead -- see `__init__`'s own docstring.
         """
-        if index in self._cache:
+        if self._disk_cache is not None:
+            cached_inputs, cached_outputs = self._disk_cache
+            input_tensor = torch.from_numpy(cached_inputs[index].astype(np.float32))
+            output_tensor = torch.from_numpy(cached_outputs[index].astype(np.float32))
+        elif index in self._cache:
+            self._cache.move_to_end(index)
             cached_input, cached_output = self._cache[index]
             input_tensor, output_tensor = cached_input.clone(), cached_output.clone()
         else:
@@ -112,7 +188,18 @@ class PatchDataset(Dataset):
             # axis=0 is np.stack's own default -- explicit for clarity, equivalent if dropped.
             input_tensor = torch.from_numpy(np.stack(normalized, axis=0))  # pragma: no mutate
             output_tensor = torch.from_numpy(bands[output_band]).unsqueeze(0).float()
-            self._cache[index] = (input_tensor.clone(), output_tensor.clone())
+
+            entry_bytes = self._entry_bytes(input_tensor, output_tensor)
+            while self._cache and self._cache_bytes_used + entry_bytes > self._max_cache_bytes:
+                # OrderedDict iterates oldest (least-recently-used) first, so the first
+                # key from iter() -- not popitem(last=False)'s harder-to-read boolean
+                # flag -- is the one to evict.
+                oldest_index = next(iter(self._cache))
+                evicted = self._cache.pop(oldest_index)
+                self._cache_bytes_used -= self._entry_bytes(*evicted)
+            if entry_bytes <= self._max_cache_bytes:
+                self._cache[index] = (input_tensor.clone(), output_tensor.clone())
+                self._cache_bytes_used += entry_bytes
 
         if self.augmenter is not None:
             input_batch = input_tensor.unsqueeze(0)

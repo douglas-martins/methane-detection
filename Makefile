@@ -27,6 +27,7 @@ ENV_COURSEWORK_PYTHON := .venv/bin/python
 COURSEWORK_PATH := coursework/dl-final-project
 
 .PHONY: coursework-test coursework-lint coursework-train coursework-confirm-raw \
+	coursework-precompute-cache coursework-mutation \
 	coursework-evaluate-mini coursework-evaluate-cross-tier coursework-evaluate-r2 \
 	coursework-evaluate-r3 coursework-evaluate coursework-pr-curves
 
@@ -39,6 +40,16 @@ coursework-lint:
 
 coursework-train:
 	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/train.py dataset=starcop_mini
+
+# One-time on-disk patch cache precompute (see patch_cache.py's own docstring for why:
+# starcop_raw's real bottleneck is disk I/O, and the RAM-bound LRU cache in dataset.py
+# barely helps at that scale). ~27GB total for both datasets, all splits, float16/uint8 --
+# rerun any time data/processed/<dataset>/patches changes, it's a disposable, locally
+# regenerable artifact (not git/DVC-tracked). fit()/evaluate.py pick it up automatically
+# once built, and fall back to live reads with no error if it's stale or missing.
+coursework-precompute-cache:
+	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/precompute_patch_cache.py dataset=starcop_mini
+	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/precompute_patch_cache.py dataset=starcop_raw
 
 # R1 contract confirmation (plan Section 0.1): runs the coursework's own
 # preprocessing, loader, model and metric code against real starcop_raw

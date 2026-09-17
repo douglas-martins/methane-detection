@@ -71,6 +71,30 @@ Consequences for anything written here:
 - Every MLflow run carries `dataset` and `tier` params, so a number can
   always be traced back to the data that produced it.
 
+## On-disk patch cache — fixes `starcop_raw`'s real training bottleneck
+
+`starcop_raw` training is disk-I/O bound: every patch is read and decoded
+from a real GeoTIFF window on every access. `PatchDataset`'s RAM-bound LRU
+cache helps `starcop_mini` (its whole ~125 MB train split fits in one
+worker's budget) but barely moves the needle at raw scale, where each
+worker's bounded cache covers only a fraction of its per-epoch share.
+
+`make coursework-precompute-cache` runs a one-time precompute
+(`precompute_patch_cache.py`) that reads every patch once and writes it to
+a flat on-disk cache under `coursework/dl-final-project/patch_cache/`
+(`float16` input / `uint8` output — safe since every input band is already
+clipped to a small fixed range before normalization, and the label is
+exact 0/1). Benchmarked ~95x faster to read back than the live GeoTIFF
+windowed read it replaces. `~27 GB` total for both datasets, all splits —
+not git/DVC-tracked, disposable and locally regenerable any time
+`data/processed/<dataset>/patches` changes.
+
+`fit()` (`train.py`) and `evaluate.py` pick up a matching cache
+automatically (`patch_cache.resolve_cache_dir`) and fall back to live reads
+with no error when none matches (e.g. an `r2` subsample, or `raw-smoke`'s
+sliced val split, or simply nothing precomputed yet) — nothing needs to
+change at any training/evaluation call site to benefit from it.
+
 ## Isolation from the main repo
 
 - **Branch**: this work lives on `coursework/dl-final-project`, cut from
@@ -84,8 +108,9 @@ Consequences for anything written here:
   part of `pyproject.toml`'s `testpaths` or any `ENV_RESEARCH_*` test path,
   so `make test` / `make test-research` / CI never touch it.
 - **Its own commands**: `make coursework-test`, `make coursework-lint`,
-  `make coursework-train`, `make coursework-confirm-raw` (repo root
-  `Makefile`) — scoped to this directory only.
+  `make coursework-train`, `make coursework-confirm-raw`,
+  `make coursework-precompute-cache` (repo root `Makefile`) — scoped to
+  this directory only.
 - **What isolation does *not* relax**: the R1 raw confirmation above. The
   gate exclusions exist so the coursework isn't blocked on thesis-scale
   tooling ceremony, not so it can ship code that was never run against
