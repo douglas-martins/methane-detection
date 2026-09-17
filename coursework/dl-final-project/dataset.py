@@ -71,30 +71,48 @@ class PatchDataset(Dataset):
         self.patches_df = patches_df.reset_index(drop=True)
         self.input_products, self.output_products = _load_dataset_config(dataset)
         self.augmenter = _build_augmenter() if augment else None
+        self._cache: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
 
     def __len__(self) -> int:
         """Number of patches."""
         return len(self.patches_df)
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
-        """Return {"input": (C,H,W) normalized float32, "output": (1,H,W) raw 0/1 float32}."""
-        row = self.patches_df.iloc[index]
-        window = Window(
-            col_off=row["window_col_off"],
-            row_off=row["window_row_off"],
-            width=row["window_width"],
-            height=row["window_height"],
-        )
-        output_band = self.output_products[0]
-        bands = read_patch_bands(Path(row["folder"]), window, [*self.input_products, output_band])
+        """Return {"input": (C,H,W) normalized float32, "output": (1,H,W) raw 0/1 float32}.
 
-        normalized = [
-            normalize_band(bands[product], **BAND_NORMALIZATION[product])
-            for product in self.input_products
-        ]
-        # axis=0 is np.stack's own default -- explicit for clarity, equivalent if dropped.
-        input_tensor = torch.from_numpy(np.stack(normalized, axis=0))  # pragma: no mutate
-        output_tensor = torch.from_numpy(bands[output_band]).unsqueeze(0).float()
+        The decoded, normalized (pre-augmentation) pair is cached per index
+        after its first read -- without this, the same patch is re-read and
+        re-decoded from disk on every access, every epoch, which measured as
+        the dominant per-epoch cost (`fit()`'s own docstring: ~8s/epoch on
+        `starcop_mini`'s 392 patches with no worker parallelism). Augmentation
+        still runs fresh on every call from a clone of the cached pair, since
+        it must vary per epoch and must never let one caller's in-place
+        mutation of a returned tensor corrupt a later read of the same index.
+        """
+        if index in self._cache:
+            cached_input, cached_output = self._cache[index]
+            input_tensor, output_tensor = cached_input.clone(), cached_output.clone()
+        else:
+            row = self.patches_df.iloc[index]
+            window = Window(
+                col_off=row["window_col_off"],
+                row_off=row["window_row_off"],
+                width=row["window_width"],
+                height=row["window_height"],
+            )
+            output_band = self.output_products[0]
+            bands = read_patch_bands(
+                Path(row["folder"]), window, [*self.input_products, output_band]
+            )
+
+            normalized = [
+                normalize_band(bands[product], **BAND_NORMALIZATION[product])
+                for product in self.input_products
+            ]
+            # axis=0 is np.stack's own default -- explicit for clarity, equivalent if dropped.
+            input_tensor = torch.from_numpy(np.stack(normalized, axis=0))  # pragma: no mutate
+            output_tensor = torch.from_numpy(bands[output_band]).unsqueeze(0).float()
+            self._cache[index] = (input_tensor.clone(), output_tensor.clone())
 
         if self.augmenter is not None:
             input_batch = input_tensor.unsqueeze(0)

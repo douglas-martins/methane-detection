@@ -150,6 +150,83 @@ class TestPatchDatasetLabelPassthrough:
         assert item["output"][0, 0, 0].item() == 1.0
 
 
+class TestPatchDatasetCaching:
+    def test_reads_the_same_index_from_disk_only_once(
+        self, tmp_path, tiny_geotiff_factory, monkeypatch
+    ):
+        # PatchDataset otherwise re-reads and re-decodes the same patch from
+        # disk on every access -- measured as the dominant per-epoch cost
+        # (train.py's fit() docstring: ~8s/epoch on starcop_mini with no
+        # caching). Three accesses to the same index must hit disk once.
+        folder, bands = _make_scene(tiny_geotiff_factory, tmp_path)
+        _write_scene(tiny_geotiff_factory, folder, bands)
+        df = pd.DataFrame([_patch_row(folder)])
+        dataset = PatchDataset(df, dataset="starcop_mini", augment=False)
+
+        import dataset as dataset_module
+
+        real_read = dataset_module.read_patch_bands
+        calls = []
+
+        def _spy(*args, **kwargs):
+            calls.append(args)
+            return real_read(*args, **kwargs)
+
+        monkeypatch.setattr(dataset_module, "read_patch_bands", _spy)
+
+        dataset[0]
+        dataset[0]
+        dataset[0]
+
+        assert len(calls) == 1
+
+    def test_different_indices_are_each_read_from_disk_once(
+        self, tmp_path, tiny_geotiff_factory, monkeypatch
+    ):
+        folder, bands = _make_scene(tiny_geotiff_factory, tmp_path)
+        _write_scene(tiny_geotiff_factory, folder, bands)
+        df = pd.DataFrame([_patch_row(folder), _patch_row(folder)])
+        dataset = PatchDataset(df, dataset="starcop_mini", augment=False)
+
+        import dataset as dataset_module
+
+        real_read = dataset_module.read_patch_bands
+        calls = []
+
+        def _spy(*args, **kwargs):
+            calls.append(args)
+            return real_read(*args, **kwargs)
+
+        monkeypatch.setattr(dataset_module, "read_patch_bands", _spy)
+
+        dataset[0]
+        dataset[1]
+        dataset[0]
+        dataset[1]
+
+        assert len(calls) == 2
+
+    def test_mutating_a_returned_tensor_does_not_leak_into_the_next_access(
+        self, tmp_path, tiny_geotiff_factory
+    ):
+        # A cache that returns the same tensor object on every hit would let
+        # one caller's in-place mutation corrupt every later read of that
+        # index -- the cache must hand back an independent copy.
+        folder, bands = _make_scene(tiny_geotiff_factory, tmp_path)
+        _write_scene(tiny_geotiff_factory, folder, bands)
+        df = pd.DataFrame([_patch_row(folder)])
+        dataset = PatchDataset(df, dataset="starcop_mini", augment=False)
+
+        first = dataset[0]
+        first["input"].fill_(999.0)
+        first["output"].fill_(999.0)
+
+        second = dataset[0]
+
+        assert second["input"].max().item() != 999.0
+        assert second["output"].max().item() != 999.0
+
+
 class TestPatchDatasetAugmentation:
     def test_val_test_construction_has_no_augmenter(self, tmp_path, tiny_geotiff_factory):
         folder, bands = _make_scene(tiny_geotiff_factory, tmp_path)
