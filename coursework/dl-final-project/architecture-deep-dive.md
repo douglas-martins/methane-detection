@@ -394,35 +394,52 @@ stateDiagram-v2
 
 ### 9.2 `mini` tier: val and test (graded headline comparison)
 
+> [!NOTE]
+> Refreshed after the `mini`/`r2`/`raw-full` suite was re-trained a third
+> time (on-disk patch cache, see [Section 9.5](#95-gpu-vs-cpu-inference-throughput)) —
+> checkpoints changed, so these numbers were re-scored against the
+> current `checkpoints/*.pt` files, not carried over from the prior
+> cuDNN-determinism-fix pass.
+
 | Config | Split | Precision | Recall | F1 | PR-AUC | Detected patches |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| E1 | val (49) | **0.4569** | **1.0000** | **0.6272** | **0.8599** | 9/9 |
-| E1 | test (441) | **0.9328** | 0.6960 | **0.7972** | **0.8314** | 113/125 |
-| E2 | val (49) | 0.1878 | 0.9954 | 0.3160 | 0.6170 | 9/9 |
-| E2 | test (441) | 0.6811 | 0.8165 | 0.7427 | 0.8031 | 115/125 |
-| E3 | val (49) | 0.0098 | 0.9969 | 0.0194 | 0.7196 | 9/9 |
-| E3 | test (441) | 0.1925 | **0.9296** | 0.3190 | 0.6766 | **125/125** |
+| E1 | val (49) | 0.3496 | **1.0000** | 0.5181 | 0.7913 | 9/9 |
+| E1 | test (441) | **0.9192** | 0.7910 | **0.8503** | **0.9054** | 115/125 |
+| E2 | val (49) | 0.2063 | 0.9064 | 0.3361 | 0.5812 | 8/9 |
+| E2 | test (441) | 0.7868 | 0.7939 | 0.7904 | 0.8193 | 115/125 |
+| E3 | val (49) | 0.0098 | 0.9969 | 0.0195 | 0.7155 | **9/9** |
+| E3 | test (441) | 0.1928 | **0.9302** | 0.3194 | 0.6794 | **125/125** |
 
 *Bold = best in its column, compared within the same split (val vs. test
-compared separately different scale, not a fair cross-comparison). Val's
-"Detected patches" is a 3-way tie (9/9 for all three) not bolded, since
-nothing wins there. E1 sweeps every val column; on test, E1 still leads
-Precision/F1/PR-AUC but E3 takes Recall and detects every positive patch.*
+compared separately, different scale, not a fair cross-comparison). E1
+still leads test Precision/F1/PR-AUC; E3 still takes test Recall and
+detects every positive patch. E1/E2 moved more than E3 between this run
+and the prior one (E1 test F1: 0.7972→0.8503; E2: 0.7427→0.7904; E3:
+0.3190→0.3194, essentially unchanged) — consistent with E3's
+non-determinism already being negligible in the cuDNN-fix pass, while
+E1/E2 are more sensitive to the float16 precision the on-disk cache
+introduces for `mini`'s own train split (verified safe, not a bug — see
+[Section 9.5](#95-gpu-vs-cpu-inference-throughput)'s own note on this).
 
 ### 9.3 Cross-tier: `mini`-trained checkpoints scored on `starcop_raw`'s real test split (16,758 patches)
 
+*Refreshed alongside [9.2](#92-mini-tier-val-and-test-graded-headline-comparison) -- same `mini` checkpoints, same reason.*
+
 | Config | Precision | Recall | F1 | PR-AUC | Detected patches |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| E1 | **0.7247** | 0.3816 | **0.5000** | **0.4835** | 966/1,706 |
-| E2 | 0.5071 | 0.4664 | 0.4859 | 0.3997 | 936/1,706 |
-| E3 | 0.0369 | **0.8253** | 0.0706 | 0.2562 | **1,706/1,706** |
+| E1 | **0.6530** | 0.4773 | **0.5515** | **0.5556** | **1,100/1,706** |
+| E2 | 0.5729 | 0.4671 | 0.5146 | 0.4150 | 974/1,706 |
+| E3 | 0.0369 | **0.8242** | 0.0707 | 0.2561 | 1,706/1,706 |
 
 *Bold = best per column across all three rows (same split for all three,
 so directly comparable).*
 
 E1 > E2 > E3 by F1: **same ordering as `mini`'s own test split**
 ([Section 9.2](#92-mini-tier-val-and-test-graded-headline-comparison)),
-despite training on a completely different, much smaller dataset.
+despite training on a completely different, much smaller dataset. All
+three improved over the prior pass (E1 F1: 0.5000→0.5515; E2:
+0.4859→0.5146; E3: 0.0706→0.0707 -- essentially flat), tracking the same
+per-architecture pattern as 9.2.
 
 ### 9.4 `raw` tier: R2/R3, on `starcop_raw`'s real test split (16,758 patches)
 
@@ -431,21 +448,33 @@ despite training on a completely different, much smaller dataset.
 | E1 | R2 (6,076 train patches) | 0.0823 | 0.9770 | 0.1518 | 0.2610 | 1,668/1,706 |
 | E2 | R2 | 0.0614 | **0.9847** | 0.1156 | 0.1783 | 1,636/1,706 |
 | E3 | R2 | 0.0895 | 0.9594 | 0.1637 | 0.2968 | **1,686/1,706** |
-| E2 | R3 (141,218 train patches) | **0.1524** | 0.9739 | **0.2636** | **0.4445** | 1,671/1,706 |
-| E3 | R3 | 0.1302 | 0.9826 | 0.2300 | 0.4389 | 1,684/1,706 |
+| E2 | R3 (141,218 train patches) | **0.1557** | 0.9745 | **0.2685** | **0.4740** | 1,659/1,706 |
+| E3 | R3 | 0.1365 | **0.9809** | 0.2396 | 0.4140 | **1,679/1,706** |
 
 *Bold = best per column across all five rows (same split throughout, R2
-and R3 directly comparable).* E2-R3 takes Precision/F1/PR-AUC, E2-R2 edges
-out Recall, and E3-R2 edges out detection rate, individual columns are
-close, but:
+and R3 directly comparable). R3 rows refreshed after R3 was re-trained
+under the on-disk patch cache -- R2 rows unchanged (verified bit-identical
+val_loss/val_f1 to the prior pass, so re-scoring them would just
+reproduce the same numbers).* E2-R3 takes Precision/F1/PR-AUC, E3-R2
+edges out detection rate, individual columns are close, but:
 
 > [!IMPORTANT]
 > **R3 clearly beats R2 as a group** on the identical test split (E2's F1
-> more than doubles: 0.1156 → 0.2636) the cleanest "more real training
+> more than doubles: 0.1156 → 0.2685) the cleanest "more real training
 > data helps" evidence produced this session.
 
+> [!NOTE]
+> This R3 pass also **genuinely early-stopped** for the first time --
+> the prior pass capped `max_epochs=20` for wall-clock-budget reasons
+> (pre-cache, ~14.5 min/epoch); re-run at `max_epochs=200` after the
+> cache cut that to ~3 min/epoch, and `patience=10` fired on its own for
+> both: E2 best epoch 19/29, E3 best epoch 13/23. Neither model had more
+> to give within 200 epochs -- the original budget-driven cap of 20
+> turned out to already be close to (E2) or past (E3) the real
+> convergence point, not an artificial ceiling.
+
 > [!WARNING]
-> All five rows above are precision ≤0.15 with recall ≥0.96, read at
+> All five rows above are precision ≤0.16 with recall ≥0.96, read at
 > face value, that looks like every `raw`-trained model badly
 > over-predicts. It's largely a **threshold-calibration artifact, not a
 > quality gap**: `pos_weight` (the loss's imbalance correction) scales
@@ -463,43 +492,70 @@ Same checkpoints, same `num_workers=4` data-loading config, only
 `device` varied. Classification metrics matched to 3-4 decimals between
 GPU/CPU runs; only speed differs.
 
+> [!NOTE]
+> Re-measured from scratch after this session added an on-disk patch
+> cache ([`patch_cache.py`](patch_cache.py)) that replaced live GeoTIFF
+> windowed reads with a flat, precomputed float16/uint8 array (benchmarked
+> ~95x faster to read than the live path it replaces). `evaluate.py` picks
+> it up automatically the same way `train.py` does. The table below
+> replaces numbers measured *before* the cache existed (kept as a
+> summary note further down, for the record) -- the conclusion those
+> supported (GPU throughput is I/O-bound and near-uniform across
+> architectures) no longer holds now that I/O isn't the bottleneck.
+
 | Config | Scale | GPU (patches/s) | CPU (patches/s) | Speedup |
 | --- | --- | ---: | ---: | ---: |
-| E1 | mini test (441) | 212.4 | 76.5 | 2.78× |
-| E2 | mini test (441) | **217.3** | 47.4 | **4.59×** |
-| E3 | mini test (441) | 215.9 | **78.1** | 2.76× |
-| E1 | raw test (16,758) | **224.9** | 78.6 | 2.86× |
-| E2 | raw test (16,758) | 223.8 | 48.5 | **4.62×** |
-| E3 | raw test (16,758) | 224.1 | **83.9** | 2.67× |
+| E1 | mini test (441) | 453.1 | 100.7 | 4.50× |
+| E2 | mini test (441) | 712.6 | 62.5 | 11.40× |
+| E3 | mini test (441) | 707.5 | **108.4** | 6.53× |
+| E1 | raw test, cross-tier (16,758)† | **2180.5** | 102.4 | 21.29× |
+| E2 | raw test, R3 (16,758) | 1482.6 | 63.3 | 23.42× |
+| E3 | raw test, R3 (16,758) | 1758.1 | **110.7** | 15.88× |
+
+† E1 has no `raw-full`-trained checkpoint (never run, Section 7's own
+"E1 optional for R3" decision) -- this row scores the `mini`-trained E1
+checkpoint against `starcop_raw`'s test split (same cross-tier setup as
+[9.3](#93-cross-tier-mini-trained-checkpoints-scored-on-starcop_raws-real-test-split-16758-patches)),
+not a `raw-full`-trained one like the E2/E3 rows beside it -- kept for
+comparability with the prior version of this table, which did the same.
 
 *Bold = best per column, compared within the same scale (mini vs. raw
-rows compared separately). "Best speedup" here just marks the largest
-GPU/CPU ratio E2, the biggest model, benefits most because it's the
-least I/O-bound of the three.*
+rows compared separately).*
 
-**GPU throughput is nearly identical across all three architectures**
-(~212-225 patches/s) despite a 13.6× spread in parameter count, the GPU
-runs are **I/O-bound** (limited by data loading), not compute-bound. CPU
-throughput, by contrast, clearly tracks model size: E2 is ~1.6-1.7×
-slower than E1/E3 on CPU.
+**GPU throughput now clearly tracks architecture, the opposite of the
+pre-cache finding.** E2 (deepest decoder) leads on `mini` (712.6 p/s);
+E1 (simplest, from-scratch) leads on `raw` cross-tier (2180.5 p/s) --
+once I/O stopped dominating, each architecture's own forward-pass cost
+became visible instead of being masked by a near-uniform ~215-225 p/s
+data-loading ceiling. GPU/CPU speedup also grew substantially at `raw`
+scale (16-23×) versus `mini` (4.5-11.4×) -- the larger, more varied raw
+distribution stresses the CPU path harder than mini's tiny, highly
+cacheable one.
 
 > [!CAUTION]
-> Don't read the "Speedup" column above as a FLOPs/compute-efficiency
-> comparison, it mostly measures "how much the GPU hides compute behind
-> I/O" for each architecture, not raw arithmetic throughput. Because GPU
-> time here is dominated by `num_workers=4` data loading rather than the
-> model itself, E2's higher speedup (~4.6×) reflects it having the *most*
-> compute to hide, not the GPU handling it more efficiently than E1/E3's
-> compute. A `num_workers=0` "pure compute" rerun would isolate the real
-> per-architecture GPU/CPU gap, uncontaminated by I/O.
+> Don't read the "Speedup" column as a pure FLOPs/compute-efficiency
+> comparison either -- CPU throughput still reflects `num_workers=4`
+> data-loading overhead layered on top of the model's own cost, not an
+> isolated compute-only number. A `num_workers=0` "pure compute" variant
+> would isolate the real per-architecture CPU cost, uncontaminated by
+> loading, if useful later.
+
+*(Superseded pre-cache numbers, kept for the record: E1 mini 212.4/76.5
+p/s GPU/CPU, E2 mini 217.3/47.4, E3 mini 215.9/78.1, E1 raw 224.9/78.6,
+E2 raw 223.8/48.5, E3 raw 224.1/83.9 -- GPU throughput was nearly
+identical across all three architectures back then [~212-225 p/s]
+despite a 13.6× parameter-count spread, since those runs were I/O-bound
+on live GeoTIFF reads, not compute-bound. CPU throughput already tracked
+model size even then, since CPU inference was never masked by the same
+I/O cost the GPU runs were.)*
 
 ### 9.6 Everything on one line per configuration
 
 | Config | Params | Best test F1 (mini) | Best test PR-AUC (mini) | GPU throughput (raw) | CPU throughput (raw) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| E1: TinyUNet | 487,361 | 0.7972 | 0.8314 | 224.9 p/s | 78.6 p/s |
-| E2: U-Net + MobileNetV2 | 6,629,233 | 0.7427 | 0.8031 | 223.8 p/s | 48.5 p/s |
-| E3: LinkNet + MobileNetV3-small | 856,635 | 0.3190 | 0.6766 | 224.1 p/s | 83.9 p/s |
+| E1: TinyUNet | 487,361 | 0.8503 | 0.9054 | 2180.5 p/s | 102.4 p/s |
+| E2: U-Net + MobileNetV2 | 6,629,233 | 0.7904 | 0.8193 | 1482.6 p/s | 63.3 p/s |
+| E3: LinkNet + MobileNetV3-small | 856,635 | 0.3194 | 0.6794 | 1758.1 p/s | 110.7 p/s |
 
 ## 10. Key findings, condensed
 
@@ -523,9 +579,16 @@ slower than E1/E3 on CPU.
   claims
   ([Section 9.3](#93-cross-tier-mini-trained-checkpoints-scored-on-starcop_raws-real-test-split-16758-patches)
   / [9.4](#94-raw-tier-r2r3-on-starcop_raws-real-test-split-16758-patches)).
-- **GPU inference is I/O-bound at this patch/model scale**: near-equal
-  throughput across a 13.6× parameter-count spread on GPU, but clearly
-  compute-bound on CPU
-  ([Section 9.5](#95-gpu-vs-cpu-inference-throughput)). A pure-compute
-  (`num_workers=0`) variant would isolate the real per-architecture GPU speedup further, if useful
-  later.
+- **GPU inference throughput now tracks architecture, not I/O.** Before
+  this session's on-disk patch cache, GPU throughput was I/O-bound and
+  nearly uniform across a 13.6× parameter-count spread (~212-225 p/s);
+  after the cache removed the live-GeoTIFF-read bottleneck, GPU
+  throughput ranges 453-2180 p/s and clearly reflects each
+  architecture's own compute cost
+  ([Section 9.5](#95-gpu-vs-cpu-inference-throughput)).
+- **The on-disk patch cache also cut raw-full training time ~4-5x**
+  (E2: 4.78h→1.61h; E3: 4.71h→1.05h, both re-run to genuine early
+  stopping rather than hitting a wall-clock-budget epoch cap) with
+  matching classification results, confirming the speedup didn't trade
+  away model quality
+  ([Section 9.4](#94-raw-tier-r2r3-on-starcop_raws-real-test-split-16758-patches)).

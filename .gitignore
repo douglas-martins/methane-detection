@@ -215,6 +215,14 @@ coursework/dl-final-project/patch_cache/
 # checkpoints/ above.
 coursework/dl-final-project/logs/
 
+# DL course final project -- ad hoc safety-net copy of the successful
+# 20-epoch raw-full checkpoints, made before retrying under a raised
+# max_epochs cap (a GPU driver crash mid-retry had already clobbered one
+# checkpoint in place; this made sure a second failure couldn't lose the
+# rest too). Same category as checkpoints/ above -- binary model weights,
+# not meant to be committed.
+coursework/dl-final-project/checkpoints_backup_20epoch/
+
 ENV/
 env.bak/
 venv.bak/

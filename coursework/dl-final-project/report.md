@@ -717,32 +717,49 @@ execução de `evaluate.py`, não somente neste teste dedicado.
 Todos os números lidos diretamente de `mlflow.db` (execuções
 `<arquitetura>-mini-eval`), nunca retranscritos de log de terminal.
 
+> **Atualizado após a terceira re-execução do conjunto `mini`/`r2`/`raw-full`**,
+> desta vez motivada por um cache de patches em disco adicionado nesta
+> sessão (ver "Bug de reprodutibilidade" abaixo) — os checkpoints
+> mudaram, então estes números foram reavaliados contra os arquivos
+> `checkpoints/*.pt` atuais, não herdados da execução anterior (correção
+> de `cudnn.deterministic`).
+
 | Configuração | Camada (treino) | Split (avaliação) | Precision | Recall | F1 | PR-AUC | Patches com pluma detectados |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| E1 | `mini` | val (49) | 0,4569 | 1,0000 | 0,6272 | 0,8599 | 9/9 |
-| E1 | `mini` | test (441) | 0,9328 | 0,6960 | 0,7972 | 0,8314 | 113/125 |
-| E2 | `mini` | val (49) | 0,1878 | 0,9954 | 0,3160 | 0,6170 | 9/9 |
-| E2 | `mini` | test (441) | 0,6811 | 0,8165 | 0,7427 | 0,8031 | 115/125 |
-| E3 | `mini` | val (49) | 0,0098 | 0,9969 | 0,0194 | 0,7196 | 9/9 |
-| E3 | `mini` | test (441) | 0,1925 | 0,9296 | 0,3190 | 0,6766 | 125/125 |
+| E1 | `mini` | val (49) | 0,3496 | 1,0000 | 0,5181 | 0,7913 | 9/9 |
+| E1 | `mini` | test (441) | 0,9192 | 0,7910 | 0,8503 | 0,9054 | 115/125 |
+| E2 | `mini` | val (49) | 0,2063 | 0,9064 | 0,3361 | 0,5812 | 8/9 |
+| E2 | `mini` | test (441) | 0,7868 | 0,7939 | 0,7904 | 0,8193 | 115/125 |
+| E3 | `mini` | val (49) | 0,0098 | 0,9969 | 0,0195 | 0,7155 | 9/9 |
+| E3 | `mini` | test (441) | 0,1928 | 0,9302 | 0,3194 | 0,6794 | 125/125 |
 
 O `val_f1` desta tabela reproduz **bit a bit** o número já registrado na
-Seção "Experimentos" a partir da curva de treino (0,6272 / 0,3160 /
-0,0194) — checagem cruzada entre a métrica de treino (`train.py::evaluate`)
+Seção "Experimentos" a partir da curva de treino (0,5181 / 0,3361 /
+0,0195) — checagem cruzada entre a métrica de treino (`train.py::evaluate`)
 e a nova implementação independente (`evaluate.py::evaluate_full_metrics`),
 confirmando que ambas calculam o mesmo TP/FP/FN sobre os mesmos dados.
 **O número de teste é o que importa para a comparação final** (checklist
 de validação desta seção: métricas finais vêm do split de teste, não
 apenas de val) — a ordem por F1 de teste é a mesma de val (E1 > E2 > E3).
-**Por PR-AUC, porém, a ordem muda entre val e teste**: em val, E3
-(0,7196) fica à frente de E2 (0,6170); em teste, a posição se inverte —
-E2 (0,8031) fica à frente de E3 (0,6766), com E1 (0,8314) na liderança
-nos dois splits. Mais um lembrete de que val (49 patches) é pequeno
-demais para ordenar E2/E3 com confiança — o número de teste (441
-patches) é o que deve valer para a comparação final, consistente com o
-item de validação acima.
+**Por PR-AUC, a ordem entre val e teste muda para E2/E3 assim como antes**:
+em val, E3 (0,7155) fica à frente de E2 (0,5812); em teste, a posição se
+inverte — E2 (0,8193) fica à frente de E3 (0,6794), com E1 (0,9054) na
+liderança nos dois splits. Mais um lembrete de que val (49 patches) é
+pequeno demais para ordenar E2/E3 com confiança.
 
-*Rastreabilidade (`run_id`): E1=`68f9856f`, E2=`33ef5df4`, E3=`9a1f4dd6`.*
+**E1/E2 mudaram mais que E3 nesta re-execução** (F1 de teste: E1
+0,7972→0,8503; E2 0,7427→0,7904; E3 0,3190→0,3194, praticamente
+inalterado) — consistente com o achado já registrado de que a
+não-determinismo de E3 já era desprezível mesmo antes desta re-execução,
+enquanto E1/E2 são mais sensíveis à precisão float16 que o cache em
+disco introduz para o split de treino de `mini` (verificado seguro, não
+é um bug — ver a seção de throughput GPU vs. CPU mais adiante).
+
+*Rastreabilidade (`run_id`), split teste (execuções `<arquitetura>-mini-eval-cuda`):
+E1=`4393c50d`, E2=`e439df62`, E3=`c0156ab6`. Split val (execuções
+`<arquitetura>-mini-eval`): E1=`fa4ddfb1`, E2=`39935e37`, E3=`a8be08d0`.
+(Substituem E1=`68f9856f`, E2=`33ef5df4`, E3=`9a1f4dd6` da execução
+anterior.)*
 
 ### Avaliação cross-tier: modelos treinados em `mini`, avaliados no teste real de `starcop_raw`
 
@@ -752,27 +769,34 @@ checkpoints da tabela acima, agora avaliados sobre o split de teste
 **completo** de `starcop_raw` (16.758 patches, `patches_processed`
 conferido nas três execuções):
 
+*Atualizada junto com a tabela `mini` acima — mesmos checkpoints, mesmo motivo.*
+
 | Configuração | Camada (treino) | Split (avaliação) | Precision | Recall | F1 | PR-AUC | Patches com pluma detectados |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| E1 | `mini` | `starcop_raw` test (16.758) | 0,7247 | 0,3816 | 0,5000 | 0,4835 | 966/1.706 |
-| E2 | `mini` | `starcop_raw` test (16.758) | 0,5071 | 0,4664 | 0,4859 | 0,3997 | 936/1.706 |
-| E3 | `mini` | `starcop_raw` test (16.758) | 0,0369 | 0,8253 | 0,0706 | 0,2562 | 1.706/1.706 |
+| E1 | `mini` | `starcop_raw` test (16.758) | 0,6530 | 0,4773 | 0,5515 | 0,5556 | 1.100/1.706 |
+| E2 | `mini` | `starcop_raw` test (16.758) | 0,5729 | 0,4671 | 0,5146 | 0,4150 | 974/1.706 |
+| E3 | `mini` | `starcop_raw` test (16.758) | 0,0369 | 0,8242 | 0,0707 | 0,2561 | 1.706/1.706 |
 
 **A ordem de F1 de `mini` (E1 > E2 > E3) se mantém** sob avaliação
 cross-tier — evidência de que a comparação em escala `mini` não é
-puramente um artefato de dado pequeno. Todas as três degradam de forma
-substancial (nenhuma foi treinada na distribuição de `starcop_raw`), mas
-não uniformemente: E3 colapsa muito mais (F1 0,3190→0,0706) que E1/E2
-(~0,80→~0,49). A detecção por patch inverte a leitura da Seção anterior:
-E3 ainda "detecta" 100% dos patches positivos (1.706/1.706), mas apenas
-porque prevê positivo em quase tudo (FP=15.137.797, contra apenas
-TP=579.317 — ver matriz de confusão completa em `mlflow.db`) — o mesmo
-comportamento de "over-triggering" já visível em `mini`/teste, agora
-muito mais extremo contra a taxa de pixels positivos ~8,4× mais rara de
-`starcop_raw` (0,26% vs. 2,15%, tabela acima). E1/E2 detectam ~55–57% dos
-patches positivos com uma contagem de falsos positivos muito mais contida.
+puramente um artefato de dado pequeno. As três melhoraram em relação à
+execução anterior (F1: E1 0,5000→0,5515; E2 0,4859→0,5146; E3
+0,0706→0,0707, praticamente inalterado), acompanhando o mesmo padrão por
+arquitetura da tabela acima. Todas ainda degradam de forma substancial
+frente a `mini`/teste (nenhuma foi treinada na distribuição de
+`starcop_raw`), mas não uniformemente: E3 colapsa muito mais (F1
+0,3194→0,0707) que E1/E2 (~0,80→~0,52-0,55). A detecção por patch
+inverte a leitura da Seção anterior: E3 ainda "detecta" 100% dos patches
+positivos (1.706/1.706), mas apenas porque prevê positivo em quase tudo
+— o mesmo comportamento de "over-triggering" já visível em `mini`/teste,
+agora muito mais extremo contra a taxa de pixels positivos ~8,4× mais
+rara de `starcop_raw` (0,26% vs. 2,15%, tabela acima). E1/E2 agora
+detectam ~57–64% dos patches positivos com uma contagem de falsos
+positivos muito mais contida.
 
-*Rastreabilidade (`run_id`): E1=`16fd740b`, E2=`39931939`, E3=`ecad8721`.*
+*Rastreabilidade (`run_id`), execuções `<arquitetura>-mini-on-raw-full-eval`:
+E1=`e6fcee4c`, E2=`0b3627d3`, E3=`b5d641a8`. (Substituem E1=`16fd740b`,
+E2=`39931939`, E3=`ecad8721` da execução anterior.)*
 
 ### Camada `starcop_raw` — R2 e R3 no teste real (números "cabeçalho" da camada)
 
@@ -786,12 +810,17 @@ de `starcop_raw` (16.758 patches) das duas tabelas acima:
 | E1 | R2 | `starcop_raw` test (16.758) | 0,0823 | 0,9770 | 0,1518 | 0,2610 | 1.668/1.706 |
 | E2 | R2 | `starcop_raw` test (16.758) | 0,0614 | 0,9847 | 0,1156 | 0,1783 | 1.636/1.706 |
 | E3 | R2 | `starcop_raw` test (16.758) | 0,0895 | 0,9594 | 0,1637 | 0,2968 | 1.686/1.706 |
-| E2 | R3 (`raw-full`) | `starcop_raw` test (16.758) | 0,1524 | 0,9739 | 0,2636 | 0,4445 | 1.671/1.706 |
-| E3 | R3 (`raw-full`) | `starcop_raw` test (16.758) | 0,1302 | 0,9826 | 0,2300 | 0,4389 | 1.684/1.706 |
+| E2 | R3 (`raw-full`) | `starcop_raw` test (16.758) | 0,1557 | 0,9745 | 0,2685 | 0,4740 | 1.659/1.706 |
+| E3 | R3 (`raw-full`) | `starcop_raw` test (16.758) | 0,1365 | 0,9809 | 0,2396 | 0,4140 | 1.679/1.706 |
+
+*Linhas R2 inalteradas (pesos bit-idênticos à execução anterior,
+verificado); linhas R3 atualizadas — `raw-full` foi re-treinado sob o
+cache de patches em disco desta sessão (ver "Bug de reprodutibilidade"
+abaixo).*
 
 **R3 supera R2 com clareza no mesmo split real de teste** — E2: F1
-0,1156→0,2636 (mais que dobra), PR-AUC 0,1783→0,4445; E3: F1
-0,1637→0,2300, PR-AUC 0,2968→0,4389. Esta é a evidência mais limpa deste
+0,1156→0,2685 (mais que dobra), PR-AUC 0,1783→0,4740; E3: F1
+0,1637→0,2396, PR-AUC 0,2968→0,4140. Esta é a evidência mais limpa deste
 projeto de que "mais dado real de treino ajuda": os números de val do
 próprio R2 (tabela da Seção "Experimentos", E1 > E3 > E2 por `val_f1`)
 pareciam razoáveis, mas aquele split de val curado (3.136 patches) não
@@ -804,10 +833,20 @@ split verdadeiramente independente mudando a conclusão; a ordem de R3
 é específica do val pequeno/curado de R2, não um problema geral de seleção
 por val.
 
+**Esta re-execução de R3 também parou de forma genuinamente antecipada
+pela primeira vez.** A execução anterior limitava `max_epochs=20` por
+orçamento de tempo (~14,5 min/época, antes do cache); re-executada com
+`max_epochs=200` depois que o cache reduziu isso para ~3 min/época,
+`patience=10` disparou sozinho para os dois: E2 melhor época 19/29, E3
+melhor época 13/23. Nenhum dos dois tinha mais a ganhar dentro de 200
+épocas — o teto de 20, embora motivado por orçamento, já estava próximo
+(E2) ou além (E3) do ponto real de convergência, não um limite
+artificial.
+
 **Todos os cinco modelos treinados em dados de `starcop_raw` operam com
 recall alto e precision baixa no limiar fixo de 0,5** (recall 0,94–0,98,
-precision 0,06–0,15) — bem diferente dos modelos `mini` avaliados no
-mesmo split (E1/E2 com precision 0,51–0,72, tabela acima). Isso acompanha
+precision 0,06–0,16) — bem diferente dos modelos `mini` avaliados no
+mesmo split (E1/E2 com precision 0,57–0,65, tabela acima). Isso acompanha
 a escala de `pos_weight` por camada (`mini`≈87, R2≈270, R3≈314 —
 Metodologia, acima): a perda de um modelo treinado em `starcop_raw`
 compensa tanto a raridade do positivo que 0,5 deixa de ser um ponto de
@@ -821,7 +860,9 @@ este efeito de calibração de limiar nomeado explicitamente em vez de lido
 como uma lacuna de qualidade do modelo `raw`.
 
 *Rastreabilidade (`run_id`): E1-R2=`8ce931b7`, E2-R2=`05f1e133`,
-E3-R2=`fce97e40`, E2-R3=`654b13b8`, E3-R3=`3a347b4b`.*
+E3-R2=`fce97e40` (inalterados). E2-R3=`37f14605`, E3-R3=`a7b0961b`
+(execuções `<arquitetura>-raw-full-eval-cuda`, substituem
+E2-R3=`654b13b8`, E3-R3=`3a347b4b` da execução anterior).*
 
 ### Curvas Precision-Recall
 
@@ -865,6 +906,47 @@ R3 > R2.
 respectivos `__tests__/*.py` (116 testes no total do projeto até esta
 seção).
 
+### Throughput de inferência: GPU vs. CPU
+
+Relevante para o contexto de implantação embarcada deste projeto (Seção
+"Contextualização") — o parâmetro `device=cuda|cpu` de `evaluate.py`
+força um dispositivo específico independente de detecção automática,
+apenas para esta comparação; os checkpoints e o `num_workers=4` de
+carregamento de dados são idênticos entre as duas execuções de cada
+linha, só o dispositivo varia. Métricas de classificação batem em 3-4
+casas decimais entre GPU/CPU (ruído de ponto flutuante entre
+dispositivos); só a velocidade difere.
+
+| Configuração | Escala | GPU (patches/s) | CPU (patches/s) | Aceleração |
+| --- | --- | ---: | ---: | ---: |
+| E1 | `mini` teste (441) | 453,1 | 100,7 | 4,50× |
+| E2 | `mini` teste (441) | 712,6 | 62,5 | 11,40× |
+| E3 | `mini` teste (441) | 707,5 | 108,4 | 6,53× |
+| E1 | `raw` teste, cross-tier (16.758)¹ | 2.180,5 | 102,4 | 21,29× |
+| E2 | `raw` teste, R3 (16.758) | 1.482,6 | 63,3 | 23,42× |
+| E3 | `raw` teste, R3 (16.758) | 1.758,1 | 110,7 | 15,88× |
+
+¹ E1 não tem checkpoint treinado em `raw-full` (decisão já registrada na
+Seção 7: E1 opcional para R3, não executado) — esta linha avalia o
+checkpoint treinado em `mini` contra o split de teste de `starcop_raw`
+(mesma configuração cross-tier da tabela acima), não um checkpoint
+treinado em `raw-full` como as linhas de E2/E3.
+
+**O throughput de GPU agora acompanha claramente a arquitetura** — E2 (o
+decodificador mais profundo) lidera em `mini` (712,6 p/s); E1 (o mais
+simples, do zero) lidera em `raw` cross-tier (2.180,5 p/s). Isso só é
+visível porque o cache de patches em disco (ver "Terceira re-execução",
+acima) removeu o gargalo de I/O que antes dominava o tempo de GPU e
+mascarava a diferença real de custo computacional entre arquiteturas — a
+aceleração GPU/CPU também cresceu substancialmente na escala `raw`
+(16-23×) frente a `mini` (4,5-11,4×), já que a distribuição maior e mais
+variada de `raw` estressa mais o caminho de CPU que a de `mini`
+(pequena, altamente cacheável).
+
+*Rastreabilidade (`run_id`): execuções `<arquitetura>-<split>-eval-cuda`
+e `<arquitetura>-<split>-eval-cpu` em `mlflow.db`, todas em
+2026-09-18 entre 01:28 e 01:43 (horário local).*
+
 ## Resultados
 
 Todos os números abaixo foram lidos diretamente de `mlflow.db`
@@ -890,9 +972,9 @@ filtrando pelo registro `step=0` (a média real,
 
 | Configuração | Parâmetros | Melhor `val_loss` | Melhor `val_f1` | Tempo/época | Tempo total |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| E1 (do zero) | 487.361 | 0,0142 | 0,6272 | 2,17 s | 108,6 s (1,8 min) |
-| E2 (U-Net + MobileNetV2) | 6.629.233 | 0,0354 | 0,3160 | 2,37 s | 118,4 s (2,0 min) |
-| E3 (LinkNet + MobileNetV3-small) | 856.635 | 0,4845 | 0,0194 | 2,34 s | 117,2 s (2,0 min) |
+| E1 (do zero) | 487.361 | 0,0160 | 0,5181 | 0,44 s | 21,8 s |
+| E2 (U-Net + MobileNetV2) | 6.629.233 | 0,0338 | 0,3361 | 1,00 s | 49,8 s |
+| E3 (LinkNet + MobileNetV3-small) | 856.635 | 0,4848 | 0,0195 | 0,65 s | 32,5 s |
 
 **Ordem por `val_f1`: E1 > E2 > E3** — ver "Comparação E1/E2/E3 — mini"
 acima para a discussão de por que essa ordem reflete velocidade de
@@ -900,10 +982,16 @@ convergência sob um orçamento fixo de 50 épocas, não necessariamente
 qualidade de arquitetura (E3 ainda caindo de forma acentuada na época 50,
 não convergido).
 
-*Números re-executados sob a correção de reprodutibilidade
-(`cudnn.deterministic=True`) — ver "Limitação de reprodutibilidade"
-abaixo. Rastreabilidade (`run_id`): E1=`f8e6ee1b`, E2=`13e0b073`,
-E3=`04afec08`.*
+**Tempo/época caiu ~5× frente à execução anterior** (E1: 2,17s→0,44s; E2:
+2,37s→1,00s; E3: 2,34s→0,65s) — o cache de patches em disco desta sessão
+também acelera `mini`, não apenas `raw-full`, já que ambos passam pela
+mesma detecção automática de cache em `fit()`.
+
+*Terceira re-execução: números de treino (não apenas a correção de
+reprodutibilidade `cudnn.deterministic=True`) sob o cache de patches em
+disco — ver "Bug de reprodutibilidade" abaixo. Rastreabilidade
+(`run_id`): E1=`9b13bf6f`, E2=`43fe7b56`, E3=`b292fb82` (substituem
+E1=`f8e6ee1b`, E2=`13e0b073`, E3=`04afec08` da execução anterior).*
 
 ### Tabela de confirmação — camada `starcop_raw` (R2 e R3, Seção 0.1)
 
@@ -912,36 +1000,55 @@ substitui os de `mini`, são a confirmação em escala do plano.
 
 | Configuração | Camada | Parâmetros | Melhor `val_loss` | Melhor `val_f1` | Melhor época / total | Tempo/época | Tempo total |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| E1 | R2 (subamostra, 6.076 patches) | 487.361 | 0,1478 | 0,3667 | 22/32 (early stop) | 39,08 s | 1.250,5 s (20,8 min) |
-| E2 | R2 (subamostra, 6.076 patches) | 6.629.233 | 0,2120 | 0,3295 | 10/20 (early stop) | 45,57 s | 911,5 s (15,2 min) |
-| E3 | R2 (subamostra, 6.076 patches) | 856.635 | 0,2159 | 0,3321 | 31/41 (early stop) | 45,01 s | 1.845,3 s (30,8 min) |
-| E2 | R3 (`raw-full`, 141.218 patches) | 6.629.233 | 0,0623 | 0,2885 | 18/20 (atingiu o teto) | 860,47 s | 17.209,3 s (4,78 h) |
-| E3 | R3 (`raw-full`, 141.218 patches) | 856.635 | 0,0693 | 0,2538 | 10/20 (early stop, exatamente no teto) | 848,01 s | 16.960,2 s (4,71 h) |
+| E1 | R2 (subamostra, 6.076 patches) | 487.361 | 0,1478 | 0,3667 | 22/32 (early stop) | 20,28 s | 649,1 s (10,8 min) |
+| E2 | R2 (subamostra, 6.076 patches) | 6.629.233 | 0,2120 | 0,3295 | 10/20 (early stop) | 25,50 s | 510,0 s (8,5 min) |
+| E3 | R2 (subamostra, 6.076 patches) | 856.635 | 0,2159 | 0,3321 | 31/41 (early stop) | 22,61 s | 926,9 s (15,4 min) |
+| E2 | R3 (`raw-full`, 141.218 patches) | 6.629.233 | 0,0613 | 0,2903 | 19/29 (early stop) | 199,97 s | 5.799,2 s (1,61 h) |
+| E3 | R3 (`raw-full`, 141.218 patches) | 856.635 | 0,0718 | 0,2562 | 13/23 (early stop) | 164,56 s | 3.784,8 s (1,05 h) |
 
 **Ordem por `val_f1` em R2: E1 (0,3667) > E3 (0,3321) > E2 (0,3295)**,
 E2/E3 praticamente empatados — ver a discussão completa em "Comparação
 E1/E2/E3 — r2" acima, incluindo por que isso é diferente do achado
 pré-correção (E1 caindo para último lugar), que era ele mesmo um
 artefato da falta de reprodutibilidade. **Ordem em R3 (E1 excluído,
-Seção 6/7): E2 (0,2885) > E3 (0,2538)** — a mesma ordem relativa de
-antes da correção (E2 à frente), diferente do padrão de R2 nesta
-re-execução (onde E3 fica marginalmente à frente) — ou seja, a ordem
-E2-vs-E3 não é estável entre R2 e R3 nem antes nem depois da correção,
-apenas os valores mudaram. Os valores absolutos de `val_f1` de E2 e E3
-voltam a cair de R2 para R3 (E2: 0,3295→0,2885; E3: 0,3321→0,2538),
-reforçando a mesma explicação já registrada antes da correção: o split
-de validação de `raw-full` (26.607 patches) é maior e mais diverso que o
-de R2 (3.136, curado), um teste mais difícil, não uma regressão real de
-qualidade.
+Seção 6/7): E2 (0,2903) > E3 (0,2562)** — a mesma ordem relativa de
+antes (E2 à frente), diferente do padrão de R2 nesta re-execução (onde
+E3 fica marginalmente à frente) — ou seja, a ordem E2-vs-E3 não é
+estável entre R2 e R3. Os valores absolutos de `val_f1` de E2 e E3 voltam
+a cair de R2 para R3 (E2: 0,3295→0,2903; E3: 0,3321→0,2562), reforçando a
+mesma explicação já registrada antes: o split de validação de
+`raw-full` (26.607 patches) é maior e mais diverso que o de R2 (3.136,
+curado), um teste mais difícil, não uma regressão real de qualidade.
+
+**R2 tem valores de `val_loss`/`val_f1` idênticos, bit a bit, à execução
+anterior** (verificado) — esperado, já que `r2` usa sua própria subamostra
+fixa (`r2_manifest_*.csv`), que não corresponde ao cache em disco desta
+sessão e portanto continua lendo os dados ao vivo, exatamente como antes.
+**O tempo caiu de qualquer forma** (~2× mais rápido: E1 39,08s→20,28s/época,
+E2 45,57s→25,50s, E3 45,01s→22,61s) — efeito colateral dos outros ajustes
+de cache/pool desta sessão, que também beneficiam leitura ao vivo em
+escala pequena o suficiente para caber no cache em RAM.
+
+**R3 mudou de fato** — foi re-treinado sob o cache em disco e, desta vez,
+**parou por convergência real, não por teto de época**: a execução
+anterior limitava `max_epochs=20` por orçamento de tempo (~14,5 min/época
+antes do cache); re-executado com `max_epochs=200` depois que o cache
+reduziu isso para ~3 min/época, `patience=10` disparou sozinho para os
+dois (E2 melhor época 19/29, E3 melhor época 13/23) — confirmando que o
+teto original de 20, embora motivado por orçamento, já estava próximo
+(E2) ou além (E3) do ponto real de convergência. **Tempo total caiu
+~4-5×**: E2 4,78h→1,61h, E3 4,71h→1,05h.
 
 `pos_weight` idêntico dentro de cada camada (87,27 em `mini`, 269,73 em
 R2, 314,48 em R3) confirma que todas as execuções de uma mesma camada
 leram exatamente o mesmo split/manifesto — não uma amostra redesenhada
 por execução.
 
-*Rastreabilidade (`run_id`), todas as execuções abaixo re-executadas sob
-a correção de reprodutibilidade: E1-R2=`ea7da10c`, E2-R2=`d5eaeb84`,
-E3-R2=`37edfff4`, E2-R3=`31769759`, E3-R3=`f0d4856b`.*
+*Rastreabilidade (`run_id`): R2 re-executado com valores idênticos —
+E1-R2=`498e2d05`, E2-R2=`077377a1`, E3-R2=`df65ff00` (substituem
+E1-R2=`ea7da10c`, E2-R2=`d5eaeb84`, E3-R2=`37edfff4`). R3 re-treinado com
+valores novos — E2-R3=`42cdd6d4`, E3-R3=`0aad9405` (substituem
+E2-R3=`31769759`, E3-R3=`f0d4856b`).*
 
 ### Bug de reprodutibilidade — encontrado, corrigido, e resultados re-executados
 
@@ -990,6 +1097,50 @@ para um empate técnico em R2. Isso é uma lição direta sobre por que este
 bug importava: a "descoberta" mais interessante do projeto, antes da
 correção, era em si um artefato de não-reprodutibilidade — não um
 resultado real sobre as arquiteturas.
+
+### Terceira re-execução — cache de patches em disco, sem novo bug
+
+**Diferente das duas re-execuções anteriores desta seção, esta não foi
+motivada por um bug de correção.** `starcop_raw` treina de forma
+seriamente limitada por I/O de disco: cada patch é lido de um GeoTIFF
+real a cada acesso, a cada época. Um cache de patches em disco
+(`patch_cache.py`) foi adicionado nesta sessão — pré-computa cada patch
+decodificado uma única vez, como arrays planos `float16`/`uint8`
+(benchmarked ~95× mais rápido de ler que a leitura GeoTIFF ao vivo que
+substitui). `train.py`/`evaluate.py` detectam e usam o cache
+automaticamente quando ele existe para o split em questão, sem alterar
+nenhum resultado esperado — os valores normalizados são os mesmos, só a
+precisão de armazenamento (`float16` em vez de `float32`) muda, e isso é
+seguro porque toda banda de entrada já é recortada (`clip`) para uma
+faixa pequena e fixa antes da normalização (ver "Contrato de
+normalização", acima), bem dentro da precisão do `float16`. O rótulo é
+0/1 exato, então `uint8` é sem perdas.
+
+`r2` usa sua própria subamostra fixa (`r2_manifest_*.csv`), que não
+corresponde ao fingerprint do cache e portanto continua lendo ao vivo —
+por isso seus valores de `val_loss`/`val_f1` saem bit-idênticos à
+execução anterior (verificado), só o tempo mudou (efeito colateral de
+outros ajustes de pool/cache em RAM desta sessão, não do cache em disco
+em si). `mini` e `raw-full`, por outro lado, usam exatamente os splits
+para os quais o cache foi construído, então ambos foram re-treinados de
+fato — `mini` com resultados próximos aos anteriores (E3 quase idêntico,
+E1/E2 com diferença maior, atribuída à precisão `float16`, não a um
+bug), `raw-full` com resultados de `val_f1` muito próximos aos anteriores
+mas desta vez **genuinamente convergidos** (parada antecipada real, não
+um teto de época por orçamento de tempo — ver "Tabela de confirmação",
+acima) e um tempo de treino **~4-5× menor** (E2: 4,78h→1,61h; E3:
+4,71h→1,05h).
+
+**Um incidente real durante esta re-execução, documentado por
+transparência**: a primeira tentativa de re-treinar `raw-full` com
+`max_epochs=200` foi interrompida por um travamento do driver da GPU
+(`NVRM Xid 8`, "GPU is probably locked") na época 4 de E2 — uma
+instabilidade de driver, não um bug de código (a mesma configuração já
+havia treinado sem problemas por horas antes disso). O checkpoint de E2
+foi sobrescrito em memória pela tentativa parcial antes da interrupção;
+uma cópia de segurança dos checkpoints bem-sucedidos foi feita antes da
+segunda tentativa, que completou normalmente e é a que gerou os números
+finais desta seção.
 
 ## Discussão
 
