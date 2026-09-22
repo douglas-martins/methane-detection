@@ -29,7 +29,9 @@ COURSEWORK_PATH := coursework/dl-final-project
 .PHONY: coursework-test coursework-lint coursework-train coursework-confirm-raw \
 	coursework-precompute-cache coursework-mutation \
 	coursework-evaluate-mini coursework-evaluate-cross-tier coursework-evaluate-r2 \
-	coursework-evaluate-r3 coursework-evaluate coursework-pr-curves
+	coursework-evaluate-r3 coursework-evaluate coursework-pr-curves \
+	coursework-eval-scenes coursework-eval-scenes-all \
+	coursework-throughput coursework-throughput-scenes
 
 coursework-test:
 	$(ENV_COURSEWORK_PYTHON) -m pytest $(COURSEWORK_PATH) -v
@@ -116,6 +118,53 @@ coursework-evaluate-r3:
 # executed (11 total). Minutes, not hours, but real GPU inference over up to
 # 16,758 patches per run -- expect roughly 15-20 minutes end to end.
 coursework-evaluate: coursework-evaluate-mini coursework-evaluate-cross-tier coursework-evaluate-r2 coursework-evaluate-r3
+
+# Paper-protocol (whole-scene) evaluation, one model and mode (see evaluate_scenes.py's
+# docstring), e.g.:
+#   make coursework-eval-scenes ARGS="architecture=E2 checkpoint_tier=raw-full mode=full_scene"
+coursework-eval-scenes:
+	$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate_scenes.py $(ARGS)
+
+# The whole matrix of final models, GPU, one run at a time: R3 (E2/E3, raw-full), R2 (E1/E2/E3) and
+# the mini-trained models on the raw tier (D7), each in `full_scene` (validation-picked threshold)
+# and the `patches` diagnostic; plus the mini models on mini's own 9 test scenes (fixed 0.5 only).
+coursework-eval-scenes-all:
+	for mode in full_scene patches; do \
+		for arch in E2 E3; do \
+			$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate_scenes.py architecture=$$arch checkpoint_tier=raw-full eval_tier=raw-full mode=$$mode; \
+		done; \
+		for arch in E1 E2 E3; do \
+			$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate_scenes.py architecture=$$arch checkpoint_tier=r2 eval_tier=raw-full mode=$$mode; \
+			$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate_scenes.py architecture=$$arch checkpoint_tier=mini eval_tier=raw-full mode=$$mode; \
+		done; \
+	done
+	for arch in E1 E2 E3; do \
+		$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate_scenes.py architecture=$$arch checkpoint_tier=mini eval_tier=mini mode=full_scene thresholds=single; \
+	done
+
+# GPU-vs-CPU inference throughput on patches (report.md's "Throughput de inferencia" table): the
+# six configurations of that table, each on cuda then cpu, splits=test. Run on an otherwise idle
+# machine, one job at a time, or the timings are meaningless.
+coursework-throughput:
+	for device in cuda cpu; do \
+		for arch in E1 E2 E3; do \
+			$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate.py architecture=$$arch dataset=starcop_mini tier=mini splits=test device=$$device; \
+		done; \
+		$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate.py architecture=E1 dataset=starcop_raw tier=raw-full checkpoint_tier=mini splits=test device=$$device; \
+		for arch in E2 E3; do \
+			$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate.py architecture=$$arch dataset=starcop_raw tier=raw-full splits=test device=$$device; \
+		done; \
+	done
+
+# The same comparison for whole 512x512 scenes (scenes/s), fixed 0.5 threshold only so the threshold
+# sweep does not dominate the CPU time: E1 (mini-trained) and E2/E3 (R3) on the 342 raw test scenes.
+coursework-throughput-scenes:
+	for device in cuda cpu; do \
+		$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate_scenes.py architecture=E1 checkpoint_tier=mini eval_tier=raw-full mode=full_scene thresholds=single device=$$device; \
+		for arch in E2 E3; do \
+			$(ENV_COURSEWORK_PYTHON) $(COURSEWORK_PATH)/evaluate_scenes.py architecture=$$arch checkpoint_tier=raw-full eval_tier=raw-full mode=full_scene thresholds=single device=$$device; \
+		done; \
+	done
 
 # PR-curve comparison plots (Section 8's final Activities item) -- reads the
 # MLflow artifacts the targets above log, so run coursework-evaluate first
