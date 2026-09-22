@@ -3,6 +3,7 @@ import torch
 from metrics import (
     add_counts,
     average_precision_from_sweep,
+    best_f1_operating_point,
     confusion_matrix_counts,
     confusion_matrix_from_counts,
     detection_rate_from_counts,
@@ -288,6 +289,64 @@ class TestPatchDetectionCounts:
         counts = patch_detection_counts(predictions, targets)
 
         assert counts == {"positive_patches": 3, "detected_patches": 2}
+
+
+class TestBestF1OperatingPoint:
+    def test_picks_the_threshold_with_the_highest_f1(self):
+        # threshold=0.0 -> f1=2*1*0.5/1.5=0.667; threshold=0.5 -> f1=1.0 (best);
+        # threshold=1.0 -> f1=0.0.
+        points = [(1.0, 0.5), (1.0, 1.0), (0.0, 0.0)]
+        thresholds = [0.0, 0.5, 1.0]
+
+        result = best_f1_operating_point(points, thresholds)
+
+        assert result == {"threshold": 0.5, "recall": 1.0, "precision": 1.0, "f1": 1.0}
+
+    def test_ties_return_the_first_matching_threshold_in_input_order(self):
+        # Two thresholds tie at f1=1.0 -- deterministic tie-break: first one
+        # encountered walking `points`/`thresholds` in the given order, not
+        # the highest or lowest threshold specifically.
+        points = [(1.0, 1.0), (1.0, 1.0)]
+        thresholds = [0.2, 0.7]
+
+        result = best_f1_operating_point(points, thresholds)
+
+        assert result["threshold"] == 0.2
+
+    def test_all_zero_precision_and_recall_is_zero_f1_not_nan(self):
+        # The degenerate case every other metric in this module already
+        # guards against: a curve point of (0, 0) must not divide by zero.
+        points = [(0.0, 0.0)]
+        thresholds = [1.0]
+
+        result = best_f1_operating_point(points, thresholds)
+
+        assert result == {"threshold": 1.0, "recall": 0.0, "precision": 0.0, "f1": 0.0}
+        assert not torch.isnan(torch.tensor(result["f1"]))
+
+    def test_low_precision_and_recall_summing_to_at_most_one_still_scores_nonzero_f1(self):
+        # Kills a `denominator > 1` boundary mutant: a heavily recall/precision-starved
+        # model (precision + recall <= 1 everywhere) must still pick its real best
+        # point with its real F1, not fall back to the zero-denominator 0.0 branch.
+        points = [(0.0, 0.0), (0.3, 0.2), (0.1, 0.1)]
+        thresholds = [0.1, 0.5, 0.9]
+
+        result = best_f1_operating_point(points, thresholds)
+
+        assert result["threshold"] == 0.5
+        assert result["f1"] == pytest.approx(0.24)
+
+    def test_matches_a_realistic_sweep_shaped_curve(self):
+        # Shaped like a real evaluate.py sweep: precision rising, recall
+        # falling as threshold increases -- best F1 is neither endpoint.
+        points = [(0.98, 0.06), (0.85, 0.20), (0.50, 0.60), (0.10, 0.90), (0.0, 0.0)]
+        thresholds = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+        result = best_f1_operating_point(points, thresholds)
+
+        # f1 at each: 0.113, 0.325, 0.545 (best), 0.180, 0.0.
+        assert result["threshold"] == 0.5
+        assert result["f1"] == pytest.approx(0.5454545454545454)
 
 
 class TestDetectionRateFromCounts:

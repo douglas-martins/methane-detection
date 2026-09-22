@@ -166,6 +166,44 @@ def average_precision_from_sweep(sweep_counts: torch.Tensor) -> float:
     return average_precision
 
 
+def best_f1_operating_point(
+    points: list[tuple[float, float]], thresholds: list[float]
+) -> dict[str, float]:
+    """Pick the `(threshold, recall, precision)` triple maximizing F1 from a threshold sweep.
+
+    `points` is `(recall, precision)` per threshold, in the same order as
+    `thresholds` -- exactly `evaluate.py`'s raw `precision_recall_curve`
+    artifact order (unsorted, matching its own `pr_thresholds` sweep), not
+    `sort_points_by_recall`'s ascending-by-recall order used for plotting.
+    Section 8/9's own finding motivates this: the fixed 0.5 threshold is
+    poorly calibrated for `pos_weight`-heavy raw-tier models, so reporting
+    the F1-optimal point alongside the fixed-threshold one tells a more
+    honest story without retraining anything.
+
+    Ties keep the first-encountered threshold in the given input order --
+    deterministic, and irrelevant for the default ascending-threshold sweep
+    used everywhere in this project (a tie there would be a real plateau in
+    the curve, not resolved by picking a particular side of it).
+    """
+    # The first iteration always overwrites both (f1 >= 0 > -1.0), so their initial
+    # values are unobservable for any non-empty `points`.
+    best_index = 0  # pragma: no mutate
+    best_f1 = -1.0  # pragma: no mutate
+    for index, (recall, precision) in enumerate(points):
+        denominator = precision + recall
+        f1 = (2 * precision * recall) / denominator if denominator > 0 else 0.0
+        if f1 > best_f1:
+            best_f1 = f1
+            best_index = index
+    best_recall, best_precision = points[best_index]
+    return {
+        "threshold": thresholds[best_index],
+        "recall": best_recall,
+        "precision": best_precision,
+        "f1": best_f1,
+    }
+
+
 def patch_detection_counts(predictions: torch.Tensor, targets: torch.Tensor) -> dict[str, int]:
     """Per-patch "detected at all" counts (Section 8): among patches with at least
     one true positive pixel, how many got at least one predicted positive pixel.
