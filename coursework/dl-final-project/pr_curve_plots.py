@@ -31,6 +31,7 @@ matplotlib.use("Agg")  # headless: this script writes figures to disk, never sho
 import matplotlib.pyplot as plt
 import mlflow
 from metrics import sort_points_by_recall
+from threshold_calibration import latest_finished_run_id
 
 _COURSEWORK_ROOT = Path(__file__).resolve().parent
 _MLFLOW_TRACKING_URI = f"sqlite:///{_COURSEWORK_ROOT / 'mlflow.db'}"
@@ -55,19 +56,16 @@ def curve_points_from_artifact(artifact: dict) -> list[tuple[float, float]]:
 def load_precision_recall_curve(run_name: str, split: str = "test") -> list[tuple[float, float]]:
     """Find the `mlflow.db` run named `run_name` and return its `split`'s PR curve.
 
-    Raises `ValueError` if no run with that exact name exists -- silently
-    plotting an empty curve would be a worse failure than crashing here.
+    Uses the newest FINISHED run of that name that is not superseded/throwaway
+    (`threshold_calibration.latest_finished_run_id`). Raises `ValueError` if there
+    is none -- silently plotting an empty curve, or a stale run's, would be a worse
+    failure than crashing here.
     """
     client = mlflow.MlflowClient()
     experiment = client.get_experiment_by_name(_MLFLOW_EXPERIMENT)
     runs = client.search_runs([experiment.experiment_id])
-    matches = [run for run in runs if run.data.tags.get("mlflow.runName") == run_name]
-    if not matches:
-        raise ValueError(f"no run named {run_name!r} found in experiment {_MLFLOW_EXPERIMENT!r}")
-
-    artifact = mlflow.artifacts.load_dict(
-        f"runs:/{matches[0].info.run_id}/{split}_precision_recall_curve.json"
-    )
+    run_id = latest_finished_run_id(runs, run_name)
+    artifact = mlflow.artifacts.load_dict(f"runs:/{run_id}/{split}_precision_recall_curve.json")
     return curve_points_from_artifact(artifact)
 
 
