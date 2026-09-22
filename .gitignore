@@ -223,6 +223,48 @@ coursework/dl-final-project/logs/
 # not meant to be committed.
 coursework/dl-final-project/checkpoints_backup_20epoch/
 
+# DL course final project -- same category, safety-net copy of the mini
+# tier's fixed-50-epoch checkpoints, made before re-training under a
+# raised max_epochs cap to let early stopping fire for real (see
+# report.md's "Extensão do orçamento de épocas").
+coursework/dl-final-project/checkpoints_backup_50epoch/
+
+# DL course final project -- same category, safety-net copy of R2/R3's
+# val_loss-monitored checkpoints, made before re-training R2/R3 with
+# monitor=val_f1 (see report.md's "Calibração de limiar" / plan's
+# discovery that val_loss and val_f1 diverge under starcop_raw's much
+# larger pos_weight).
+coursework/dl-final-project/checkpoints_backup_val_loss_monitor/
+
+# DL course final project -- same category, safety-net copy of R2/R3's
+# monitor=val_f1-but-unsmoothed checkpoints, made before re-training with
+# monitor_window=3 added (E2-raw-full/R3 regressed under unsmoothed
+# val_f1: an isolated early F1 spike consumed all of patience before the
+# model's continuing val_loss improvement could show up in F1 -- see
+# train.py's fit() docstring and report.md's "Calibração de limiar").
+coursework/dl-final-project/checkpoints_backup_valf1_nosmoothing/
+
+# DL course final project -- E2-raw-full's checkpoint as it stood when a GPU
+# driver crash (Xid 8 / cudaErrorLaunchTimeout) killed its dual-stop run at
+# epoch 73 (best epoch 70, test F1 0.470) -- the starting point for resuming.
+coursework/dl-final-project/checkpoints_backup_dualstop_crash_epoch70/
+
+# DL course final project -- copies made by train_with_recovery.py of the best
+# checkpoint after each GPU crash, so the next attempt resumes from a stable file.
+coursework/dl-final-project/checkpoints_backup_recovery/
+
+# DL course final project -- safety-net copy of every mini / R2 / R3 checkpoint produced by the
+# code before exact per-epoch resume existed, made before the clean retrain (paper-protocol
+# plan, Phase T) replaces them in place.
+coursework/dl-final-project/checkpoints_backup_pre_exact_resume/
+
+# DL course final project -- safety-net copies of the MLflow store (mlflow.db.bak-<date>),
+# the exact-resume per-epoch state files (run_state/), and the per-scene confusion counts
+# written by the paper-protocol scoring (scene_scores/). All regenerable or local-only.
+coursework/dl-final-project/mlflow.db.bak-*
+coursework/dl-final-project/run_state/
+coursework/dl-final-project/scene_scores/
+
 ENV/
 env.bak/
 venv.bak/
