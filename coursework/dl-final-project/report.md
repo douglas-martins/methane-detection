@@ -10,15 +10,71 @@
 
 ## Introdução
 
-*(pendente — Seção 1 do plano)*
+O metano (CH₄) é um gás de efeito estufa central para a mitigação climática de curto prazo: seu potencial de
+aquecimento é muito maior que o do CO₂ e seu tempo de permanência atmosférica é de cerca de 9 anos, o que
+torna a redução de suas emissões uma alavanca rápida para desacelerar o aquecimento global (Jacob et al.,
+2022; UNEP/CCAC, 2022). Emissões antropogênicas de metano concentram-se em setores como petróleo e gás,
+mineração de carvão, agricultura e resíduos, onde ocorrem com frequência de forma pontual — vazamentos e
+plumas — detectável por sensoriamento remoto (Jacob et al., 2022).
+
+Observações orbitais e aerotransportadas no infravermelho de ondas curtas (SWIR) permitem observar a
+assinatura espectral do metano desde a escala global (TROPOMI, GOSAT) até fontes pontuais individuais, com
+sensores hiperespectrais de maior resolução espacial como AVIRIS-NG, PRISMA e EMIT (Jacob et al., 2022;
+Guanter et al., 2021). Métodos tradicionais de recuperação de sinal, como o filtro casado (*matched filter*)
+`mag1c` (Foote et al., 2020) — um dos quatro canais de entrada usados neste projeto, ver "Dataset" —
+continuam amplamente usados como pré-processamento, mas ainda produzem falsos positivos que exigem inspeção
+manual, o que motiva o uso de aprendizado profundo para segmentar plumas diretamente a partir dos produtos
+de realce espectral e das bandas de refletância (Tiemann et al., 2025; Růžička et al., 2023; Rouet-Leduc &
+Hulbert, 2024).
+
+Este trabalho é um **problema personalizado, aprovado previamente pelo professor da disciplina** (PDF, Seção
+4), e não um dos quatro problemas-modelo do curso. Ele utiliza o *dataset* STARCOP (Růžička et al., 2023) —
+imagens hiperespectrais AVIRIS-NG anotadas com plumas reais de metano na Bacia do Permiano (oeste do Texas e
+sudeste do Novo México, EUA) — como base experimental para treinar e comparar arquiteturas de segmentação
+semântica de plumas de metano, descrito em detalhe na seção "Dataset".
 
 ## Contextualização
 
-*(pendente — Seção 1 do plano)*
+O interesse por métodos automáticos de detecção de metano cresce tanto no cenário científico quanto no
+institucional. Iniciativas como o *Global Methane Pledge* e avaliações da UNEP/CCAC (2022) reforçam a
+necessidade de sistemas de monitoramento capazes de complementar inventários tradicionais com evidência
+espacial de emissões. No Brasil, o painel dinâmico de emissões de gases de efeito estufa do setor de óleo e
+gás mantido pela ANP (2024) e editais como o da FAPESC (2025), voltado à gestão da qualidade do ar em Santa
+Catarina, mostram que a demanda por ferramentas de monitoramento remoto de emissões atmosféricas também é
+local, não apenas internacional.
+
+No campo metodológico, a literatura recente documenta uma transição de métodos de recuperação de sinal
+tradicionais — como o filtro casado `mag1c` (Foote et al., 2020) — para arquiteturas de aprendizado profundo
+aplicadas diretamente à segmentação de plumas, incluindo redes convolucionais encoder-decoder como U-Net e,
+mais recentemente, Vision Transformers (Tiemann et al., 2025; Rouet-Leduc & Hulbert, 2024). O próprio
+STARCOP (Růžička et al., 2023), base deste projeto, demonstrou ganho de desempenho de modelos baseados em
+U-Net sobre baselines de filtro casado, e trabalhos subsequentes já operacionalizam essa abordagem: Růžička
+et al. (2026) descrevem um sistema de produção (U-Net + MobileNetV3, a mesma família de encoder usada nas
+configurações E2/E3 deste projeto — ver "Arquitetura") em operação no sistema MARS da UNEP/IMEO, cobrindo
+múltiplos sensores hiperespectrais orbitais.
+
+Este projeto de curso ocupa um recorte específico e deliberadamente menor desse cenário: não pretende
+produzir um sistema operacional nem estimar taxas de emissão, mas sim estruturar e avaliar, de forma
+reprodutível, um comparativo controlado entre três configurações de segmentação semântica (uma CNN simples
+do zero e duas redes encoder-decoder com encoders pré-treinados, uma delas dimensionada para hardware
+embarcado — ver "Arquitetura") sobre o *dataset* STARCOP, incluindo custo computacional e análise qualitativa
+dos erros.
 
 ## Definição do problema
 
-*(pendente — Seção 1 do plano)*
+O problema é formulado como **segmentação semântica binária por pixel**: para cada *patch* de 128×128 pixels
+de uma cena AVIRIS-NG, o modelo recebe uma entrada de 4 canais — o produto de realce espectral `mag1c`
+(Foote et al., 2020) e as três bandas de refletância TOA (640, 550 e 460 nm) — com forma `(4, 128, 128)`, e
+prevê, para cada pixel, a presença (1) ou ausência (0) de pluma de metano, produzindo uma máscara binária de
+mesma resolução espacial. Este é o mesmo par entrada/saída que a seção "Dataset" descreve em detalhe.
+
+A família de arquitetura escolhida — redes convolucionais encoder-decoder para segmentação — corresponde
+diretamente à linha "CNN/ResNet" da Tabela 1 do PDF do curso, associada a "imagens e dados com estrutura
+espacial": a tarefa é segmentação por pixel de uma estrutura espacialmente esparsa e alongada (a pluma), o
+mesmo tipo de estrutura que motiva o uso de encoder-decoders convolucionais na literatura (Tiemann et al.,
+2025; Růžička et al., 2023). As duas configurações com encoder pré-treinado (E2, E3 — ver "Arquitetura")
+usam encoders residuais/MobileNet de pequeno porte, mapeando diretamente para a sugestão do próprio Table 1
+do curso ("ResNet-18/34; transferência de aprendizado com rede residual de pequeno porte").
 
 ## Dataset
 
@@ -281,7 +337,7 @@ Contagens obtidas por soma direta de `model.parameters()`, não estimadas.
 
 ### E1 — linha de base do curso
 
-U-Net clássica de 4 níveis, blocos conv simples (Conv3×3 + BatchNorm +
+U-Net clássica de 4 níveis (Ronneberger et al., 2015), blocos conv simples (Conv3×3 + BatchNorm +
 ReLU, duas vezes por nível), sem pré-treinamento, implementada do zero
 (`coursework/dl-final-project/architectures.py::TinyUNet`). A largura
 `base=8` foi escolhida deliberadamente para criar um espectro de três
@@ -295,7 +351,8 @@ Implementação própria para este trabalho via `segmentation-models-pytorch`
 (`Unet(encoder_name="mobilenet_v2", ...)`), **sem** importar
 `vendor/starcop` ou `src/baselines/starcop/` — nenhum seam file
 `_vendor_starcop*.py`, nenhum shim de compatibilidade do Lightning 2.x.
-Mesma família de encoder do baseline STARCOP desta tese, mas uma
+U-Net (Ronneberger et al., 2015) com encoder MobileNetV2 (Sandler et al.,
+2018) — mesma família de encoder do baseline STARCOP desta tese, mas uma
 implementação nova, genuinamente treinada para este curso.
 
 ### E3 — LinkNet + MobileNetV3-small-minimal
@@ -303,8 +360,10 @@ implementação nova, genuinamente treinada para este curso.
 Reproduzido de Herec et al. (2026, arXiv:2606.03675, hipótese H1.5 do
 projeto de tese) — **treinado do zero em `starcop_mini` para este curso**,
 não utilizando os pesos ONNX pré-treinados do pacote
-`onboard-methane-detection` (licença dos pesos não verificada). Construído
-via `Linknet(encoder_name="tu-tf_mobilenetv3_small_minimal_100", ...)` —
+`onboard-methane-detection` (licença dos pesos não verificada). LinkNet
+(Chaurasia & Culurciello, 2017) com encoder MobileNetV3-small (Howard et
+al., 2019), construído via
+`Linknet(encoder_name="tu-tf_mobilenetv3_small_minimal_100", ...)` —
 a ponte `tu-` do `segmentation-models-pytorch` para a biblioteca `timm`,
 que hospeda exatamente a variante "minimal" do MobileNetV3-small que o
 artigo usa (não existe um encoder `mobilenet_v3` nativo no
@@ -332,6 +391,24 @@ apenas a primeira camada do zero) foi considerada e descartada por este
 projeto, mas fica registrada aqui como uma limitação explícita, não uma
 omissão.
 
+### Proveniência: o que é original e o que é reproduzido
+
+Seguindo a mesma convenção de proveniência do projeto de tese
+(`internal-docs/plans/onboard-methane-segmentation-hypotheses.md`, Seção
+16, item 11 — declarar a proveniência de cada hipótese explicitamente, e
+não representar uma arquitetura reproduzida como design original do
+projeto): **E1** é um design original, escrito do zero para este curso.
+**E2** é uma implementação própria (via `segmentation-models-pytorch`,
+sem copiar código de `vendor/starcop`), da mesma família de encoder do
+baseline STARCOP — original enquanto implementação, não enquanto família
+de arquitetura. **E3** é uma **reprodução** da arquitetura publicada por
+Herec et al. (2026) — LinkNet + MobileNetV3-small-minimal, a hipótese
+H1.5 do projeto de tese —, treinada do zero para este curso a partir da
+definição do artigo, não um design deste projeto. A contribuição deste
+trabalho em relação a E3 é reproduzir e avaliar essa arquitetura sob o
+protocolo experimental do curso (`mini`/R2/R3, Seção "Resultados"), não o
+desenho da rede.
+
 ### R1 — confirmação das arquiteturas contra dados reais
 
 `coursework/dl-final-project/confirm_raw.py` (estendido nesta seção, não
@@ -355,6 +432,24 @@ erro de tipo, ou um lote inteiramente negativo.
 testes em `__tests__/test_architectures.py` (8 testes).
 
 ## Metodologia
+
+### Protocolo de duas camadas (`mini`/`raw`)
+
+Este projeto segue um protocolo metodológico de duas camadas de dados, já apresentadas na seção
+"Dataset": a comparação **avaliada pelo curso** (E1 vs. E2 vs. E3, seções "Experimentos" e
+"Resultados") é treinada inteiramente em `starcop_mini` (392 patches de treino) — dentro do
+orçamento computacional de "dificuldade média" que o PDF do curso pede (Seção 12.1) — e nunca em
+`starcop_raw`. `starcop_raw` entra apenas como camada de **confirmação**, em três níveis crescentes
+de custo: R1 (um lote real, prova que o código não quebra em escala real, sem pretensão de
+convergência), R2 (uma subamostra fixa de ~6 mil patches, ~15× `mini`, confirma se a ordem E1/E2/E3
+de `mini` se sustenta com mais dados) e R3 (o split de treino completo, 141.218 patches, melhor
+esforço para E2/E3 — E1 excluído, Seção "Baseline"). Nenhum número de R1/R2/R3 substitui ou se
+mistura com a tabela principal de `mini` ("Resultados"); toda tabela e figura deste relatório rotula
+explicitamente de qual camada seus números vêm (Seção "Resultados", "Tabela de confirmação"). Esse
+protocolo é o motivo pelo qual um projeto de "dados pequenos" também contém números de 141 mil
+patches: o orçamento de treino avaliado pelo curso permanece pequeno, e a confirmação em escala real
+é um trabalho adicional que valida (ou, como a Seção "Resultados" mostra, refuta) a conclusão de
+`mini`, não um substituto para ela.
 
 ### Hiperparâmetros
 
@@ -1393,10 +1488,17 @@ no treino, ~3,5×), e todo número de `mini` herda essa ressalva.
 **reprodutibilidade** — três bugs reais encontrados (estouro de memória no `evaluate`, retorno da última em vez da melhor
 época, `cudnn` não determinístico), uma retomada de GPU que não era exata, e o ruído de uma semente.
 
-**4. Que mudança experimental teve o maior impacto?** Pelos números finais, **a escolha do limiar**: mover o
-0,5 fixo para o limiar da validação sobe o F1 agrupado em 0,16–0,27 nos modelos `raw` e derruba o FPR de
-tile de 83–94% para 27–60%, mais do que qualquer mudança de arquitetura (diferenças de 0,03 a 0,1) ou de
-camada (R2 → R3: +0,12 para E2 com o limiar da validação, 0,6166 contra 0,4948).
+**4. Que mudança experimental teve o maior impacto?** Depende do que se compara com o quê. Entre mudanças
+que isolam **uma** variável, **a escolha do limiar** é a maior: mover o 0,5 fixo para o limiar da validação
+sobe o F1 agrupado em 0,16–0,27 nos modelos `raw` e derruba o FPR de tile de 83–94% para 27–60%, mais do que
+qualquer mudança de arquitetura a limiar fixo (diferenças de 0,03 a 0,1) ou de camada (R2 → R3: +0,12 para
+E2 com o limiar da validação, 0,6166 contra 0,4948). **Em valor absoluto, o maior número isolado do projeto
+é outro**: o F1 de teste de E1 a 0,5 cai de 0,8317 em `mini` para 0,1888 em R2 (Seção 9, "A conclusão de
+`mini` sobrevive à escala real?") — uma queda de 0,64, maior que qualquer efeito de limiar ou de arquitetura
+citado acima. Não é comparado aqui como "a maior mudança" porque mistura duas variáveis ao mesmo tempo (mais
+dados de treino *e* um split de teste maior e mais diverso), diferente da comparação de limiar, que mantém o
+modelo fixo e só troca o corte de decisão; ainda assim, é o efeito mais dramático observado, e por isso a
+Seção 9 o reporta como o achado mais interessante do projeto, não como ruído.
 
 **5. Houve sobreajuste? Como foi identificado?** A perda de treino **não é registrada** em `mlflow.db` (só
 `val_loss` e `val_f1`), então a divergência treino-validação não foi medida, e isto é uma lacuna deste
@@ -1442,12 +1544,30 @@ executado e terminou por early stopping nas duas arquiteturas.
   final foi única e justificada, e todos os resultados foram reportados, mas o teste não estava escondido).
   Isto pode dar um otimismo leve aos números finais de R2/R3. O limiar, por outro lado, **nunca** foi escolhido no
   teste (só na validação; o oráculo é reportado como tal).
-- **`mini` é pequeno e não representativo.** 392 patches de treino, uma cena de validação (49 patches), e
-  `mini` sobrerrepresenta pixels de pluma (1,13% contra 0,32%; ~3,5×), então todo número de `mini` herda essa
-  ressalva. A camada `raw` **descartou** a hipótese de que as conclusões de `mini` valham em escala (a ordem
-  dos modelos mudou e o F1 fixo deixou de comparar) e **não descartou** que a arquitetura menor (E3) mantém a
-  maior parte da qualidade. Como o teste de `mini` só tem 9 cenas, todas com pluma forte, o F1 "weak" de `mini` é
-  um balde vazio (0,000), não uma medida, e não há FPR de tile.
+- **`mini` é pequeno e não representativo.** 392 patches de treino, uma cena de validação (49 patches).
+  `mini` sobrerrepresenta pluma nas duas métricas da seção "Análise exploratória" (não só uma delas): por
+  pixel, 1,13% contra 0,32% em `raw` (~3,56×); por patch, 19,64% (77/392) contra 7,37% (10.406/141.218) em
+  `raw`, treino (~2,66×). Todo número de `mini`, incluindo a tabela principal da Seção 9, herda essa
+  ressalva — e ela é a explicação mais provável, não só uma coincidência que fica ao lado, para a queda de
+  F1 de 0,27 a 0,29 na avaliação cross-tier (Seção 9, "Tabela de confirmação"): um modelo treinado vendo
+  pluma em quase 3× mais patches do que a distribuição real apresenta tende a prever positivo com mais
+  frequência do que a realidade justifica. A camada `raw` **descartou** a hipótese de que as conclusões de
+  `mini` valham em escala (a ordem dos modelos mudou entre `mini` e R2/R3, e o F1 fixo deixou de comparar
+  entre camadas — Seção 9, "A conclusão de `mini` sobrevive à escala real?") e **não descartou** que a
+  arquitetura menor (E3) mantém a maior parte da qualidade. Como o teste de `mini` só tem 9 cenas, todas com
+  pluma forte, o F1 "weak" de `mini` é um balde vazio (0,000), não uma medida, e não há FPR de tile.
+- **R3 é incompleto para E1.** Por decisão da Seção 6 (R2 já mostrava E1 caindo ao último lugar entre as
+  três configurações), E1 nunca foi treinado em escala completa (`raw-full`, 141.218 patches) — a pergunta
+  "o CNN simples do zero se sustenta em escala real?" fica sem resposta direta nesse tier; a queda já
+  observada em R2 (F1 de teste a 0,5 caindo de 0,8317 em `mini` para 0,1888, Seção 9) é a melhor evidência
+  disponível, não um substituto. Nenhuma execução de R2/R3 terminou incompleta — a retomada exata (Seção 9,
+  "Retreino limpo") garantiu isso, inclusive na única queda de GPU registrada em R3 — a lacuna é de escopo
+  decidido de antemão, não de uma execução que falhou.
+- **Modo de falha de E3 (H1.5).** A hipótese de que o modelo 7,7× menor se sustenta é uma tendência
+  favorável, não uma garantia sem exceções: a Seção 9 documenta um caso concreto onde falha — uma pluma
+  grande e difusa em `mini` que E2 recupera em boa parte (F1 0,6754) e que E3 praticamente não detecta
+  (F1 0,0030). Plumas grandes e de baixa concentração parecem ser onde a redução de parâmetros custa mais;
+  com uma única semente e um exemplo, não dá para dizer se isso é sistemático ou um caso isolado.
 - **Um sensor, uma bacia.** Tanto `mini` quanto `raw` são AVIRIS-NG na Bacia do Permiano.
 - **Limiar.** O 0,5 fixo é mal calibrado nos modelos `raw` (FPR de tile de 83–94%); o limiar da validação
   resolve isso no teste, mas foi escolhido em uma única política (F1 agrupado, D2), e a escolha da política é
@@ -1476,26 +1596,42 @@ executado e terminou por early stopping nas duas arquiteturas.
 Este projeto treinou três arquiteturas de segmentação (E1 do zero, E2 U-Net + MobileNetV2, E3 LinkNet +
 MobileNetV3-small) em três escalas de dados (`mini`, R2, R3), com uma metodologia que **se corrigiu ao longo
 do caminho**: três bugs reais (memória no `evaluate`, época errada no checkpoint, `cudnn` não determinístico), uma retomada de GPU que não era exata e, por fim, uma métrica
-que não era a do artigo. O que ficou de mais sólido não é uma ordem de modelos, e sim quatro achados.
+que não era a do artigo. O que ficou de mais sólido não é uma ordem de modelos, e sim cinco achados.
 
-1. **O limiar decide mais que a arquitetura.** A 0,5 fixo, todo modelo treinado em dados reais marca de 83 a
+1. **O maior efeito medido no projeto foi de escala, não de arquitetura — e ele inverteu a conclusão de
+   `mini`.** O F1 de teste de E1 a 0,5 cai de 0,8317 em `mini` (onde vencia E2 e E3) para 0,1888 em R2 (onde
+   fica em último), uma queda de 0,64 — maior que qualquer efeito de limiar ou de arquitetura medido neste
+   projeto (Seção 9, "A conclusão de `mini` sobrevive à escala real?"). Uma comparação de três configurações
+   restrita aos 392 patches de `mini`, sozinha, teria reportado a conclusão oposta da que R2/R3 sustentam —
+   o argumento mais direto deste projeto para pagar o custo de confirmar em escala real, mesmo num curso com
+   orçamento de mini-escala.
+2. **O limiar decide mais que a arquitetura.** A 0,5 fixo, todo modelo treinado em dados reais marca de 83 a
    94% das cenas sem pluma como pluma; com o limiar escolhido na validação (e sem olhar o teste), o F1 agrupado
    sobe 0,16–0,27 e o FPR cai para 27–60%. Um limiar validado generaliza: o oráculo não passa de +0,040.
-2. **Nas métricas do artigo, o melhor modelo chega perto dele.** Com o limiar da validação, E2/E3 de R3 têm F1
+3. **Nas métricas do artigo, o melhor modelo chega perto dele.** Com o limiar da validação, E2/E3 de R3 têm F1
    strong de 72/73, F1 weak de 68/67 e FPR de tile de 27/33%
    contra 82/43/44% (strong/weak/FPR) do STARCOP mag1c+rgb — mesma ordem de grandeza, sem que isso permita dizer que
    igualamos o artigo (uma semente, outra receita e outra política de limiar).
-3. **Mais dado real ajuda, e o modelo pequeno acompanha.** R3 supera R2 nas duas arquiteturas (PR-AUC E2
-   0,3786→0,4933), e E3, com 12,9% dos parâmetros de E2, mantém ~95% do F1 e usa 3,5× menos energia por cena na CPU
-   (5,2 J contra 18,1 J), o que sustenta H1.5 para o contexto embarcado.
-4. **A GPU vale a pena, em tempo e em energia.** 7–26× mais rápida e 7–19× menos energia por patch (5,5–14,5× por
+4. **Mais dado real ajuda, e o modelo pequeno acompanha — a tendência favorece E3 conforme a escala cresce.**
+   R3 supera R2 nas duas arquiteturas (PR-AUC E2 0,3786→0,4933), e E3, com 12,9% dos parâmetros de E2, não só
+   mantém ~95% do F1 em `mini` como passa à frente de E2 em R2/R3 por PR-AUC — H1.5 fica mais sustentada em
+   escala do que em `mini` sozinho, não menos — e usa 3,5× menos energia por cena na CPU (5,2 J contra 18,1 J).
+5. **A GPU vale a pena, em tempo e em energia.** 7–26× mais rápida e 7–19× menos energia por patch (5,5–14,5× por
    cena de 512×512) que a CPU nesta máquina.
 
-O que **não** se pode concluir: qualquer ordem estrita entre E2 e E3 (o ruído de uma semente é de até 0,1 em
-`val_f1`), a superioridade sobre o artigo, ou o efeito isolado da entrada e da receita. **A raw tier acrescentou**
-o principal: mostrou que as conclusões de `mini` valem só em parte (a ordem muda, o F1 fixo deixa de comparar)
-e que a distância entre `mini` e o real é, em boa parte, de calibração. **Próximo passo natural:** cinco
-sementes por configuração, para transformar as faixas em intervalos.
+O que **não** se pode concluir: qualquer ordem estrita entre E2 e E3 (achado 4 é uma tendência, não uma prova
+— o ruído de uma semente é de até 0,1 em `val_f1`), a superioridade sobre o artigo, ou o efeito isolado da
+entrada e da receita.
+
+**O que a camada `raw` acrescentou, e o que não conseguiu acrescentar.** Acrescentou o achado mais importante
+do projeto (1, acima) e reforçou H1.5 em vez de enfraquecê-la; sem ela, a comparação de três modelos teria
+ficado restrita aos 392 patches de `mini` e reportado uma ordem que R2 já derruba — o risco concreto de um
+projeto de escala pequena que nunca confirma sua própria conclusão. Não conseguiu: dar um número de E1 em
+escala completa (R3 nunca treinou E1, decisão da Seção 6 — ver "Limitações") nem uma segunda semente que
+distinguisse E2 de E3 com confiança. Onde a distância entre `mini` e o real foi medida diretamente (avaliação
+cross-tier, Seção 9), ela é, em boa parte, de calibração — não de representação bruta do problema (a
+sobrerrepresentação de pluma em `mini`, também tratada em "Limitações", é a explicação mais provável).
+**Próximo passo natural:** cinco sementes por configuração, para transformar as faixas em intervalos.
 
 ## Referências
 
@@ -1506,7 +1642,43 @@ sementes por configuração, para transformar as faixas em intervalos.
   Low-Power Solutions for Resource-Constrained Hardware*. EDHPC 2025, arXiv:2507.01472 (versão preliminar; os valores da Tabela I coincidem com os da versão de 2026).
 - Herec, J.; Růžička, V.; Pitoňák, R.; Sedmidubsky, J. (2026). *A Fast Methane Detection Pipeline on
   Board Satellites Based on Mag1c-SAS and LinkNet*. arXiv:2606.03675 (origem da hipótese H1.5; Tabela I, p. 8, verificada no PDF).
-- *(demais referências — Seções 5, 11 do plano — pendente)*
+- Jacob, D. J. et al. (2022). *Quantifying methane emissions from the global scale down to point sources
+  using satellite observations of atmospheric methane*. Atmospheric Chemistry and Physics, 22, 9617–9646.
+  DOI: [10.5194/acp-22-9617-2022](https://doi.org/10.5194/acp-22-9617-2022).
+- United Nations Environment Programme; Climate and Clean Air Coalition (2022). *Global Methane Assessment:
+  2030 Baseline Report: Why Act Now: A New Era for Accelerated Implementation*. Nairobi: UNEP.
+- Guanter, L. et al. (2021). *Mapping methane point emissions with the PRISMA spaceborne imaging
+  spectrometer*. Remote Sensing of Environment, 265, 112671.
+  DOI: [10.1016/j.rse.2021.112671](https://doi.org/10.1016/j.rse.2021.112671).
+- Tiemann, E.; Zhou, S.; Kläser, A.; Heidler, K.; Schneider, R.; Zhu, X. X. (2025). *Machine Learning for
+  Methane Detection and Quantification From Space: A survey*. IEEE Geoscience and Remote Sensing Magazine,
+  14(1), 69–95. DOI: [10.1109/MGRS.2025.3599559](https://doi.org/10.1109/MGRS.2025.3599559).
+- Foote, M. D.; Dennison, P. E.; Thorpe, A. K.; Thompson, D. R.; Jongaramrungruang, S.; Frankenberg, C.;
+  Joshi, S. C. (2020). *Fast and Accurate Retrieval of Methane Concentration From Imaging Spectrometer Data
+  Using Sparsity Prior*. IEEE Transactions on Geoscience and Remote Sensing, 58(9), 6480–6492 (algoritmo
+  `mag1c`, um dos quatro canais de entrada deste projeto — ver "Dataset").
+  DOI: [10.1109/TGRS.2020.2976888](https://doi.org/10.1109/TGRS.2020.2976888).
+- Rouet-Leduc, B.; Hulbert, C. (2024). *Automatic detection of methane emissions in multispectral satellite
+  imagery using a vision transformer*. Nature Communications, 15, 3801.
+  DOI: [10.1038/s41467-024-47754-y](https://doi.org/10.1038/s41467-024-47754-y).
+- Růžička, V. et al. (2026). *Operational machine learning for remote spectroscopic detection of CH4 point
+  sources*. arXiv:2511.07719 (sistema MARS da UNEP/IMEO; usa U-Net + MobileNetV3, a mesma família de encoder
+  de E2/E3 deste projeto).
+- ANP — Agência Nacional do Petróleo, Gás Natural e Biocombustíveis (2024). *Painel Dinâmico de Emissões de
+  Gases de Efeito Estufa — Setor de Óleo e Gás*. Painel interativo, acesso em 2026.
+- FAPESC — Fundação de Amparo à Pesquisa e Inovação do Estado de Santa Catarina (2025). *Edital de Chamada
+  Pública FAPESC n.º 42/2025: Apoio à Infraestrutura e ao Uso de Tecnologias para Gestão da Qualidade do Ar
+  de Santa Catarina*.
+- Ronneberger, O.; Fischer, P.; Brox, T. (2015). *U-Net: Convolutional Networks for Biomedical Image
+  Segmentation*. MICCAI 2015, LNCS 9351, 234–241 (arquitetura-base de E1 e do encoder-decoder de E2).
+  DOI: [10.1007/978-3-319-24574-4_28](https://doi.org/10.1007/978-3-319-24574-4_28).
+- Sandler, M.; Howard, A.; Zhu, M.; Zhmoginov, A.; Chen, L.-C. (2018). *MobileNetV2: Inverted Residuals and
+  Linear Bottlenecks*. CVPR 2018, 4510–4520 (encoder de E2). arXiv:1801.04381.
+- Howard, A. et al. (2019). *Searching for MobileNetV3*. ICCV 2019, 1314–1324 (encoder de E3).
+  arXiv:1905.02244.
+- Chaurasia, A.; Culurciello, E. (2017). *LinkNet: Exploiting Encoder Representations for Efficient Semantic
+  Segmentation*. IEEE Visual Communications and Image Processing (VCIP) 2017 (arquitetura de E3).
+  arXiv:1707.03718.
 
 ## Apêndice A — Histórico (números substituídos)
 
