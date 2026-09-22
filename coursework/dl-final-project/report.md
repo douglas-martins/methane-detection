@@ -1063,7 +1063,36 @@ duas vezes por execução — uma por época e uma como média final (`step=0`) 
 **última época**, não a média. Os tempos por época abaixo vêm de
 `get_metric_history(run_id, "seconds_per_epoch")` no registro `step=0`.
 
-### Tabela principal — `mini` (formato Tabela 4 do PDF)
+### Tabela principal — comparação final (teste, `mini`)
+
+Esta é a tabela de referência para a comparação entre as três configurações — usa o **teste**
+(441 patches), não a validação (49 patches, ruidosa demais para servir de número final; ver
+"Métricas de avaliação"), lado a lado com contagem de parâmetros e tempo de treino (formato Tabela 4
+do PDF).
+
+| Configuração | Parâmetros | Precision (teste) | Recall (teste) | F1 (teste) | PR-AUC (teste) | Tempo/época | Tempo total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| E1 (do zero) | 487.361 | 0,9207 | 0,7585 | 0,8317 | 0,8828 | 0,49 s | 26,9 s |
+| E2 (U-Net + MobileNetV2) | 6.629.233 | 0,8725 | 0,6788 | 0,7636 | 0,7791 | 1,97 s | 170 s (2,8 min) |
+| E3 (LinkNet + MobileNetV3-small) | 856.635 | 0,8385 | 0,6539 | 0,7348 | 0,7197 | 0,77 s | 243 s (4,0 min) |
+
+**Ordem por F1 e por PR-AUC de teste: E1 > E2 > E3.** Este é o argumento de parâmetros mais direto
+para H1.5 ("modelo pequeno mantém a maior parte da qualidade"): E3 tem 12,9% dos parâmetros de E2
+(7,7× menor) e chega a 96,2% do F1 de teste de E2 (0,7348 contra 0,7636) e 92,4% da sua PR-AUC — uma
+perda de qualidade pequena por uma redução de tamanho grande. E1, com 7,3% dos parâmetros de E2 e
+sem pré-treino, ainda lidera as três nesta camada; a leitura completa desse resultado (E1 na frente
+apesar de "menor e sem pré-treino") está em "Discussão".
+
+*Rastreabilidade (`run_id`): métricas de teste das execuções de avaliação
+E1=`604e0390`, E2=`b02dedf1`, E3=`8b2593c6`; parâmetros e tempo das execuções de treino que geraram os
+mesmos checkpoints, E1=`9f771a5e`, E2=`6a8e88cf`, E3=`100be41c` (confirmado pelo `val_f1` idêntico
+entre treino e avaliação — ver tabela seguinte).*
+
+### Tabela de treinamento — `mini` (`val_loss`/`val_f1`, formato Tabela 4 do PDF)
+
+A mesma tabela, mas com as métricas de **validação** usadas para monitorar o treino (early stopping)
+em vez das de teste — útil para a discussão de convergência acima, não para a comparação final entre
+configurações (para essa, ver a tabela anterior).
 
 | Configuração | Parâmetros | Melhor `val_loss` | Melhor `val_f1` | Melhor época / total | Tempo/época | Tempo total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -1071,7 +1100,7 @@ duas vezes por execução — uma por época e uma como média final (`step=0`) 
 | E2 (U-Net + MobileNetV2) | 6.629.233 | 0,0167 | 0,4250 | 76/86 (early stop) | 1,97 s | 170 s (2,8 min) |
 | E3 (LinkNet + MobileNetV3-small) | 856.635 | 0,0234 | 0,5146 | 304/314 (early stop) | 0,77 s | 243 s (4,0 min) |
 
-**Ordem por `val_f1`: E1 > E3 > E2; por F1 de teste (Métricas de avaliação): E1 > E2 > E3.** As três
+**Ordem por `val_f1`: E1 > E3 > E2; por F1 de teste (tabela anterior): E1 > E2 > E3.** As três
 convergem por early stopping em segundos a poucos minutos (27 s, 170 s e 243 s de treino; o cache de
 patches em disco e o `cudnn.deterministic` explicam tempos e reprodutibilidade). E3 precisa de mais
 de 5× as épocas de E1 (314 contra 55) para chegar a um `val_f1` comparável, coerente com um modelo de
@@ -1081,10 +1110,48 @@ val-vs-teste em "Métricas de avaliação".
 *Rastreabilidade (`run_id`): E1=`9f771a5e`, E2=`6a8e88cf`, E3=`100be41c` (`max_epochs=500`,
 `patience=10`, `monitor=val_loss`).*
 
-### Tabela de confirmação — camada `starcop_raw` (R2 e R3, Seção 0.1)
+### Tabela de confirmação — comparação final (teste, camada `starcop_raw`)
 
-Mantida separada da tabela principal: nenhum destes números substitui os de `mini`, são a
-confirmação em escala do plano.
+Mantida separada da tabela principal (Seção 9 do plano do curso: nenhum destes números substitui
+os de `mini`, são a confirmação em escala) e das outras tabelas desta seção: usa, como a tabela
+principal, o **teste** — aqui sempre o split de teste completo de `starcop_raw` (16.758 patches),
+o mesmo para as cinco linhas, para que "treinado em" seja a única variável entre elas. As três
+primeiras linhas são os checkpoints de `mini` (392 patches de treino) avaliados nessa distribuição
+real — a pergunta central da camada `raw` (Seção 0.1) —, não modelos novos.
+
+| Configuração | Treinado em | Parâmetros | Precision (teste `raw`) | Recall (teste `raw`) | F1 (teste `raw`) | PR-AUC (teste `raw`) | Tempo/época (treino) | Tempo total (treino) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| E1 (do zero) | `mini` (cross-tier) | 487.361 | 0,6956 | 0,4541 | 0,5494 | 0,5523 | 0,49 s | 26,9 s |
+| E2 (U-Net + MobileNetV2) | `mini` (cross-tier) | 6.629.233 | 0,6184 | 0,4058 | 0,4901 | 0,3855 | 1,97 s | 170 s (2,8 min) |
+| E3 (LinkNet + MobileNetV3-small) | `mini` (cross-tier) | 856.635 | 0,6409 | 0,3404 | 0,4446 | 0,3549 | 0,77 s | 243 s (4,0 min) |
+| E1 (do zero) | R2 (6.076 patches) | 487.361 | 0,1049 | 0,9443 | 0,1888 | 0,3153 | 20,32 s | 955 s (15,9 min) |
+| E2 (U-Net + MobileNetV2) | R2 (6.076 patches) | 6.629.233 | 0,2105 | 0,8299 | 0,3358 | 0,3786 | 26,55 s | 1.965 s (32,7 min) |
+| E3 (LinkNet + MobileNetV3-small) | R2 (6.076 patches) | 856.635 | 0,1710 | 0,8265 | 0,2834 | 0,3869 | 25,92 s | 1.504 s (25,1 min) |
+| E2 (U-Net + MobileNetV2) | R3 (`raw-full`) (141.218 patches) | 6.629.233 | 0,2103 | 0,8708 | 0,3388 | 0,4933 | 232,09 s | 8.123 s (2,26 h) |
+| E3 (LinkNet + MobileNetV3-small) | R3 (`raw-full`) (141.218 patches) | 856.635 | 0,2534 | 0,9520 | 0,4003 | 0,5218 | 182,91 s | 9.328 s (2,59 h) |
+
+**Ordem por F1 a 0,5 — cross-tier (`mini`): E1 > E2 > E3, a mesma da tabela principal; R2: E2 > E3 >
+E1; R3 (E1 excluído): E3 > E2.** À primeira vista os modelos `mini` parecem os melhores da tabela
+(F1 até 0,5494, acima de qualquer linha de R2/R3), mas é um artefato de limiar: `pos_weight` cresce
+de `mini` para R2 e R3 (87 → 270 → 314) e empurra a saída dos modelos treinados em `raw` para
+probabilidades altas, descalibrando o corte fixo de 0,5 (ver "Métricas de avaliação" para a
+explicação completa e os limiares de oráculo). A **PR-AUC**, que não depende de limiar, mostra o
+oposto: E3-R3 (0,5218) e E2-R3 (0,4933) ficam no nível do melhor cross-tier (E1-`mini`, 0,5523) e
+acima de todo R2 (0,3153–0,3869) — mais dados de treino real ajudam, a ordem dentro de cada camada
+mudou (R2 → R3), e a comparação de F1 a limiar fixo entre camadas mede calibração, não só qualidade.
+
+*Rastreabilidade (`run_id`): métricas de teste — cross-tier E1=`6363ecb8`, E2=`873ba11b`,
+E3=`56217656`; R2 E1=`be44f21c`, E2=`4fd0f654`, E3=`5ab63cd4`; R3 E2=`1dc290ea`, E3=`045722c2`
+(todas com o parâmetro `checkpoint_tier` confirmando a camada de origem do checkpoint). Parâmetros e
+tempo das execuções de treino correspondentes — E1-`mini`/E2-`mini`/E3-`mini`=`9f771a5e`/`6a8e88cf`/
+`100be41c` (mesmas da tabela principal), E1-R2=`3ce77d44`, E2-R2=`2ad05082`, E3-R2=`03db014f`,
+E2-R3=`a8bb9a1c`, E3-R3=`3211c916`.*
+
+### Tabela de treinamento — camada `starcop_raw` (R2 e R3, `val_loss`/`val_f1`, Seção 0.1)
+
+A mesma camada, mas com as métricas de validação usadas para monitorar o treino em cada tier — útil
+para a discussão de convergência, não para a comparação final entre configurações (para essa, ver a
+tabela anterior).
 
 | Configuração | Camada | Parâmetros | Melhor `val_loss` | Melhor `val_f1` | Melhor época / total | Tempo/época | Tempo total |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -1106,6 +1173,107 @@ que todas as execuções de uma camada leram o mesmo manifesto. O tempo de R3 é
 E3-R3=`3211c916`. E2-R2 e E3-R2 têm a tag `max_epochs_extended_to=100` (o parâmetro
 `max_epochs` registrado, 50, é o teto inicial: uma retomada não regrava parâmetros); E3-R3 tem a tag
 `resumed_from_state=true`.*
+
+### A conclusão de `mini` sobrevive à escala real?
+
+Esta é a razão de existirem três camadas (Seção 0.1 do plano): a ordem entre E1/E2/E3 em 392 patches
+só vale como conclusão do curso se sobreviver a mais dados. Reunindo as duas tabelas acima em uma só
+pergunta:
+
+| Camada | Ordem por F1 (limiar 0,5) | Ordem por PR-AUC |
+| --- | --- | --- |
+| `mini` (392 patches) | E1 > E2 > E3 | E1 > E2 > E3 |
+| R2 (6.076 patches) | E2 > E3 > E1 | E3 > E2 > E1 |
+| R3 (141.218 patches, E1 excluído) | E3 > E2 | E3 > E2 |
+
+**Não sobreviveu — a ordem se inverteu, e de forma grande demais para ser ruído.** E1 lidera em
+`mini` nas duas métricas e cai para **último** lugar já em R2 (também nas duas métricas); a decisão
+de excluí-lo de R3 (Seção 6) foi tomada exatamente por essa queda já estar clara em R2. A diferença é
+muito maior que o ruído de execução única estimado em "Retreino limpo" (até ~0,1 em `val_f1` entre
+execuções idênticas): o F1 de teste de E1 cai de 0,8317 (`mini`) para 0,1888 (R2), e sua PR-AUC de
+0,8828 para 0,3153 — uma queda de mais de 0,5, não de 0,1. Isto refuta, para este projeto, a hipótese
+implícita de que "o CNN simples do zero é a melhor escolha" seria uma conclusão de escala completa —
+era um artefato de treinar com 392 patches.
+
+**A ordem E2-vs-E3, por outro lado, é instável nas duas direções — e a mudança é pequena o
+suficiente para não ser conclusiva.** Em `mini`, E2 > E3 nas duas métricas (F1 0,7636 contra 0,7348;
+PR-AUC 0,7791 contra 0,7197). Em R2, o F1 ainda favorece E2 (0,3358 contra 0,2834), mas a PR-AUC já
+inverte, por uma margem pequena, a favor de E3 (0,3869 contra 0,3786). Em R3, as duas métricas
+favorecem E3 (F1 0,4003 contra 0,3388; PR-AUC 0,5218 contra 0,4933). **A tendência (não a magnitude)
+é consistente com H1.5**: à medida que a escala de treino cresce, E3 (7,7× menor que E2) deixa de
+ficar atrás de E2 e passa a igualá-lo ou superá-lo — o oposto do que aconteceria se o tamanho menor
+fosse, de fato, um limite de qualidade. Mas como as margens em R2/R3 (0,02–0,06 de PR-AUC) são da
+mesma ordem do ruído de execução única, esta leitura fica registrada como tendência favorável a
+H1.5, não como uma ordem E2-vs-E3 provada — ver "Discussão" para a leitura completa por hipótese.
+
+**Resumo dos três desfechos possíveis, aplicado aqui**: a ordem de `mini` **não é** credível por si
+só (o cenário "sobreviveu" não se aplica a E1); o achado mais interessante desta seção **é** a
+inversão de E1, relatada de forma proeminente em vez de escondida; e R3 **está** concluído para E2 e
+E3 (não é o caso de "ainda não terminou") — a única lacuna é a ausência deliberada de E1 em R3.
+
+### Comparação qualitativa: máscaras previstas vs. verdade de campo
+
+`qualitative_predictions.py` roda os três checkpoints `mini` (limiar fixo 0,5, a mesma base da
+tabela principal) sobre seis patches e salva máscara prevista lado a lado com a verdade de campo:
+
+![Comparação qualitativa — máscaras previstas de E1/E2/E3 contra a verdade de campo, seis patches](figures/qualitative_predictions.png)
+
+**As quatro primeiras linhas são os mesmos exemplos de "Exemplos qualitativos"** (Seção EDA,
+`select_example_patches`, mesma semente): o positivo mais fraco (`frac_positives=0,0028`, nenhum
+modelo o detecta — um limite real, não escondido), um positivo mais claro (`frac_positives=0,0595`,
+os três detectam, com formas ligeiramente diferentes) e dois negativos (os três corretamente não
+preveem nada). **A quinta linha é escolhida deliberadamente**, não faz parte da EDA: varrendo os 112
+patches positivos do teste `mini` pela maior diferença de F1 por patch entre E2 e E3
+(`select_largest_gap_row`), o patch `frac_positives=0,2464` mostra E2 (F1=0,6754) capturando a
+maior parte da pluma difusa e E3 (F1=0,0030) praticamente sem detectar nada — o caso exigido pela
+checklist de validação (nem só sucessos do modelo menor) e uma ilustração visual direta de por que
+o F1 agregado de E3 fica atrás do de E2 em `mini` apesar de H1.5. **A sexta linha** é um patch de
+teste de `starcop_raw` (`ang20191025t184057`, fora das 16 cenas de origem de `starcop_mini` —
+`exclude_scenes`) avaliado pelos mesmos checkpoints `mini`: um positivo fraco (`frac_positives=0,0024`)
+que os três modelos localizam corretamente (E1 F1=0,7838, E3 F1=0,5983, E2 F1=0,4624), a mesma
+direção já vista na tabela de confirmação cross-tier — evidência qualitativa de que a queda de
+desempenho de `mini` para dados reais não vem de uma falha total, mas de uma perda de precisão em
+formas mais irregulares (linha 5) e de casos fora de distribuição (linha 6).
+
+*Rastreabilidade: gerado por `qualitative_predictions.py::main()` a partir dos checkpoints
+`checkpoints/{E1,E2,E3}-mini.pt` (os mesmos das tabelas de teste `mini` acima); os seis F1 por
+patch impressos por essa execução estão reproduzidos nesta seção.*
+
+### Síntese comparativa: números e hipóteses
+
+Cada configuração testa uma hipótese específica (Seção "Arquitetura"); esta seção liga os números
+já tabulados e a figura qualitativa acima a cada uma delas, tier por tier.
+
+**E1 vs. E2 — o encoder pré-treinado (+ aumento de dados) ajuda?** Em `mini`, **não**: E1 vence de
+forma decisiva na "Tabela principal" (F1 de teste 0,8317 contra 0,7636; PR-AUC 0,8828 contra
+0,7791), e os mesmos checkpoints avaliados em dados reais ("Tabela de confirmação", linhas
+cross-tier) mantêm essa ordem (F1 0,5494 contra 0,4901; PR-AUC 0,5523 contra 0,3855) — o resultado
+não é um acidente de um único split. A figura qualitativa confirma visualmente: nas três linhas
+avaliadas pelos checkpoints `mini` que não foram escolhidas para contrastar E2 e E3 (linhas 1, 2 e
+6), E1 iguala ou supera E2 nas três. Em R2 (6.076 patches de treino), a ordem **se inverte**: E2
+passa à frente em F1 (0,3358 contra 0,1888) e em PR-AUC (0,3786 contra 0,3153) — ver "Tabela de
+confirmação", linhas R2. E1 não foi treinado em R3 (decisão já tomada na Seção 6, quando R2 mostrou
+essa mesma queda pela primeira vez), então a pergunta "o pré-treino ajuda em escala completa?" fica
+sem resposta direta para E1, mas a tendência de R2 já aponta que sim. **Veredito: a hipótese depende
+da escala** — falsa em 392 patches, verdadeira a partir de ~6 mil; ver "Discussão" (Seção 8.4) para
+a leitura completa, incluindo por que isto é reportado como resultado negativo, não escondido.
+
+**E2 vs. E3 (H1.5) — o modelo 7,7× menor se sustenta?** Em `mini`, majoritariamente sim: E3 chega a
+96,2% do F1 de teste de E2 (0,7348/0,7636) e 92,4% da PR-AUC, com 12,9% dos parâmetros (857 mil
+contra 6,6 milhões). Em R2, o F1 ainda favorece E2 (E3 fica em 84,4%), mas a PR-AUC já vira a favor
+de E3, por margem pequena (0,3869 contra 0,3786 — ver "A conclusão de `mini` sobrevive à escala
+real?"). Em R3, E3 lidera nas duas métricas (118% do F1 de E2, 106% da PR-AUC). A figura qualitativa
+mostra as duas faces dessa hipótese: na linha 2, E3 já fica ligeiramente à frente de E2 mesmo em
+`mini` (F1 0,8249 contra 0,8012), e na linha 6 (patch de `starcop_raw` fora de qualquer cena de
+`mini`) também (0,5983 contra 0,4624); a linha 5, escolhida deliberadamente por ser o maior gap
+E2-menos-E3 entre os 112 patches positivos do teste `mini`, mostra o modo de falha real do modelo
+menor — uma pluma grande e difusa que E2 recupera em grande parte (F1 0,6754) e E3 praticamente não
+detecta (F1 0,0030). **Veredito: H1.5 se sustenta como tendência através das três camadas** (a favor
+de E3, não contra, à medida que a escala cresce) **e tem um modo de falha nomeado e ilustrado, não
+escondido** — plumas grandes e de baixa concentração são onde a redução de 7,7× nos parâmetros custa
+mais caro. Combinado com o throughput/energia já reportados ("Throughput e energia de inferência":
+3,2× a vazão de E2 na CPU, 3,5× menos energia por cena), o argumento de H1.5 permanece favorável a
+E3 mesmo nos tiers em que sua PR-AUC/F1 fica atrás.
 
 ### Retreino limpo com retomada exata
 
