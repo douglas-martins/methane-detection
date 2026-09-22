@@ -16,8 +16,11 @@ coursework-scoped so it can never collide with this repo's own
 pre-existing root-level `mlruns/` (real thesis experiment data).
 """
 
+import hashlib
+import os
 import sys
 import time
+from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
 
@@ -31,14 +34,20 @@ from architectures import build_e1, build_e2, build_e3
 from dataset import PatchDataset
 from early_stopping import EarlyStopper
 from losses import build_loss, compute_pos_weight
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 
 _DEFAULT_SEED = 42
+
+# Which `evaluate()` key early stopping/checkpointing tracks, and whether
+# lower or higher is better -- see `fit()`'s own docstring for why a caller
+# would ever pick "val_f1" over the default.
+_MONITOR_METRIC_KEYS = {"val_loss": ("loss", "min"), "val_f1": ("f1", "max")}
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _COURSEWORK_ROOT = Path(__file__).resolve().parent
 _CHECKPOINT_DIR = _COURSEWORK_ROOT / "checkpoints"
 _CACHE_ROOT = _COURSEWORK_ROOT / "patch_cache"
+_STATE_DIR = _COURSEWORK_ROOT / "run_state"
 _MLFLOW_TRACKING_URI = f"sqlite:///{_COURSEWORK_ROOT / 'mlflow.db'}"
 _MLFLOW_EXPERIMENT = "dl-final-project"
 
@@ -145,6 +154,119 @@ def _loader_kwargs(device: str, num_workers: int, seed: int, *, persistent_worke
     return kwargs
 
 
+class EpochShuffleSampler(Sampler[int]):
+    """Shuffled order that is a pure function of `(seed, epoch)`.
+
+    A `DataLoader(shuffle=True, generator=...)` draws its permutation from a
+    generator whose consumption depends on how many iterators the loader has
+    already created, so a *fresh* loader after a crash could not reproduce the
+    order an uninterrupted run would have used. `set_epoch()` (called by
+    `fit()` before each epoch) is all the state this needs, and it never touches
+    the global RNG.
+    """
+
+    def __init__(self, num_samples: int, seed: int):
+        """Shuffle `range(num_samples)` with permutations derived from `seed`."""
+        self.num_samples = num_samples
+        self.seed = seed
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        """Select which epoch's permutation the next iteration yields."""
+        self.epoch = epoch
+
+    def __iter__(self) -> Iterator[int]:
+        """Yield every index once, in this `(seed, epoch)`'s order."""
+        entropy = np.random.SeedSequence([self.seed, self.epoch]).generate_state(1, dtype=np.uint64)
+        generator = torch.Generator()
+        generator.manual_seed(int(entropy[0]))
+        yield from torch.randperm(self.num_samples, generator=generator).tolist()
+
+    def __len__(self) -> int:
+        """Number of indices per epoch."""
+        return self.num_samples
+
+
+_FINGERPRINT_COLUMNS = [
+    "folder",
+    "window_col_off",
+    "window_row_off",
+    "window_width",
+    "window_height",
+]
+
+
+def train_set_fingerprint(train_df: pd.DataFrame) -> str:
+    """Hash of which patches (folder + window, in order) make up `train_df`."""
+    hashed = pd.util.hash_pandas_object(train_df[_FINGERPRINT_COLUMNS], index=False)
+    return hashlib.sha256(hashed.to_numpy().tobytes()).hexdigest()
+
+
+def run_signature(
+    model: torch.nn.Module,
+    train_df: pd.DataFrame,
+    *,
+    dataset: str,
+    lr: float,
+    batch_size: int,
+    augment: bool,
+    monitor: str,
+    seed: int,
+    pos_weight: float,
+) -> dict:
+    """Everything that must be identical for a resumed run to continue the same trajectory.
+
+    `patience`, `max_epochs`, `max_steps`, `num_workers` and `device` are deliberately
+    absent: none of them changes what an epoch computes (a resumed run may extend
+    `max_epochs` or raise `patience`).
+    """
+    return {
+        "dataset": dataset,
+        "lr": lr,
+        "batch_size": batch_size,
+        "augment": augment,
+        "monitor": monitor,
+        "seed": seed,
+        "train_fingerprint": train_set_fingerprint(train_df),
+        "pos_weight": float(pos_weight),
+        "param_count": count_parameters(model),
+    }
+
+
+def _atomic_save(obj, path: Path) -> None:
+    """`torch.save` to `path` so that a kill mid-write never leaves a truncated file behind."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial_path = path.with_name(path.name + ".tmp")
+    torch.save(obj, partial_path)
+    os.replace(partial_path, path)
+
+
+def _capture_rng_state() -> dict:
+    """Snapshot the main process's torch (CPU + CUDA) and numpy RNG states."""
+    return {
+        "torch": torch.get_rng_state(),
+        "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+        "numpy": np.random.get_state(),
+    }
+
+
+def _restore_rng_state(state: dict) -> None:
+    """Inverse of `_capture_rng_state()`."""
+    torch.set_rng_state(state["torch"])
+    if state["cuda"] is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(state["cuda"])
+    np.random.set_state(state["numpy"])
+
+
+def _signature_mismatch(saved: dict, current: dict) -> str:
+    """Human-readable list of the signature entries that differ ('' when identical)."""
+    return ", ".join(
+        f"{key}: saved {saved.get(key)!r} != current {current.get(key)!r}"
+        for key in current
+        if saved.get(key) != current[key]
+    )
+
+
 def _epoch_marker(is_best: bool) -> str:
     """One-glyph marker for an epoch's outcome, for `fit(verbose=True)`'s printed line.
 
@@ -231,6 +353,8 @@ def fit(
     max_epochs: int,
     patience: int,
     max_steps: int | None = None,
+    monitor: str = "val_loss",
+    resume_from: Path | None = None,
     augment: bool = True,
     device: str = "cpu",
     checkpoint_path: Path | None = None,
@@ -240,8 +364,25 @@ def fit(
     seed: int = _DEFAULT_SEED,
     max_val_batches: int | None = None,
     progress_every: int | None = None,
+    state_path: Path | None = None,
+    resume_state: bool = False,
 ) -> dict:
     """Train `model` on `train_df`, validate on `val_df`; return final metrics + run length.
+
+    `state_path` (optional) makes the run **exactly resumable**: after every epoch
+    the full training state (model, optimizer, epoch and step counters, both early
+    stoppers, best metrics, main-process RNG states, elapsed time and a run
+    signature) is written atomically to that file. `resume_state=True` reloads it
+    and continues bit-identically to an uninterrupted run, because the two other
+    sources of randomness are pure functions of `(seed, epoch[, index])`:
+    `EpochShuffleSampler` for the shuffle order and `PatchDataset(augment_seed=...)`
+    for augmentation. A resume is refused when `state_path` is missing, when it is
+    combined with the weights-only `resume_from`, or when the saved signature
+    (`run_signature()`) differs from the current run; a fresh run (`resume_state=
+    False`) refuses to overwrite an existing state file. `max_epochs` and `patience`
+    may change on resume (extending a run that hit its cap is the intended use).
+    The best-checkpoint file at `checkpoint_path` is only ever rewritten by an epoch
+    that is a new best, exactly as in an uninterrupted run.
 
     `progress_every` (optional, default `None` = off) prints a mid-epoch
     heartbeat line every that many (cumulative) steps when `verbose=True`
@@ -258,10 +399,10 @@ def fit(
     `_load_split`; this is the general version for any tier).
 
     `seed` (plan Section 7.1 Phase A1) is applied via `set_seed()` before
-    the loaders are built and threaded into each `DataLoader`'s `generator=`
-    / `worker_init_fn=`, so calling `fit()` twice with the same seed and the
-    same starting model weights reproduces the same shuffle order,
-    augmentation draws, and therefore the same metrics. It does **not**
+    the loaders are built and also seeds `EpochShuffleSampler` (shuffle order)
+    and `PatchDataset(augment_seed=...)` (augmentation), so calling `fit()`
+    twice with the same seed and the same starting model weights reproduces the
+    same shuffle order, augmentation draws, and therefore the same metrics. It does **not**
     seed the model's own weight initialization -- that already happened
     before `model` was passed in; call `set_seed()` yourself before
     building the model if that also needs to be reproducible (`main()`
@@ -308,22 +449,110 @@ def fit(
     cache exists (a tier whose data doesn't match what was cached, e.g.
     `r2`'s subsample or `raw-smoke`'s sliced val, or simply nothing
     precomputed yet) -- build one with `precompute_patch_cache.py`.
+
+    `monitor` (default `"val_loss"`, or `"val_f1"`) is the `evaluate()` key
+    early stopping and checkpoint selection track -- `"val_loss"` picks the
+    epoch with the lowest val loss (`EarlyStopper(mode="min")`), `"val_f1"`
+    the epoch with the highest val F1 (`mode="max"`). Found for real
+    reviewing R2/R3 (report.md's "Extensão do valor de épocas"/
+    "Calibração de limiar" follow-up): under `starcop_raw`'s much larger
+    `pos_weight` (~270-314, vs. ~87 on `mini`) and its huge, overwhelmingly-
+    negative val split, `BCEWithLogitsLoss`'s mean-reduced value stops
+    tracking segmentation quality -- every R2/R3 run had an epoch a few
+    steps from the loss-selected one with 21-39% better F1. `mini` keeps
+    the default: its own divergence was small, and its 49-patch val split
+    (9 positive) makes raw F1 too noisy per-epoch to select on directly
+    (confirmed: an untrained epoch-1 checkpoint scored `val_f1=0.78` on
+    9 positive patches purely by chance, alongside a `val_loss=0.44` that
+    correctly showed it was still untrained).
+
+    When `monitor="val_f1"`, stopping *also* requires `val_loss`'s own
+    patience to be independently exhausted -- checkpoint selection stays
+    on raw, unsmoothed `val_f1` (`stopper.is_best` below is untouched),
+    only the stop decision gets this second condition. Replaces an
+    earlier attempt at fixing the same problem via a smoothed/windowed
+    `val_f1` average: that fixed `E2-raw-full` (see above) but broke
+    `E1-r2` -- smoothing pulled the *selected* checkpoint away from a
+    genuinely good, isolated F1 spike (confirmed by scoring worse on the
+    real test split than even plain `val_loss` monitoring), because
+    averaging conflates "should we stop" with "which epoch is best" into
+    one number. Tracking `val_loss` as a second, independent stop
+    condition can only extend training (never change *which* epoch's raw
+    F1 ends up selected), so it can't repeat that mistake: `E2-raw-full`
+    stopped at epoch 14 because F1 hadn't beaten its epoch-4 spike in
+    `patience` epochs, even though `val_loss` was still finding new minima
+    through epoch 12 -- proof the model hadn't actually plateaued yet.
+
+    `resume_from` (optional path, default `None`) warm-starts `model`'s
+    weights from a previously-saved checkpoint before training begins --
+    added after a real GPU driver crash (`cudaErrorLaunchTimeout`) lost an
+    in-progress `raw-full` (R3) run partway through (72 epochs in, best
+    `val_f1` already far ahead of any prior attempt). Not a full resume:
+    only weights are restored, not the optimizer/epoch-counter/early-
+    stopping state -- Adam's own momentum re-adapts within a handful of
+    steps, and a true resume would mean changing the checkpoint file
+    format (currently a bare `state_dict`, loaded the same way by every
+    other caller in this project, e.g. `evaluate.py`'s `load_checkpoint`).
+    The new run's own `EarlyStopper`(s) start fresh and epoch numbering
+    restarts at 1, but before epoch 1 the resumed weights are scored once
+    on the val split ("epoch 0", also logged to MLflow at `step=0`) and that
+    score seeds the stoppers' starting "best", with the weights written to
+    `checkpoint_path`. An epoch therefore only replaces `checkpoint_path`
+    if it beats the resumed weights on `monitor`; if none does, the result
+    is the baseline's metrics with `best_epoch=0`. (The first version of
+    this skipped the baseline, so epoch 1 always overwrote the checkpoint
+    -- even when one epoch of fresh-Adam training left the model worse.)
     """
+    monitor_key, monitor_mode = _MONITOR_METRIC_KEYS[monitor]
+    if resume_state:
+        if state_path is None:
+            raise ValueError("resume_state=True requires a state_path")
+        if resume_from is not None:
+            raise ValueError(
+                "resume_state=True cannot be combined with the weights-only resume_from"
+            )
+        if not state_path.exists():
+            raise FileNotFoundError(f"no run state to resume at {state_path}")
+    elif state_path is not None and state_path.exists():
+        raise FileExistsError(
+            f"{state_path} already exists: pass resume_state=True to continue that run, "
+            "or move the file aside to start a new one"
+        )
     set_seed(seed)
     model.to(device)
+    if resume_from is not None:
+        model.load_state_dict(torch.load(resume_from, map_location=device))
     pos_weight = compute_pos_weight(train_df)
     loss_fn = build_loss(pos_weight).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    signature = run_signature(
+        model,
+        train_df,
+        dataset=dataset,
+        lr=lr,
+        batch_size=batch_size,
+        augment=augment,
+        monitor=monitor,
+        seed=seed,
+        pos_weight=pos_weight,
+    )
+    saved_state = None
+    if resume_state:
+        saved_state = torch.load(state_path, map_location="cpu", weights_only=False)
+        mismatch = _signature_mismatch(saved_state["signature"], signature)
+        if mismatch:
+            raise ValueError(f"run signature mismatch, refusing to resume: {mismatch}")
 
-    generator = torch.Generator()
-    generator.manual_seed(seed)
     train_cache_dir = patch_cache.resolve_cache_dir(_CACHE_ROOT, dataset, "train", train_df)
     val_cache_dir = patch_cache.resolve_cache_dir(_CACHE_ROOT, dataset, "val", val_df)
+    train_dataset = PatchDataset(
+        train_df, dataset=dataset, augment=augment, cache_dir=train_cache_dir, augment_seed=seed
+    )
+    sampler = EpochShuffleSampler(len(train_dataset), seed)
     train_loader = DataLoader(
-        PatchDataset(train_df, dataset=dataset, augment=augment, cache_dir=train_cache_dir),
+        train_dataset,
         batch_size=batch_size,
-        shuffle=True,
-        generator=generator,
+        sampler=sampler,
         **_loader_kwargs(device, num_workers, seed, persistent_workers=True),
     )
     val_loader = DataLoader(
@@ -333,16 +562,66 @@ def fit(
         **_loader_kwargs(device, num_workers, seed, persistent_workers=False),
     )
 
-    stopper = EarlyStopper(patience=patience, mode="min")
+    stopper = EarlyStopper(patience=patience, mode=monitor_mode)
+    # Only when val_f1 is the primary monitor: a second, independent
+    # patience tracker on val_loss -- see fit()'s own docstring for why
+    # stopping needs this but checkpoint selection (stopper.is_best,
+    # below) must not.
+    loss_plateau_stopper = (
+        EarlyStopper(patience=patience, mode="min") if monitor == "val_f1" else None
+    )
     step_count = 0
     epoch = 0
     val_metrics: dict = {}
     best_metrics: dict = {}
     best_epoch = 0
     stop_early = False
-    fit_start = time.perf_counter()
+    elapsed_before_resume = 0.0
 
-    for epoch in range(1, max_epochs + 1):
+    if saved_state is not None:
+        model.load_state_dict(saved_state["model"])
+        optimizer.load_state_dict(saved_state["optimizer"])
+        stopper.load_state_dict(saved_state["stopper"])
+        if loss_plateau_stopper is not None:
+            loss_plateau_stopper.load_state_dict(saved_state["loss_plateau_stopper"])
+        step_count = saved_state["step_count"]
+        epoch = saved_state["epoch"]
+        val_metrics = saved_state["val_metrics"]
+        best_metrics = saved_state["best_metrics"]
+        best_epoch = saved_state["best_epoch"]
+        stop_early = saved_state["stopped"]
+        elapsed_before_resume = saved_state["elapsed_seconds"]
+        _restore_rng_state(saved_state["rng"])
+        if verbose:
+            print(f"  ⏯️  resumed exact state after epoch {epoch} (step {step_count})")
+    fit_start = time.perf_counter() - elapsed_before_resume
+
+    if resume_from is not None:
+        # Score the warm-started weights once, before any training, and
+        # let that score be the stoppers' starting "best" -- an epoch only
+        # replaces `checkpoint_path` if it beats what was resumed.
+        baseline_metrics = evaluate(model, val_loader, loss_fn, device, max_batches=max_val_batches)
+        stopper.step(baseline_metrics[monitor_key])
+        if loss_plateau_stopper is not None:
+            loss_plateau_stopper.step(baseline_metrics["loss"])
+        best_metrics = baseline_metrics
+        if checkpoint_path is not None:
+            checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(model.state_dict(), checkpoint_path)
+        if log_to_mlflow:
+            mlflow.log_metrics(
+                {"val_loss": baseline_metrics["loss"], "val_f1": baseline_metrics["f1"]}, step=0
+            )
+        if verbose:
+            print(
+                f"  🏁 resume baseline (epoch 0): val_loss={baseline_metrics['loss']:.4f} "
+                f"val_f1={baseline_metrics['f1']:.4f} -- epochs below must beat this to be saved"
+            )
+
+    remaining_epochs = range(epoch + 1, max_epochs + 1) if not stop_early else range(0)
+    for epoch in remaining_epochs:
+        sampler.set_epoch(epoch)
+        train_dataset.set_epoch(epoch)
         epoch_start = time.perf_counter()
         model.train()
         for batch in train_loader:
@@ -375,8 +654,18 @@ def fit(
         # line's marker (`_epoch_marker`) reflects this epoch's own
         # is_best outcome. `step()` mutates EarlyStopper's internal
         # counter/best -- call it exactly once per epoch, never again
-        # below, or patience gets silently consumed twice as fast.
-        should_stop = stopper.step(val_metrics["loss"])
+        # below, or patience gets silently consumed twice as fast. Same
+        # rule applies to `loss_plateau_stopper.step()`: called every
+        # epoch regardless of `should_stop`'s value, so its own patience
+        # counter stays accurate epoch to epoch.
+        should_stop = stopper.step(val_metrics[monitor_key])
+        if loss_plateau_stopper is not None:
+            # Both branches of `and` must run every epoch -- `step()` has
+            # to mutate its stopper's internal counter regardless of the
+            # other stopper's result, or short-circuiting `and` would
+            # silently skip it and desync the two counters.
+            loss_plateaued = loss_plateau_stopper.step(val_metrics["loss"])
+            should_stop = should_stop and loss_plateaued
         if verbose:
             print(
                 f"  {_epoch_marker(stopper.is_best)} epoch {epoch}/{max_epochs} "
@@ -388,10 +677,33 @@ def fit(
             best_metrics = val_metrics
             best_epoch = epoch
             if checkpoint_path is not None:
-                checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-                torch.save(model.state_dict(), checkpoint_path)
+                _atomic_save(model.state_dict(), checkpoint_path)
 
-        if (max_steps is not None and step_count >= max_steps) or should_stop:
+        stopping = (max_steps is not None and step_count >= max_steps) or should_stop
+        if state_path is not None:
+            _atomic_save(
+                {
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "epoch": epoch,
+                    "step_count": step_count,
+                    "stopper": stopper.state_dict(),
+                    "loss_plateau_stopper": (
+                        loss_plateau_stopper.state_dict()
+                        if loss_plateau_stopper is not None
+                        else None
+                    ),
+                    "best_metrics": best_metrics,
+                    "best_epoch": best_epoch,
+                    "val_metrics": val_metrics,
+                    "stopped": stopping,
+                    "elapsed_seconds": time.perf_counter() - fit_start,
+                    "rng": _capture_rng_state(),
+                    "signature": signature,
+                },
+                state_path,
+            )
+        if stopping:
             stop_early = True
             break
 
@@ -454,7 +766,7 @@ def main() -> None:
     """CLI entry point -- see report.md's Metodologia section for the run log this produced.
 
     Usage: python train.py architecture=E1 dataset=starcop_mini tier=mini [max_steps=300]
-           [seed=42] [max_val_batches=2] [max_epochs=20] [patience=10]
+           [seed=42] [max_val_batches=2] [max_epochs=20] [patience=10] [monitor=val_loss]
     `tier` is one of 'mini' | 'raw-smoke' | 'r2' -- only affects which split is loaded and,
     for 'raw-smoke', how the run is labeled; `max_steps` (optional) caps step count,
     used for the R1 smoke-training run (a few hundred steps, no convergence expected).
@@ -475,6 +787,25 @@ def main() -> None:
     `progress_every` (optional, default no heartbeat) prints a mid-epoch progress
     line every that many cumulative steps -- worth setting for `raw-full`, whose
     ~15-minute epochs otherwise print nothing until they finish.
+    `monitor` (optional, default `"val_loss"`, or `"val_f1"`) is passed through to
+    `fit()` -- see its own docstring. Along with `max_epochs`, this is a second
+    allowed per-tier exception to Section 7's "hold everything but the dataset
+    fixed" rule, used for R2/R3 specifically (large enough val splits for F1 to
+    be a low-noise selection signal; see report.md's "Calibração de limiar").
+    `monitor="val_f1"` also requires `val_loss` to independently plateau before
+    stopping -- see `fit()`'s own docstring.
+    `resume_from` (optional path, default `None`) is passed through to `fit()`
+    -- a manual weights-only warm start (see its docstring); it does NOT
+    reproduce the original trajectory. Points at a checkpoint file; the run only
+    overwrites `checkpoints/<architecture>-<tier>.pt` with an epoch that beats
+    the resumed weights, so resuming from that same path is safe.
+    `resume_state` (`true`/`false`, default `false`) continues an interrupted run
+    *exactly* from `run_state/<architecture>-<tier>.state.pt` (written after
+    every epoch) -- same weights, optimizer, stoppers, RNG streams -- and keeps
+    logging into the same MLflow run (its id is kept next to the state file).
+    Without it, a leftover state file makes the run refuse to start.
+    `train_with_recovery.py` wraps this CLI and relaunches with
+    `resume_state=true` automatically after a GPU crash.
     """
     args = _parse_kv_args(sys.argv[1:])
     architecture = args.get("architecture", "E1")
@@ -484,6 +815,16 @@ def main() -> None:
     seed = int(args.get("seed", _DEFAULT_SEED))
     max_val_batches = int(args["max_val_batches"]) if "max_val_batches" in args else None
     progress_every = int(args["progress_every"]) if "progress_every" in args else None
+    monitor = args.get("monitor", "val_loss")
+    resume_from = Path(args["resume_from"]) if "resume_from" in args else None
+    resume_state = args.get("resume_state", "false").lower() == "true"
+    state_path = _STATE_DIR / f"{architecture}-{tier}.state.pt"
+    run_id_path = state_path.with_suffix(".mlflow_run_id")
+    if not resume_state and state_path.exists():
+        # Same refusal `fit()` makes, raised before an MLflow run is opened for nothing.
+        raise FileExistsError(
+            f"{state_path} exists: pass resume_state=true to continue it, or move it aside"
+        )
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Named once here so the values logged as MLflow params are the exact
@@ -507,28 +848,41 @@ def main() -> None:
 
     set_seed(seed)
     model = build_model(architecture)
-    with mlflow.start_run(run_name=f"{architecture}-{tier}"):
-        mlflow.log_params(
-            {
-                "architecture": architecture,
-                "dataset": dataset,
-                "tier": tier,
-                "device": device,
-                "seed": seed,
-                "train_patches": len(train_df),
-                "val_patches": len(val_df),
-                "lr": lr,
-                "batch_size": batch_size,
-                "max_epochs": max_epochs,
-                "patience": patience,
-                "num_workers": num_workers,
-                "augment": augment,
-                "loss": loss_name,
-                "optimizer": optimizer_name,
-                "param_count": count_parameters(model),
-                **library_versions(),
-            }
-        )
+    resumed_run_id = (
+        run_id_path.read_text().strip() if resume_state and run_id_path.exists() else None
+    )
+    with mlflow.start_run(run_id=resumed_run_id, run_name=f"{architecture}-{tier}") as active_run:
+        if resumed_run_id is None:
+            run_id_path.parent.mkdir(parents=True, exist_ok=True)
+            run_id_path.write_text(active_run.info.run_id)
+        if resumed_run_id is None:
+            mlflow.log_params(
+                {
+                    "architecture": architecture,
+                    "dataset": dataset,
+                    "tier": tier,
+                    "device": device,
+                    "seed": seed,
+                    "train_patches": len(train_df),
+                    "val_patches": len(val_df),
+                    "lr": lr,
+                    "batch_size": batch_size,
+                    "max_epochs": max_epochs,
+                    "patience": patience,
+                    "monitor": monitor,
+                    "num_workers": num_workers,
+                    "augment": augment,
+                    "loss": loss_name,
+                    "optimizer": optimizer_name,
+                    "param_count": count_parameters(model),
+                    **library_versions(),
+                    **({"resume_from": str(resume_from)} if resume_from is not None else {}),
+                }
+            )
+        else:
+            # Params are already on the run; re-logging a changed one (e.g. a raised
+            # `max_epochs`) would raise.
+            mlflow.set_tag("resumed_from_state", "true")
         result = fit(
             model,
             train_df,
@@ -539,9 +893,13 @@ def main() -> None:
             max_epochs=max_epochs,
             patience=patience,
             max_steps=max_steps,
+            monitor=monitor,
+            resume_from=resume_from,
             augment=augment,
             device=device,
             checkpoint_path=_CHECKPOINT_DIR / f"{architecture}-{tier}.pt",
+            state_path=state_path,
+            resume_state=resume_state,
             num_workers=num_workers,
             verbose=True,
             seed=seed,

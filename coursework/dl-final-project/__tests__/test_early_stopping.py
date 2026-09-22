@@ -52,3 +52,35 @@ class TestEarlyStopper:
         stopper = EarlyStopper(patience=1, mode="max")
         stopper.step(1.0)  # best so far
         assert stopper.step(1.0) is True  # tie is not an improvement, patience exhausted
+
+
+class TestStateDict:
+    def test_a_restored_stopper_continues_exactly_like_the_original(self):
+        original = EarlyStopper(patience=3, mode="max")
+        for value in (0.2, 0.5, 0.4):
+            original.step(value)
+
+        restored = EarlyStopper(patience=3, mode="max")
+        restored.load_state_dict(original.state_dict())
+
+        for value in (0.45, 0.3, 0.6):
+            assert restored.step(value) == original.step(value)
+            assert restored.best == original.best
+            assert restored.counter == original.counter
+            assert restored.is_best == original.is_best
+
+    def test_the_state_records_best_counter_and_is_best(self):
+        stopper = EarlyStopper(patience=3, mode="min")
+        stopper.step(1.0)
+        stopper.step(2.0)
+
+        assert stopper.state_dict() == {"best": 1.0, "counter": 1, "is_best": False}
+
+    def test_loading_does_not_change_the_configured_patience_or_mode(self):
+        source = EarlyStopper(patience=3, mode="min")
+        source.step(1.0)
+        target = EarlyStopper(patience=9, mode="max")
+
+        target.load_state_dict(source.state_dict())
+
+        assert (target.patience, target.mode) == (9, "max")

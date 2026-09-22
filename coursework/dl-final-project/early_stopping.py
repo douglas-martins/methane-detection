@@ -28,3 +28,17 @@ class EarlyStopper:
         else:
             self.counter += 1
         return self.counter >= self.patience
+
+    def state_dict(self) -> dict:
+        """Return the mutable state (`best`, `counter`, `is_best`) -- not `patience`/`mode`.
+
+        `patience` and `mode` are configuration: a resumed run may legitimately raise
+        `patience`, so only what `step()` changes is saved.
+        """
+        return {"best": self.best, "counter": self.counter, "is_best": self.is_best}
+
+    def load_state_dict(self, state: dict) -> None:
+        """Restore what `state_dict()` returned, leaving `patience` and `mode` as configured."""
+        self.best = state["best"]
+        self.counter = state["counter"]
+        self.is_best = state["is_best"]

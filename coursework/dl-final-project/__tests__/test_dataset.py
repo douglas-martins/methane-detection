@@ -650,3 +650,115 @@ class TestPatchDatasetOnDiskCache:
             positions.add((row.item(), col.item()))
 
         assert len(positions) > 1
+
+
+def _asymmetric_dataset(tiny_geotiff_factory, tmp_path, n_rows=1, size=8, **kwargs):
+    """Augmenting dataset whose scene has no symmetry, so every flip/rotation is visible."""
+    folder, bands = _make_scene(tiny_geotiff_factory, tmp_path, size=size)
+    bands["mag1c"] = np.arange(size * size, dtype="float32").reshape(size, size)
+    bands["labelbinary"][1, 5] = 1.0
+    _write_scene(tiny_geotiff_factory, folder, bands)
+    df = pd.DataFrame([_patch_row(folder, size=size) for _ in range(n_rows)])
+    return PatchDataset(df, dataset="starcop_mini", augment=True, **kwargs)
+
+
+def _fingerprint(item) -> tuple:
+    return (item["input"].flatten().tolist(), item["output"].flatten().tolist())
+
+
+class TestPatchDatasetDeterministicAugmentation:
+    def test_the_same_seed_epoch_and_index_give_the_same_augmentation_in_any_instance(
+        self, tmp_path, tiny_geotiff_factory
+    ):
+        first = _asymmetric_dataset(tiny_geotiff_factory, tmp_path, augment_seed=42)
+        second = _asymmetric_dataset(tiny_geotiff_factory, tmp_path, augment_seed=42)
+        first.set_epoch(3)
+        second.set_epoch(3)
+
+        torch.manual_seed(1)  # the global RNG must not matter
+        expected = _fingerprint(first[0])
+        torch.manual_seed(999)
+
+        assert _fingerprint(second[0]) == expected
+
+    def test_repeated_reads_of_one_index_in_one_epoch_are_identical(
+        self, tmp_path, tiny_geotiff_factory
+    ):
+        dataset = _asymmetric_dataset(tiny_geotiff_factory, tmp_path, augment_seed=42)
+
+        assert _fingerprint(dataset[0]) == _fingerprint(dataset[0])
+
+    def test_the_augmentation_changes_from_one_epoch_to_the_next(
+        self, tmp_path, tiny_geotiff_factory
+    ):
+        dataset = _asymmetric_dataset(tiny_geotiff_factory, tmp_path, augment_seed=42)
+
+        seen = set()
+        for epoch in range(20):
+            dataset.set_epoch(epoch)
+            seen.add(str(_fingerprint(dataset[0])))
+
+        assert len(seen) > 1
+
+    def test_different_indices_in_one_epoch_draw_independently(
+        self, tmp_path, tiny_geotiff_factory
+    ):
+        dataset = _asymmetric_dataset(tiny_geotiff_factory, tmp_path, n_rows=20, augment_seed=42)
+
+        seen = {str(_fingerprint(dataset[index])) for index in range(20)}
+
+        assert len(seen) > 1
+
+    def test_the_seed_changes_the_augmentation(self, tmp_path, tiny_geotiff_factory):
+        seen = set()
+        for seed in range(20):
+            dataset = _asymmetric_dataset(tiny_geotiff_factory, tmp_path, augment_seed=seed)
+            seen.add(str(_fingerprint(dataset[0])))
+
+        assert len(seen) > 1
+
+    def test_reading_an_item_leaves_the_global_torch_rng_untouched(
+        self, tmp_path, tiny_geotiff_factory
+    ):
+        dataset = _asymmetric_dataset(tiny_geotiff_factory, tmp_path, augment_seed=42)
+
+        torch.manual_seed(5)
+        untouched = torch.rand(3)
+        torch.manual_seed(5)
+        dataset[0]
+
+        assert torch.equal(torch.rand(3), untouched)
+
+    def test_set_epoch_reaches_persistent_dataloader_workers(self, tmp_path, tiny_geotiff_factory):
+        # The train loader's workers live across epochs (persistent_workers=True), so a
+        # plain attribute set in the main process would never reach them.
+        from torch.utils.data import DataLoader
+
+        worker_side = _asymmetric_dataset(tiny_geotiff_factory, tmp_path, augment_seed=42)
+        in_process = _asymmetric_dataset(tiny_geotiff_factory, tmp_path, augment_seed=42)
+        loader = DataLoader(worker_side, batch_size=1, num_workers=2, persistent_workers=True)
+        list(loader)  # start the workers at epoch 0
+
+        worker_side.set_epoch(3)
+        in_process.set_epoch(3)
+        (batch,) = list(loader)
+
+        assert torch.equal(batch["input"][0], in_process[0]["input"])
+        assert torch.equal(batch["output"][0], in_process[0]["output"])
+
+    def test_without_an_augment_seed_the_global_rng_still_drives_augmentation(
+        self, tmp_path, tiny_geotiff_factory
+    ):
+        # Legacy behaviour every other caller relies on stays as it was.
+        dataset = _asymmetric_dataset(tiny_geotiff_factory, tmp_path)
+
+        torch.manual_seed(7)
+        first = _fingerprint(dataset[0])
+        torch.manual_seed(7)
+        second = _fingerprint(dataset[0])
+
+        assert first == second
+        seen = set()
+        for _ in range(20):
+            seen.add(str(_fingerprint(dataset[0])))
+        assert len(seen) > 1

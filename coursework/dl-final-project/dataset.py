@@ -9,6 +9,8 @@ rather than re-implementing windowed GeoTIFF reads.
 """
 
 from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -65,6 +67,14 @@ def _build_augmenter() -> AugmentationSequential:
     )
 
 
+@contextmanager
+def _seeded_cpu_rng(seed: int) -> Iterator[None]:
+    """Seed the CPU torch RNG with `seed` inside the block, restoring its previous state after."""
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(seed)
+        yield
+
+
 # Caching every decoded patch (see PatchDataset.__getitem__) is unbounded
 # memory growth on starcop_raw's 141k-patch train split -- ~320 KB/patch
 # (128x128, 4 input channels + 1 label, float32) adds up to ~45 GB in a
@@ -86,8 +96,17 @@ class PatchDataset(Dataset):
         augment: bool,
         max_cache_bytes: int = _DEFAULT_MAX_CACHE_BYTES,
         cache_dir: Path | None = None,
+        augment_seed: int | None = None,
     ):
         """Store `patches_df`, resolve `dataset`'s band contract, and build the augmenter.
+
+        `augment_seed` (optional) makes augmentation a pure function of
+        `(augment_seed, epoch, index)`: each read seeds a forked CPU RNG from that
+        triple, so the draw does not depend on how many samples any worker process
+        has already produced (which is what made a crash + resume diverge from an
+        uninterrupted run) and never touches the global torch RNG. `set_epoch()`
+        advances the epoch. `None` keeps the legacy behaviour: draws come from the
+        global torch RNG.
 
         `max_cache_bytes` bounds the decoded-patch RAM cache (see
         `__getitem__`) with LRU eviction, so caching stays safe at any
@@ -107,6 +126,10 @@ class PatchDataset(Dataset):
         self.patches_df = patches_df.reset_index(drop=True)
         self.input_products, self.output_products = _load_dataset_config(dataset)
         self.augmenter = _build_augmenter() if augment else None
+        self.augment_seed = augment_seed
+        # Shared memory, so `set_epoch()` in the main process also reaches DataLoader
+        # workers that were started earlier and stay alive across epochs.
+        self._epoch = torch.zeros(1, dtype=torch.long).share_memory_()
         self._cache: OrderedDict[int, tuple[torch.Tensor, torch.Tensor]] = OrderedDict()
         self._max_cache_bytes = max_cache_bytes
         self._cache_bytes_used = 0
@@ -139,6 +162,24 @@ class PatchDataset(Dataset):
     def __len__(self) -> int:
         """Number of patches."""
         return len(self.patches_df)
+
+    def set_epoch(self, epoch: int) -> None:
+        """Set the epoch that seeded augmentation draws use (see `augment_seed`).
+
+        Visible to DataLoader worker processes, including persistent ones.
+        """
+        self._epoch[0] = epoch
+
+    def _augmentation_rng(self, index: int) -> AbstractContextManager:
+        """Context seeding augmentation from `(augment_seed, epoch, index)`; RNG restored after.
+
+        No-op when `augment_seed` is `None` (legacy: global RNG).
+        """
+        if self.augment_seed is None:
+            return nullcontext()
+        entropy = [self.augment_seed, int(self._epoch[0]), index]
+        seed = int(np.random.SeedSequence(entropy).generate_state(1, dtype=np.uint64)[0])
+        return _seeded_cpu_rng(seed)
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         """Return {"input": (C,H,W) normalized float32, "output": (1,H,W) raw 0/1 float32}.
@@ -206,7 +247,8 @@ class PatchDataset(Dataset):
             # output_tensor's dim0 is always exactly 1 (single output channel), so
             # unsqueeze(0) and unsqueeze(1) produce the identical (1, 1, H, W) tensor.
             output_batch = output_tensor.unsqueeze(0)  # pragma: no mutate
-            augmented_input, augmented_output = self.augmenter(input_batch, output_batch)
+            with self._augmentation_rng(index):
+                augmented_input, augmented_output = self.augmenter(input_batch, output_batch)
             input_tensor, output_tensor = augmented_input[0], augmented_output[0]
 
         return {"input": input_tensor, "output": output_tensor}
