@@ -35,6 +35,7 @@ from metrics import (
     recall_from_counts,
     sweep_confusion_counts,
 )
+from power_meter import PowerMeter, reading_to_metrics
 from torch.utils.data import DataLoader
 from train import build_model
 
@@ -58,6 +59,7 @@ def evaluate_full_metrics(
     threshold: float = _DEFAULT_THRESHOLD,
     max_batches: int | None = None,
     pr_thresholds: torch.Tensor = _DEFAULT_PR_THRESHOLDS,
+    meter: PowerMeter | None = None,
 ) -> dict:
     """Run `model` in eval mode over `loader`; return precision/recall/F1/confusion matrix,
     PR-AUC (over `pr_thresholds`), and the per-patch "detected at all" summary -- Section 8's
@@ -73,7 +75,13 @@ def evaluate_full_metrics(
     escape hatch, for smoke-testing against a slice of a large split.
     `pr_thresholds` (default 101 evenly spaced points in `[0, 1]`) is exposed
     so a future large-split run can trade sweep resolution for speed.
+
+    `meter` (default a real `PowerMeter`) is started and stopped around the same
+    timed region as `wall_clock_seconds`; the result's `energy` is its
+    `EnergyReading` (CPU and GPU joules, `None` where a counter is unreadable),
+    so the GPU-vs-CPU comparison can report energy next to throughput.
     """
+    meter = meter if meter is not None else PowerMeter()
     model.eval()
     totals = {"tp": 0.0, "fp": 0.0, "fn": 0.0, "tn": 0.0}
     patch_totals = {"positive_patches": 0, "detected_patches": 0}
@@ -96,6 +104,7 @@ def evaluate_full_metrics(
     # itself crash on this hardware.
     if device.startswith("cuda"):  # pragma: no mutate block
         torch.cuda.synchronize(device)
+    meter.start()
     start = time.perf_counter()
 
     with torch.no_grad():
@@ -116,6 +125,7 @@ def evaluate_full_metrics(
     if device.startswith("cuda"):  # pragma: no mutate block
         torch.cuda.synchronize(device)
     wall_clock_seconds = time.perf_counter() - start
+    meter.stop()
 
     return {
         "precision": precision_from_counts(totals),
@@ -139,6 +149,7 @@ def evaluate_full_metrics(
         # isolated forward-pass-only timer) and the derived throughput.
         "wall_clock_seconds": wall_clock_seconds,
         "patches_per_second": patches_processed / wall_clock_seconds,
+        "energy": meter.reading,
         **totals,
     }
 
@@ -311,6 +322,9 @@ def main() -> None:
                     f"{split_name}_patches_processed": result["patches_processed"],
                     f"{split_name}_wall_clock_seconds": result["wall_clock_seconds"],
                     f"{split_name}_patches_per_second": result["patches_per_second"],
+                    **reading_to_metrics(
+                        split_name, result["energy"], result["patches_processed"], "patch"
+                    ),
                 }
             )
             # The full curve isn't a scalar MLflow metric -- logged as a JSON

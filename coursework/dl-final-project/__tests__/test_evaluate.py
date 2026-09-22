@@ -2,6 +2,7 @@ import pytest
 import torch
 from architectures import build_e1
 from evaluate import _build_run_name, evaluate_full_metrics, load_checkpoint
+from power_meter import EnergyReading
 
 
 class _FixedLogitModel(torch.nn.Module):
@@ -20,6 +21,55 @@ class _FixedLogitModel(torch.nn.Module):
 
     def forward(self, x):
         return next(self._logits_by_call)
+
+
+class _RecordingMeter:
+    """A meter that records when it is started and stopped, and reports a canned reading."""
+
+    def __init__(self, events, reading):
+        self.events = events
+        self.reading = reading
+
+    def start(self):
+        self.events.append("start")
+
+    def stop(self):
+        self.events.append("stop")
+
+
+class _EventModel(_FixedLogitModel):
+    def __init__(self, events, logits_by_call):
+        super().__init__(logits_by_call)
+        self.events = events
+
+    def forward(self, x):
+        self.events.append("forward")
+        return super().forward(x)
+
+
+class TestEvaluateEnergy:
+    def _batches(self, n):
+        return [{"input": torch.zeros(1, 4, 1, 1), "output": torch.zeros(1, 1, 1, 1)}] * n
+
+    def test_the_meter_covers_the_inference_loop_and_nothing_else(self):
+        events = []
+        reading = EnergyReading(seconds=1.0, gpu_joules=10.0, cpu_joules=5.0)
+        model = _EventModel(events, [torch.zeros(1, 1, 1, 1)] * 2)
+
+        result = evaluate_full_metrics(
+            model, self._batches(2), device="cpu", meter=_RecordingMeter(events, reading)
+        )
+
+        assert events == ["start", "forward", "forward", "stop"]
+        assert result["energy"] == reading
+
+    def test_a_meter_is_created_by_default_and_reports_whatever_this_machine_can_measure(self):
+        model = _FixedLogitModel([torch.zeros(1, 1, 1, 1)])
+
+        result = evaluate_full_metrics(model, self._batches(1), device="cpu")
+
+        assert isinstance(result["energy"], EnergyReading)
+        assert result["energy"].seconds >= 0
 
 
 class TestEvaluateFullMetrics:
@@ -168,7 +218,10 @@ class TestEvaluateFullMetrics:
         batches = [{"input": torch.zeros(1, 4, 1, 1), "output": torch.zeros(1, 1, 1, 1)}]
         model = _FixedLogitModel([torch.zeros(1, 1, 1, 1)])
 
-        result = evaluate_full_metrics(model, batches, device="cpu")
+        # An inert meter: the real one reads the (patched) clock too, which is not what this tests.
+        result = evaluate_full_metrics(
+            model, batches, device="cpu", meter=_RecordingMeter([], None)
+        )
 
         assert result["wall_clock_seconds"] == pytest.approx(0.25)
 
